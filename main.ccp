@@ -1,0 +1,755 @@
+#include <Arduino.h>
+#include <HX711.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+/* =========================================================
+   HARDWARE CONFIG
+   ========================================================= */
+
+// HX711 Pins
+static constexpr uint8_t HX1_DOUT = 32;
+static constexpr uint8_t HX1_SCK  = 33;
+static constexpr uint8_t HX2_DOUT = 25;
+static constexpr uint8_t HX2_SCK  = 26;
+
+// I2C + OLED
+static constexpr uint8_t I2C_SDA  = 21;
+static constexpr uint8_t I2C_SCL  = 22;
+static constexpr uint8_t OLED_ADDR = 0x3C;
+static constexpr int SCREEN_W = 128;
+static constexpr int SCREEN_H = 32;
+
+// LEDs (deine Belegung)
+static constexpr uint8_t GREEN_PINS[] = {16, 17, 18, 19};
+static constexpr uint8_t BLUE_PINS[]  = {4, 5, 13, 14};
+static constexpr uint8_t RED_PINS[]   = {23, 27};
+
+// LED counts
+static constexpr uint8_t GREEN_N = sizeof(GREEN_PINS) / sizeof(GREEN_PINS[0]);
+static constexpr uint8_t BLUE_N  = sizeof(BLUE_PINS)  / sizeof(BLUE_PINS[0]);
+static constexpr uint8_t RED_N   = sizeof(RED_PINS)   / sizeof(RED_PINS[0]);
+
+/* =========================================================
+   SCALE / CALIBRATION
+   ========================================================= */
+
+HX711 scale1;
+HX711 scale2;
+
+// Kalibrierfaktoren (musst du final noch exakt einstellen)
+static float CAL1 = -9000.0f;
+static float CAL2 = -9000.0f;
+
+// Wenn bei Gewicht beide Zellen ins Minus gehen -> software invertieren
+static constexpr bool INVERT1 = true;
+static constexpr bool INVERT2 = true;
+
+/* =========================================================
+   DISPLAY
+   ========================================================= */
+
+Adafruit_SSD1306 display(SCREEN_W, SCREEN_H, &Wire, -1);
+
+/* =========================================================
+   TUNING / THRESHOLDS (Konzept-Werte, später feinjustieren)
+   ========================================================= */
+
+// Filter: moving average über N Samples (pro Loop aktualisiert)
+static constexpr uint8_t  MA_N = 10;
+
+// Stabilitätsdetektor: wenn (max-min) im Fenster <= STABLE_BAND_G über STABLE_HOLD_MS
+static constexpr float    STABLE_BAND_G   = 2.0f;      // „ruhig“ wenn Schwankung klein
+static constexpr uint32_t STABLE_WINDOW_MS= 800;       // Fenster zur min/max Ermittlung
+static constexpr uint32_t STABLE_HOLD_MS  = 800;       // wie lang stabil bleiben muss
+
+// Start-Nullen
+static constexpr uint32_t BOOT_MSG_MS     = 1200;      // Anzeige vor Nullung
+static constexpr uint16_t TARE_SAMPLES    = 25;        // für saubere Tara
+
+// Negativ-Fehler / Autorecovery
+static constexpr float NEGATIVE_ERROR_G   = -0.5f;     // unterhalb => Fehler + Recovery
+static constexpr uint32_t RECOVER_WAIT_MS = 1200;
+
+// Glas-Erkennung (RANGES in Gramm: HIER anpassen!)
+static constexpr float GLASS_02_MIN = 150.0f;
+static constexpr float GLASS_02_MAX = 350.0f;
+static constexpr float GLASS_07_MIN = 500.0f;
+static constexpr float GLASS_07_MAX = 950.0f;
+
+// Füllstand „gleich voll“ (Toleranz)
+static constexpr float FILL_TOL_G = 8.0f;
+
+// Zeitmessung
+static constexpr float START_DROP_G   = 10.0f;   // Start wenn Gewicht um >=10g fällt
+static constexpr float STOP_RISE_G    = 10.0f;   // Stop wenn Gewicht wieder um >=10g steigt
+static constexpr uint32_t READY_AFTER_DETECT_MS = 2000;
+
+// Standby
+static constexpr uint32_t STANDBY_AFTER_MS = 25000;  // wenn nix passiert -> Standby
+static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 200;
+static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 900;
+
+/* =========================================================
+   ERROR CODES
+   ========================================================= */
+
+enum class ErrCode : uint8_t {
+  OK = 0,
+  NEGATIVE,
+  UNSTABLE,
+  GLASS_UNKNOWN,
+  GLASS_PRESENT_DURING_TARE
+};
+
+static const char* errToStr(ErrCode e) {
+  switch (e) {
+    case ErrCode::OK: return "OK";
+    case ErrCode::NEGATIVE: return "NEGATIVE";
+    case ErrCode::UNSTABLE: return "UNSTABLE";
+    case ErrCode::GLASS_UNKNOWN: return "GLASS_UNKNOWN";
+    case ErrCode::GLASS_PRESENT_DURING_TARE: return "GLASS_PRESENT_DURING_TARE";
+  }
+  return "UNKNOWN";
+}
+
+/* =========================================================
+   STATE MACHINE
+   ========================================================= */
+
+enum class State : uint8_t {
+  BOOT_MSG = 0,
+  BOOT_TARE,
+  IDLE_WAIT_GLASS,
+  GLASS_DETECTED,
+  READY_FOR_TIMING,
+  TIMING,
+  SHOW_RESULT,
+  STANDBY,
+  ERROR_RECOVER
+};
+
+static State state = State::BOOT_MSG;
+static ErrCode err = ErrCode::OK;
+
+/* =========================================================
+   RUNTIME VARIABLES
+   ========================================================= */
+
+// moving average buffer
+static float maBuf[MA_N];
+static uint8_t maIdx = 0;
+static bool maFilled = false;
+
+static float w_raw1 = 0.0f, w_raw2 = 0.0f;   // in g (after calibration)
+static float w_avg  = 0.0f;                  // raw mean (2 cells)
+static float w_filt = 0.0f;                  // filtered mean
+
+// stability window
+static float stabMin = 1e9f, stabMax = -1e9f;
+static uint32_t stabWindowStart = 0;
+static uint32_t stableSince = 0;
+static bool isStable = false;
+
+// glass ref weights
+enum class GlassKind : uint8_t { NONE=0, G02, G07 };
+static GlassKind glass = GlassKind::NONE;
+
+static float ref02 = NAN; // last measured full weight for 0.2
+static float ref07 = NAN; // last measured full weight for 0.7
+static float currentFullWeight = 0.0f;
+
+// timing
+static uint32_t detectAtMs = 0;
+static uint32_t readyAtMs  = 0;
+static uint32_t tStartMs   = 0;
+static uint32_t showUntilMs= 0;
+
+static float timingStartWeight = 0.0f;
+static float minDuringTiming = 1e9f;
+
+// standby
+static uint32_t lastActionMs = 0;
+
+// recovery
+static uint32_t recoverUntilMs = 0;
+
+// LED engine
+enum class LedMode : uint8_t {
+  ALL_OFF=0,
+  ERROR_BLINK_RED,
+  OK_ALT_GB,
+  GLASS_GREEN_SOLID,
+  TIMING_BLUE_BLINK,
+  STANDBY_TWINKLE
+};
+
+static LedMode ledMode = LedMode::ALL_OFF;
+static uint32_t ledTickMs = 0;
+static bool ledFlip = false;
+static uint32_t twinkleNextMs = 0;
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+
+static inline void allPins(const uint8_t* arr, uint8_t n, bool on) {
+  for (uint8_t i=0;i<n;i++) digitalWrite(arr[i], on ? HIGH : LOW);
+}
+
+static void ledsInit() {
+  for (uint8_t i=0;i<GREEN_N;i++) pinMode(GREEN_PINS[i], OUTPUT);
+  for (uint8_t i=0;i<BLUE_N;i++)  pinMode(BLUE_PINS[i], OUTPUT);
+  for (uint8_t i=0;i<RED_N;i++)   pinMode(RED_PINS[i], OUTPUT);
+  allPins(GREEN_PINS, GREEN_N, false);
+  allPins(BLUE_PINS,  BLUE_N,  false);
+  allPins(RED_PINS,   RED_N,   false);
+}
+
+static void ledsSetMode(LedMode m) {
+  if (ledMode == m) return;
+  ledMode = m;
+  ledTickMs = millis();
+  ledFlip = false;
+  // reset twinkle scheduling
+  twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
+}
+
+static void ledsService() {
+  const uint32_t now = millis();
+
+  switch (ledMode) {
+    case LedMode::ALL_OFF:
+      allPins(GREEN_PINS, GREEN_N, false);
+      allPins(BLUE_PINS,  BLUE_N,  false);
+      allPins(RED_PINS,   RED_N,   false);
+      break;
+
+    case LedMode::ERROR_BLINK_RED:
+      if (now - ledTickMs >= 350) {
+        ledTickMs = now;
+        ledFlip = !ledFlip;
+        allPins(RED_PINS, RED_N, ledFlip);
+        allPins(GREEN_PINS, GREEN_N, false);
+        allPins(BLUE_PINS,  BLUE_N,  false);
+      }
+      break;
+
+    case LedMode::OK_ALT_GB:
+      if (now - ledTickMs >= 450) {
+        ledTickMs = now;
+        ledFlip = !ledFlip;
+        allPins(RED_PINS,   RED_N,   false);
+        allPins(GREEN_PINS, GREEN_N, ledFlip);
+        allPins(BLUE_PINS,  BLUE_N,  !ledFlip);
+      }
+      break;
+
+    case LedMode::GLASS_GREEN_SOLID:
+      allPins(RED_PINS,   RED_N,   false);
+      allPins(BLUE_PINS,  BLUE_N,  false);
+      allPins(GREEN_PINS, GREEN_N, true);
+      break;
+
+    case LedMode::TIMING_BLUE_BLINK:
+      if (now - ledTickMs >= 250) {
+        ledTickMs = now;
+        ledFlip = !ledFlip;
+        allPins(RED_PINS,   RED_N,   false);
+        allPins(GREEN_PINS, GREEN_N, false);
+        allPins(BLUE_PINS,  BLUE_N,  ledFlip);
+      }
+      break;
+
+    case LedMode::STANDBY_TWINKLE: {
+      // sanft: immer nur EIN LED-Pin togglen, große Intervalle, kein „blitz“
+      if (now >= twinkleNextMs) {
+        twinkleNextMs = now + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
+
+        // eine zufällige LED aus allen auswählen
+        const uint8_t total = GREEN_N + BLUE_N + RED_N;
+        uint8_t idx = random(0, total);
+
+        uint8_t pin;
+        if (idx < GREEN_N) pin = GREEN_PINS[idx];
+        else if (idx < GREEN_N + BLUE_N) pin = BLUE_PINS[idx - GREEN_N];
+        else pin = RED_PINS[idx - GREEN_N - BLUE_N];
+
+        digitalWrite(pin, !digitalRead(pin));
+      }
+      break;
+    }
+  }
+}
+
+static void oledInit() {
+  Wire.begin(I2C_SDA, I2C_SCL);
+  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    // OLED fehlt -> trotzdem weiter (Serial bleibt aktiv)
+    return;
+  }
+  display.setRotation(2); // 180 Grad
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+  display.display();
+}
+
+static void oledMsg2(const char* line1, const char* line2) {
+  if (!display.width()) return; // falls OLED init fehlte
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0,0);
+  display.println(line1);
+  display.println(line2);
+  display.display();
+}
+
+static void oledWeight(float g, bool stable, GlassKind kind, bool equalFull) {
+  if (!display.width()) return;
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0,0);
+
+  // Zeile 1: Status
+  if (kind == GlassKind::G02) display.print("Glas: 0.2L ");
+  else if (kind == GlassKind::G07) display.print("Glas: 0.7L ");
+  else display.print("Glas: --  ");
+
+  display.print(stable ? "STB" : "...");
+  display.println();
+
+  // Zeile 2: Gewicht
+  display.setTextSize(2);
+  display.setCursor(0, 12);
+  display.print(g, 1);
+  display.print("g");
+
+  // kleines Symbol „gleich voll“
+  display.setTextSize(1);
+  display.setCursor(100, 0);
+  display.print(equalFull ? "=OK" : "!=");
+
+  display.display();
+}
+
+static void serialPrintAll(uint32_t raw1, uint32_t raw2) {
+  Serial.print("RAW1:");
+  Serial.print(raw1);
+  Serial.print(" g1:");
+  Serial.print(w_raw1, 2);
+  Serial.print("  ||  RAW2:");
+  Serial.print(raw2);
+  Serial.print(" g2:");
+  Serial.print(w_raw2, 2);
+  Serial.print("  AVG:");
+  Serial.print(w_avg, 2);
+  Serial.print("  FILT:");
+  Serial.print(w_filt, 2);
+  Serial.print("  STB:");
+  Serial.print(isStable ? 1 : 0);
+  Serial.print("  STATE:");
+  Serial.print((int)state);
+  Serial.print("  ERR:");
+  Serial.println(errToStr(err));
+}
+
+/* =========================================================
+   SCALE READ + FILTER + STABILITY
+   ========================================================= */
+
+static float applyInvert(float g, bool inv) {
+  return inv ? -g : g;
+}
+
+static void updateFilter(float newVal) {
+  maBuf[maIdx] = newVal;
+  maIdx = (maIdx + 1) % MA_N;
+  if (maIdx == 0) maFilled = true;
+
+  const uint8_t n = maFilled ? MA_N : maIdx;
+  float sum = 0.0f;
+  for (uint8_t i=0;i<n;i++) sum += maBuf[i];
+  w_filt = (n > 0) ? (sum / (float)n) : newVal;
+}
+
+static void updateStability(float val) {
+  const uint32_t now = millis();
+  if (stabWindowStart == 0) {
+    stabWindowStart = now;
+    stabMin = val;
+    stabMax = val;
+    isStable = false;
+    stableSince = 0;
+    return;
+  }
+
+  // window rolling min/max
+  stabMin = min(stabMin, val);
+  stabMax = max(stabMax, val);
+
+  if (now - stabWindowStart >= STABLE_WINDOW_MS) {
+    const float band = stabMax - stabMin;
+    const bool windowStable = (band <= STABLE_BAND_G);
+
+    if (windowStable) {
+      if (!isStable) {
+        if (stableSince == 0) stableSince = now;
+        if (now - stableSince >= STABLE_HOLD_MS) isStable = true;
+      }
+    } else {
+      isStable = false;
+      stableSince = 0;
+    }
+
+    // reset window
+    stabWindowStart = now;
+    stabMin = val;
+    stabMax = val;
+  }
+}
+
+static bool readScalesOnce(uint32_t& raw1, uint32_t& raw2) {
+  // HX711 library: read_average returns long; safe cast to uint32_t for printing
+  if (!scale1.is_ready() || !scale2.is_ready()) return false;
+
+  long r1 = scale1.read_average(3);
+  long r2 = scale2.read_average(3);
+
+  raw1 = (uint32_t)r1;
+  raw2 = (uint32_t)r2;
+
+  float g1 = scale1.get_units(1);
+  float g2 = scale2.get_units(1);
+
+  w_raw1 = applyInvert(g1, INVERT1);
+  w_raw2 = applyInvert(g2, INVERT2);
+  w_avg  = (w_raw1 + w_raw2) * 0.5f;
+
+  updateFilter(w_avg);
+  updateStability(w_filt);
+
+  return true;
+}
+
+static void tareBoth() {
+  // HX711 tare: takes some time, keep it deterministic
+  scale1.tare(TARE_SAMPLES);
+  scale2.tare(TARE_SAMPLES);
+
+  // reset filter to 0 baseline
+  for (uint8_t i=0;i<MA_N;i++) maBuf[i] = 0.0f;
+  maIdx = 0;
+  maFilled = false;
+  w_raw1 = w_raw2 = w_avg = w_filt = 0.0f;
+
+  stabWindowStart = 0;
+  stableSince = 0;
+  isStable = false;
+}
+
+/* =========================================================
+   GLASS DETECTION + FILL COMPARE
+   ========================================================= */
+
+static GlassKind detectGlass(float stableWeight) {
+  if (stableWeight >= GLASS_02_MIN && stableWeight <= GLASS_02_MAX) return GlassKind::G02;
+  if (stableWeight >= GLASS_07_MIN && stableWeight <= GLASS_07_MAX) return GlassKind::G07;
+  return GlassKind::NONE;
+}
+
+static bool isEqualFill(GlassKind k, float weight) {
+  if (k == GlassKind::G02) {
+    if (!isfinite(ref02)) return true; // first time = OK
+    return fabsf(weight - ref02) <= FILL_TOL_G;
+  }
+  if (k == GlassKind::G07) {
+    if (!isfinite(ref07)) return true;
+    return fabsf(weight - ref07) <= FILL_TOL_G;
+  }
+  return false;
+}
+
+static void storeRef(GlassKind k, float weight) {
+  if (k == GlassKind::G02) ref02 = weight;
+  if (k == GlassKind::G07) ref07 = weight;
+}
+
+/* =========================================================
+   STATE MACHINE
+   ========================================================= */
+
+static void setError(ErrCode e) {
+  err = e;
+  ledsSetMode(LedMode::ERROR_BLINK_RED);
+  char line2[32];
+  snprintf(line2, sizeof(line2), "ERR: %s", errToStr(e));
+  oledMsg2("Fehler!", line2);
+  state = State::ERROR_RECOVER;
+  recoverUntilMs = millis() + RECOVER_WAIT_MS;
+}
+
+static void setState(State s) {
+  state = s;
+  lastActionMs = millis();
+}
+
+/* =========================================================
+   SETUP / LOOP
+   ========================================================= */
+
+void setup() {
+  Serial.begin(115200);
+  randomSeed(esp_random());
+
+  ledsInit();
+  oledInit();
+
+  // HX711 init
+  scale1.begin(HX1_DOUT, HX1_SCK);
+  scale2.begin(HX2_DOUT, HX2_SCK);
+  scale1.set_scale(CAL1);
+  scale2.set_scale(CAL2);
+
+  // Boot behavior
+  ledsSetMode(LedMode::ERROR_BLINK_RED); // kurze rote LEDs direkt nach Start (wie du beobachtet hast)
+  oledMsg2("Start...", "Initialisierung");
+  setState(State::BOOT_MSG);
+}
+
+void loop() {
+  const uint32_t now = millis();
+
+  // LED engine always
+  ledsService();
+
+  // Read scales regularly
+  uint32_t raw1 = 0, raw2 = 0;
+  const bool haveRead = readScalesOnce(raw1, raw2);
+
+  if (haveRead) {
+    serialPrintAll(raw1, raw2);
+  }
+
+  // Global negative underflow protection:
+  // Wenn nach einem Durchgang ein Wert "negativ genug" ist -> Fehler + Recovery (Neutarieren)
+  // (nur wenn wirklich gelesen wurde)
+  if (haveRead && w_filt < NEGATIVE_ERROR_G) {
+    setError(ErrCode::NEGATIVE);
+  }
+
+  // Standby trigger
+  const bool standbyDue = (now - lastActionMs) > STANDBY_AFTER_MS;
+
+  switch (state) {
+
+    case State::BOOT_MSG: {
+      // nach kurzer Meldung -> Boot-Tare
+      if (now - lastActionMs >= BOOT_MSG_MS) {
+        oledMsg2("Nullung...", "Bitte nichts auflegen");
+        ledsSetMode(LedMode::OK_ALT_GB);
+        setState(State::BOOT_TARE);
+      }
+      break;
+    }
+
+    case State::BOOT_TARE: {
+      // Nullung direkt nehmen (aktueller Wert = 0)
+      // Falls schon Gewicht drauf liegt -> trotzdem tarieren (wie gewuenscht beim Einschalten),
+      // aber danach wird Glas-Erkennung evtl. nicht stimmen. Wir warnen, wenn >0.5g stabil.
+      if (haveRead) {
+        // Wenn stabil und deutlich !=0, könnte Glas schon drauf sein
+        if (isStable && fabsf(w_filt) > 0.5f) {
+          // Trotzdem tarieren, aber Fehlercode als Hinweis
+          // (nicht dauerhaft blockieren)
+          // -> hier nur Serial Hinweis
+          Serial.println("[WARN] Gewicht liegt bei Boot-Tare bereits an (Glas evtl. drauf).");
+        }
+      }
+
+      tareBoth();
+      err = ErrCode::OK;
+
+      oledMsg2("Nullung OK", "Warte auf Glas");
+      ledsSetMode(LedMode::OK_ALT_GB);
+
+      glass = GlassKind::NONE;
+      setState(State::IDLE_WAIT_GLASS);
+      break;
+    }
+
+    case State::IDLE_WAIT_GLASS: {
+      // wenn Standby fällig: LED twinkle + OLED Hinweis
+      if (standbyDue) {
+        oledMsg2("Standby", "Bewegung = Aktiv");
+        ledsSetMode(LedMode::STANDBY_TWINKLE);
+        setState(State::STANDBY);
+        break;
+      }
+
+      ledsSetMode(LedMode::OK_ALT_GB);
+
+      // warten bis stabil und Glas im Bereich
+      if (haveRead && isStable) {
+        const float w = w_filt;
+
+        // „nichts drauf“ -> OLED zeigt Gewicht, equalFull irrelevant
+        if (fabsf(w) < 1.0f) {
+          oledWeight(w, true, GlassKind::NONE, true);
+          break;
+        }
+
+        GlassKind k = detectGlass(w);
+        if (k == GlassKind::NONE) {
+          // Wenn stabil, aber kein bekanntes Glas: Fehler
+          setError(ErrCode::GLASS_UNKNOWN);
+          break;
+        }
+
+        // Glas erkannt
+        glass = k;
+        currentFullWeight = w;
+        detectAtMs = now;
+
+        const bool eq = isEqualFill(glass, currentFullWeight);
+        oledWeight(currentFullWeight, true, glass, eq);
+
+        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
+        setState(State::GLASS_DETECTED);
+      } else if (haveRead) {
+        // live Anzeige (stabil oder nicht)
+        oledWeight(w_filt, isStable, GlassKind::NONE, true);
+      }
+      break;
+    }
+
+    case State::GLASS_DETECTED: {
+      // Nach 2s -> bereit
+      const bool eq = isEqualFill(glass, currentFullWeight);
+      oledWeight(w_filt, isStable, glass, eq);
+
+      if (now - detectAtMs >= READY_AFTER_DETECT_MS) {
+        oledMsg2("Bereit", "Zeitmessung...");
+        readyAtMs = now;
+        ledsSetMode(LedMode::OK_ALT_GB);
+        setState(State::READY_FOR_TIMING);
+      }
+      break;
+    }
+
+    case State::READY_FOR_TIMING: {
+      // Start wenn Gewicht signifikant sinkt gegenüber initialer „full“ Referenz
+      // (nur wenn stabil oder zumindest plausibel)
+      const float w = w_filt;
+      const float drop = currentFullWeight - w;
+
+      // wenn Glas entfernt wird -> wieder idle (ohne Fehler)
+      if (haveRead && isStable && fabsf(w) < 1.0f) {
+        oledMsg2("Glas weg", "Warte auf Glas");
+        glass = GlassKind::NONE;
+        ledsSetMode(LedMode::OK_ALT_GB);
+        setState(State::IDLE_WAIT_GLASS);
+        break;
+      }
+
+      // Startbedingung
+      if (haveRead && drop >= START_DROP_G) {
+        tStartMs = now;
+        timingStartWeight = w;
+        minDuringTiming = w;
+        ledsSetMode(LedMode::TIMING_BLUE_BLINK);
+        oledMsg2("Laeuft...", "Trinken...");
+        setState(State::TIMING);
+      } else {
+        // Statusanzeige
+        const bool eq = isEqualFill(glass, currentFullWeight);
+        oledWeight(w_filt, isStable, glass, eq);
+      }
+      break;
+    }
+
+    case State::TIMING: {
+      // Stop wenn Gewicht „signifikant“ steigt gegenüber dem Minimum seit Start
+      const float w = w_filt;
+      minDuringTiming = min(minDuringTiming, w);
+
+      const float riseFromMin = w - minDuringTiming;
+
+      // Wenn Glas komplett weg -> wir stoppen trotzdem (als „Ende“)
+      if (haveRead && isStable && fabsf(w) < 1.0f) {
+        const uint32_t dt = now - tStartMs;
+        char buf[24];
+        snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
+        oledMsg2("Fertig", buf);
+
+        // Referenz speichern für „gleich voll“-Vergleich
+        storeRef(glass, currentFullWeight);
+
+        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
+        showUntilMs = now + 6000;
+        setState(State::SHOW_RESULT);
+        break;
+      }
+
+      // Normale Stop-Bedingung
+      if (haveRead && riseFromMin >= STOP_RISE_G) {
+        const uint32_t dt = now - tStartMs;
+        char buf[24];
+        snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
+        oledMsg2("Fertig", buf);
+
+        storeRef(glass, currentFullWeight);
+
+        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
+        showUntilMs = now + 6000;
+        setState(State::SHOW_RESULT);
+      }
+      break;
+    }
+
+    case State::SHOW_RESULT: {
+      if (now >= showUntilMs) {
+        // zurück in Grundzustand
+        oledMsg2("Warte auf Glas", "...");
+        ledsSetMode(LedMode::OK_ALT_GB);
+        glass = GlassKind::NONE;
+        setState(State::IDLE_WAIT_GLASS);
+      }
+      break;
+    }
+
+    case State::STANDBY: {
+      // sanfter LED-Effekt läuft über ledsService()
+      // Aufwachen wenn Gewicht deutlich != 0 (oder Stabilität)
+      if (haveRead && fabsf(w_filt) > 3.0f) {
+        oledMsg2("Aktiv", "Warte auf Glas");
+        ledsSetMode(LedMode::OK_ALT_GB);
+        setState(State::IDLE_WAIT_GLASS);
+      }
+      break;
+    }
+
+    case State::ERROR_RECOVER: {
+      // Recovery: nach Wartezeit neu tarieren, aber NUR wenn „eher leer“
+      // (sonst würde mitten im Objekt wieder tarieren)
+      if (now >= recoverUntilMs) {
+        if (haveRead && isStable && fabsf(w_filt) < 2.0f) {
+          Serial.println("[RECOVER] Tare (empty & stable).");
+          oledMsg2("Recovery", "Nullung...");
+          tareBoth();
+          err = ErrCode::OK;
+          oledMsg2("OK", "Warte auf Glas");
+          ledsSetMode(LedMode::OK_ALT_GB);
+          glass = GlassKind::NONE;
+          setState(State::IDLE_WAIT_GLASS);
+        } else {
+          // bleibt im Fehler, zeigt Hinweis
+          Serial.println("[RECOVER] Waiting for empty/stable before tare...");
+          oledMsg2("Fehler", "Bitte leeren!");
+          recoverUntilMs = now + 700; // weiter prüfen
+        }
+      }
+      break;
+    }
+  }
+}
