@@ -494,6 +494,19 @@ static void setState(State s) {
   lastActionMs = millis();
 }
 
+static void finishTiming(uint32_t now, uint32_t elapsedMs) {
+  char buf[24];
+  snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(elapsedMs / 1000));
+  oledMsg2("Fertig", buf);
+
+  // Referenz speichern für „gleich voll“-Vergleich
+  storeRef(glass, currentFullWeight);
+
+  ledsSetMode(LedMode::GLASS_GREEN_SOLID);
+  showUntilMs = now + 6000;
+  setState(State::SHOW_RESULT);
+}
+
 /* =========================================================
    SETUP / LOOP
    ========================================================= */
@@ -678,31 +691,14 @@ void loop() {
       // Wenn Glas komplett weg -> wir stoppen trotzdem (als „Ende“)
       if (haveRead && isStable && fabsf(w) < 1.0f) {
         const uint32_t dt = now - tStartMs;
-        char buf[24];
-        snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
-        oledMsg2("Fertig", buf);
-
-        // Referenz speichern für „gleich voll“-Vergleich
-        storeRef(glass, currentFullWeight);
-
-        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
-        showUntilMs = now + 6000;
-        setState(State::SHOW_RESULT);
+        finishTiming(now, dt);
         break;
       }
 
       // Normale Stop-Bedingung
       if (haveRead && riseFromMin >= STOP_RISE_G) {
         const uint32_t dt = now - tStartMs;
-        char buf[24];
-        snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
-        oledMsg2("Fertig", buf);
-
-        storeRef(glass, currentFullWeight);
-
-        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
-        showUntilMs = now + 6000;
-        setState(State::SHOW_RESULT);
+        finishTiming(now, dt);
       }
       break;
     }
@@ -732,22 +728,30 @@ void loop() {
     case State::ERROR_RECOVER: {
       // Recovery: nach Wartezeit neu tarieren, aber NUR wenn „eher leer“
       // (sonst würde mitten im Objekt wieder tarieren)
-      if (now >= recoverUntilMs) {
-        if (haveRead && isStable && fabsf(w_filt) < 2.0f) {
-          Serial.println("[RECOVER] Tare (empty & stable).");
-          oledMsg2("Recovery", "Nullung...");
-          tareBoth();
-          err = ErrCode::OK;
-          oledMsg2("OK", "Warte auf Glas");
-          ledsSetMode(LedMode::OK_ALT_GB);
-          glass = GlassKind::NONE;
-          setState(State::IDLE_WAIT_GLASS);
-        } else {
-          // bleibt im Fehler, zeigt Hinweis
-          Serial.println("[RECOVER] Waiting for empty/stable before tare...");
-          oledMsg2("Fehler", "Bitte leeren!");
-          recoverUntilMs = now + 700; // weiter prüfen
-        }
+      const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < 2.0f;
+      const bool errorGone = (err == ErrCode::NEGATIVE)
+                               ? (haveRead && isStable && w_filt >= NEGATIVE_ERROR_G)
+                               : emptyAndStable;
+
+      // Wenn der Fehler nicht mehr anliegt, sofort zurück in den Grundzustand
+      if (emptyAndStable && (now >= recoverUntilMs || errorGone)) {
+        Serial.println("[RECOVER] Tare (empty & stable).");
+        char errLine[32];
+        snprintf(errLine, sizeof(errLine), "ERR war: %s", errToStr(err));
+        oledMsg2("Recovery", errLine);
+        tareBoth();
+        err = ErrCode::OK;
+        oledMsg2("OK", "Warte auf Glas");
+        ledsSetMode(LedMode::OK_ALT_GB);
+        glass = GlassKind::NONE;
+        setState(State::IDLE_WAIT_GLASS);
+      } else {
+        // bleibt im Fehler, zeigt Hinweis
+        Serial.println("[RECOVER] Waiting for empty/stable before tare...");
+        char errLine[32];
+        snprintf(errLine, sizeof(errLine), "Fehler: %s", errToStr(err));
+        oledMsg2(errLine, "Bitte leeren!");
+        recoverUntilMs = now + 700; // weiter prüfen
       }
       break;
     }
