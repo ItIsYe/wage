@@ -51,8 +51,9 @@ static constexpr uint32_t STABLE_WINDOW_MS= 800;   // Fenstergröße für Stabil
 static constexpr uint32_t STABLE_HOLD_MS  = 800;   // Wie lange stabil bleiben muss
 
 // Fehlergrenzen / Autorecovery
-static constexpr float NEGATIVE_ERROR_G   = -0.5f; // Unterhalb -> Fehler + Recovery
-static constexpr uint32_t RECOVER_WAIT_MS = 1200;  // Wartezeit vor erneutem Tare nach Fehler
+static constexpr float NEGATIVE_CLAMP_G   = -3.0f;  // Werte leicht unter 0 werden auf 0 gesetzt
+static constexpr float NEGATIVE_ERROR_G   = -15.0f; // Nur bei stark negativen Werten -> Fehler + Recovery
+static constexpr uint32_t RECOVER_WAIT_MS = 1200;   // Wartezeit vor erneutem Tare nach Fehler
 
 /* =========================================================
    HARDWARE CONFIG
@@ -457,6 +458,15 @@ static void updateStability(float val) {
   }
 }
 
+static float sanitizeNegativeWeight(float val) {
+  // Kleine negative Drifts werden auf 0 gesetzt, um Minuswerte auszumerzen,
+  // ohne Stabilität/Filter zu beeinträchtigen. Nur stark negative Werte lösen Fehler aus.
+  if (val < 0.0f && val >= NEGATIVE_CLAMP_G) {
+    return 0.0f;
+  }
+  return val;
+}
+
 static bool readScalesOnce(uint32_t& raw1, uint32_t& raw2) {
   // HX711 library: read_average returns long; safe cast to uint32_t for printing
   if (!scale1.is_ready() || !scale2.is_ready()) return false;
@@ -476,6 +486,9 @@ static bool readScalesOnce(uint32_t& raw1, uint32_t& raw2) {
 
   updateFilter(w_avg);
   updateStability(w_filt);
+
+  // Kleine negative Ausschläge glätten, ohne extreme Fälle zu verdecken
+  w_filt = sanitizeNegativeWeight(w_filt);
 
   return true;
 }
