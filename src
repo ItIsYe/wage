@@ -5,6 +5,56 @@
 #include <Adafruit_SSD1306.h>
 
 /* =========================================================
+   BENUTZER-EINSTELLUNGEN (alles Wichtige direkt hier ändern)
+   ========================================================= */
+
+// Debug-Modus: true = OLED zeigt dauerhaft Live-Gewichte (auch während anderer Zustände)
+static constexpr bool DEBUG_MODE = false;
+
+// Kalibrierfaktoren für die beiden Wägezellen
+static float CAL1 = -9000.0f;   // Zelle 1
+static float CAL2 = -9000.0f;   // Zelle 2
+
+// Falls beide Zellen „verkehrt herum“ laufen (Gewicht wird negativ), hier invertieren
+static constexpr bool INVERT1 = true;
+static constexpr bool INVERT2 = true;
+
+// Glas-Gewichtsbereiche (in Gramm) für die Erkennung
+static constexpr float GLASS_02_MIN = 150.0f; // 0.2L Minimum
+static constexpr float GLASS_02_MAX = 350.0f; // 0.2L Maximum
+static constexpr float GLASS_07_MIN = 500.0f; // 0.7L Minimum
+static constexpr float GLASS_07_MAX = 950.0f; // 0.7L Maximum
+static constexpr uint32_t UNKNOWN_LEARN_MS = 2200;  // Wartezeit, bis ein unbekanntes Glas angelernt wird
+static constexpr float UNKNOWN_MATCH_TOL_G = 15.0f; // Toleranz um das anglernte Gewicht herum
+static constexpr uint8_t MAX_LEARNED_GLASSES = 4;   // Wie viele unbekannte Gläser pro Lauf angelernt werden dürfen
+
+// Toleranz, wann ein Glas als „gleich voll“ gilt (Delta in Gramm)
+static constexpr float FILL_TOL_G = 8.0f;
+
+// Start-/Stop-Schwellen für die Zeitmessung
+static constexpr float START_DROP_G   = 10.0f;   // Start, wenn Gewicht um >=10g fällt
+static constexpr float STOP_RISE_G    = 10.0f;   // Stop, wenn Gewicht ab Minimum wieder >=10g steigt
+static constexpr uint32_t READY_AFTER_DETECT_MS = 2000; // Wartezeit nach Glaserkennung bis „bereit“
+static constexpr uint32_t SHOW_RESULT_MS        = 6000; // Wie lange das Ergebnis angezeigt wird
+
+// Anzeige- und Wartezeiten
+static constexpr uint32_t BOOT_MSG_MS     = 1200; // Starttext vor Nullung
+static constexpr uint16_t TARE_SAMPLES    = 25;   // Samples fürs Tarieren
+static constexpr uint32_t STANDBY_AFTER_MS = 25000; // Idle-Dauer bis Standby
+static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 200; // LED-Twinkle Minimum
+static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 900; // LED-Twinkle Maximum
+
+// Filter- und Stabilitäts-Settings
+static constexpr uint8_t  MA_N = 10;            // Moving-Average-Fenster
+static constexpr float    STABLE_BAND_G   = 2.0f;  // Schwankung im Fenster, die als stabil gilt
+static constexpr uint32_t STABLE_WINDOW_MS= 800;   // Fenstergröße für Stabilität
+static constexpr uint32_t STABLE_HOLD_MS  = 800;   // Wie lange stabil bleiben muss
+
+// Fehlergrenzen / Autorecovery
+static constexpr float NEGATIVE_ERROR_G   = -0.5f; // Unterhalb -> Fehler + Recovery
+static constexpr uint32_t RECOVER_WAIT_MS = 1200;  // Wartezeit vor erneutem Tare nach Fehler
+
+/* =========================================================
    HARDWARE CONFIG
    ========================================================= */
 
@@ -38,58 +88,11 @@ static constexpr uint8_t RED_N   = sizeof(RED_PINS)   / sizeof(RED_PINS[0]);
 HX711 scale1;
 HX711 scale2;
 
-// Kalibrierfaktoren (musst du final noch exakt einstellen)
-static float CAL1 = -9000.0f;
-static float CAL2 = -9000.0f;
-
-// Wenn bei Gewicht beide Zellen ins Minus gehen -> software invertieren
-static constexpr bool INVERT1 = true;
-static constexpr bool INVERT2 = true;
-
 /* =========================================================
    DISPLAY
    ========================================================= */
 
 Adafruit_SSD1306 display(SCREEN_W, SCREEN_H, &Wire, -1);
-
-/* =========================================================
-   TUNING / THRESHOLDS (Konzept-Werte, später feinjustieren)
-   ========================================================= */
-
-// Filter: moving average über N Samples (pro Loop aktualisiert)
-static constexpr uint8_t  MA_N = 10;
-
-// Stabilitätsdetektor: wenn (max-min) im Fenster <= STABLE_BAND_G über STABLE_HOLD_MS
-static constexpr float    STABLE_BAND_G   = 2.0f;      // „ruhig“ wenn Schwankung klein
-static constexpr uint32_t STABLE_WINDOW_MS= 800;       // Fenster zur min/max Ermittlung
-static constexpr uint32_t STABLE_HOLD_MS  = 800;       // wie lang stabil bleiben muss
-
-// Start-Nullen
-static constexpr uint32_t BOOT_MSG_MS     = 1200;      // Anzeige vor Nullung
-static constexpr uint16_t TARE_SAMPLES    = 25;        // für saubere Tara
-
-// Negativ-Fehler / Autorecovery
-static constexpr float NEGATIVE_ERROR_G   = -0.5f;     // unterhalb => Fehler + Recovery
-static constexpr uint32_t RECOVER_WAIT_MS = 1200;
-
-// Glas-Erkennung (RANGES in Gramm: HIER anpassen!)
-static constexpr float GLASS_02_MIN = 150.0f;
-static constexpr float GLASS_02_MAX = 350.0f;
-static constexpr float GLASS_07_MIN = 500.0f;
-static constexpr float GLASS_07_MAX = 950.0f;
-
-// Füllstand „gleich voll“ (Toleranz)
-static constexpr float FILL_TOL_G = 8.0f;
-
-// Zeitmessung
-static constexpr float START_DROP_G   = 10.0f;   // Start wenn Gewicht um >=10g fällt
-static constexpr float STOP_RISE_G    = 10.0f;   // Stop wenn Gewicht wieder um >=10g steigt
-static constexpr uint32_t READY_AFTER_DETECT_MS = 2000;
-
-// Standby
-static constexpr uint32_t STANDBY_AFTER_MS = 25000;  // wenn nix passiert -> Standby
-static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 200;
-static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 900;
 
 /* =========================================================
    ERROR CODES
@@ -153,11 +156,26 @@ static uint32_t stableSince = 0;
 static bool isStable = false;
 
 // glass ref weights
-enum class GlassKind : uint8_t { NONE=0, G02, G07 };
-static GlassKind glass = GlassKind::NONE;
+enum class GlassKind : uint8_t { NONE=0, G02, G07, LEARNED };
 
-static float ref02 = NAN; // last measured full weight for 0.2
-static float ref07 = NAN; // last measured full weight for 0.7
+struct GlassProfile {
+  GlassKind kind;
+  float minWeight;
+  float maxWeight;
+  const char* label;
+  float lastFullRef;
+  bool inUse;
+};
+
+static GlassProfile builtinGlasses[] = {
+  {GlassKind::G02, GLASS_02_MIN, GLASS_02_MAX, "Glas 0.2L", NAN, true},
+  {GlassKind::G07, GLASS_07_MIN, GLASS_07_MAX, "Glas 0.7L", NAN, true},
+};
+
+static char learnedLabels[MAX_LEARNED_GLASSES][14];
+static GlassProfile learnedGlasses[MAX_LEARNED_GLASSES];
+
+static GlassProfile* activeGlass = nullptr;
 static float currentFullWeight = 0.0f;
 
 // timing
@@ -171,6 +189,10 @@ static float minDuringTiming = 1e9f;
 
 // standby
 static uint32_t lastActionMs = 0;
+
+// unknown glass learning
+static uint32_t learnCandidateSince = 0;
+static float learnCandidateWeight = 0.0f;
 
 // recovery
 static uint32_t recoverUntilMs = 0;
@@ -305,16 +327,16 @@ static void oledMsg2(const char* line1, const char* line2) {
   display.display();
 }
 
-static void oledWeight(float g, bool stable, GlassKind kind, bool equalFull) {
+static void oledWeight(float g, bool stable, const GlassProfile* gProfile, bool equalFull) {
   if (!display.width()) return;
   display.clearDisplay();
   display.setTextSize(1);
   display.setCursor(0,0);
 
   // Zeile 1: Status
-  if (kind == GlassKind::G02) display.print("Glas: 0.2L ");
-  else if (kind == GlassKind::G07) display.print("Glas: 0.7L ");
-  else display.print("Glas: --  ");
+  display.print("Glas: ");
+  display.print(glassLabel(gProfile));
+  display.print(" ");
 
   display.print(stable ? "STB" : "...");
   display.println();
@@ -329,6 +351,30 @@ static void oledWeight(float g, bool stable, GlassKind kind, bool equalFull) {
   display.setTextSize(1);
   display.setCursor(100, 0);
   display.print(equalFull ? "=OK" : "!=");
+
+  display.display();
+}
+
+static void oledDebugWeights() {
+  if (!display.width()) return;
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0,0);
+
+  display.print("DBG R1:");
+  display.print(w_raw1, 1);
+  display.print(" R2:");
+  display.println(w_raw2, 1);
+
+  display.print("AVG:");
+  display.print(w_avg, 1);
+  display.print(" FILT:");
+  display.println(w_filt, 1);
+
+  display.print("STB:");
+  display.print(isStable ? "Y" : "N");
+  display.print(" S:");
+  display.print((int)state);
 
   display.display();
 }
@@ -350,6 +396,8 @@ static void serialPrintAll(uint32_t raw1, uint32_t raw2) {
   Serial.print(isStable ? 1 : 0);
   Serial.print("  STATE:");
   Serial.print((int)state);
+  Serial.print("  GLS:");
+  Serial.print(glassLabel(activeGlass));
   Serial.print("  ERR:");
   Serial.println(errToStr(err));
 }
@@ -451,28 +499,78 @@ static void tareBoth() {
 /* =========================================================
    GLASS DETECTION + FILL COMPARE
    ========================================================= */
-
-static GlassKind detectGlass(float stableWeight) {
-  if (stableWeight >= GLASS_02_MIN && stableWeight <= GLASS_02_MAX) return GlassKind::G02;
-  if (stableWeight >= GLASS_07_MIN && stableWeight <= GLASS_07_MAX) return GlassKind::G07;
-  return GlassKind::NONE;
+static const char* glassLabel(const GlassProfile* g) {
+  if (!g) return "--";
+  return g->label;
 }
 
-static bool isEqualFill(GlassKind k, float weight) {
-  if (k == GlassKind::G02) {
-    if (!isfinite(ref02)) return true; // first time = OK
-    return fabsf(weight - ref02) <= FILL_TOL_G;
+static GlassProfile* detectGlass(float stableWeight) {
+  for (GlassProfile& g : builtinGlasses) {
+    if (stableWeight >= g.minWeight && stableWeight <= g.maxWeight) return &g;
   }
-  if (k == GlassKind::G07) {
-    if (!isfinite(ref07)) return true;
-    return fabsf(weight - ref07) <= FILL_TOL_G;
+
+  for (uint8_t i=0;i<MAX_LEARNED_GLASSES;i++) {
+    GlassProfile& g = learnedGlasses[i];
+    if (!g.inUse) continue;
+    if (stableWeight >= g.minWeight && stableWeight <= g.maxWeight) return &g;
   }
-  return false;
+
+  return nullptr;
 }
 
-static void storeRef(GlassKind k, float weight) {
-  if (k == GlassKind::G02) ref02 = weight;
-  if (k == GlassKind::G07) ref07 = weight;
+static GlassProfile* learnNewGlass(float stableWeight) {
+  for (uint8_t i=0;i<MAX_LEARNED_GLASSES;i++) {
+    if (learnedGlasses[i].inUse) continue;
+
+    snprintf(learnedLabels[i], sizeof(learnedLabels[i]), "Custom %u", i + 1);
+    learnedGlasses[i] = {
+      GlassKind::LEARNED,
+      stableWeight - UNKNOWN_MATCH_TOL_G,
+      stableWeight + UNKNOWN_MATCH_TOL_G,
+      learnedLabels[i],
+      NAN,
+      true
+    };
+    return &learnedGlasses[i];
+  }
+  return nullptr;
+}
+
+static bool isEqualFill(const GlassProfile* g, float weight) {
+  if (!g) return true;
+  if (!isfinite(g->lastFullRef)) return true; // first time = OK
+  return fabsf(weight - g->lastFullRef) <= FILL_TOL_G;
+}
+
+static void storeRef(GlassProfile* g, float weight) {
+  if (!g) return;
+  g->lastFullRef = weight;
+}
+
+static void resetLearnCandidate() {
+  learnCandidateSince = 0;
+  learnCandidateWeight = 0.0f;
+}
+
+static void trackLearnCandidate(float stableWeight, uint32_t now) {
+  if (learnCandidateSince == 0 || fabsf(stableWeight - learnCandidateWeight) > UNKNOWN_MATCH_TOL_G) {
+    learnCandidateSince = now;
+    learnCandidateWeight = stableWeight;
+  }
+}
+
+static void finalizeTiming(uint32_t now) {
+  const uint32_t dt = now - tStartMs;
+  char buf[24];
+  snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
+  oledMsg2("Fertig", buf);
+
+  // Referenz speichern für „gleich voll“-Vergleich
+  storeRef(activeGlass, currentFullWeight);
+
+  ledsSetMode(LedMode::GLASS_GREEN_SOLID);
+  showUntilMs = now + SHOW_RESULT_MS;
+  setState(State::SHOW_RESULT);
 }
 
 /* =========================================================
@@ -573,7 +671,8 @@ void loop() {
       oledMsg2("Nullung OK", "Warte auf Glas");
       ledsSetMode(LedMode::OK_ALT_GB);
 
-      glass = GlassKind::NONE;
+      activeGlass = nullptr;
+      resetLearnCandidate();
       setState(State::IDLE_WAIT_GLASS);
       break;
     }
@@ -595,38 +694,80 @@ void loop() {
 
         // „nichts drauf“ -> OLED zeigt Gewicht, equalFull irrelevant
         if (fabsf(w) < 1.0f) {
-          oledWeight(w, true, GlassKind::NONE, true);
+          resetLearnCandidate();
+          oledWeight(w, true, nullptr, true);
           break;
         }
 
-        GlassKind k = detectGlass(w);
-        if (k == GlassKind::NONE) {
-          // Wenn stabil, aber kein bekanntes Glas: Fehler
-          setError(ErrCode::GLASS_UNKNOWN);
+        GlassProfile* found = detectGlass(w);
+        if (!found) {
+          trackLearnCandidate(w, now);
+          if (learnCandidateSince != 0 && (now - learnCandidateSince) >= UNKNOWN_LEARN_MS) {
+            GlassProfile* newly = learnNewGlass(w);
+            if (newly) {
+              activeGlass = newly;
+              currentFullWeight = w;
+              detectAtMs = now;
+              oledMsg2("Neues Glas", newly->label);
+              ledsSetMode(LedMode::GLASS_GREEN_SOLID);
+              setState(State::GLASS_DETECTED);
+            } else {
+              setError(ErrCode::GLASS_UNKNOWN);
+            }
+          } else {
+            oledWeight(w, true, nullptr, true);
+          }
           break;
         }
+
+        resetLearnCandidate();
 
         // Glas erkannt
-        glass = k;
+        activeGlass = found;
         currentFullWeight = w;
         detectAtMs = now;
 
-        const bool eq = isEqualFill(glass, currentFullWeight);
-        oledWeight(currentFullWeight, true, glass, eq);
+        const bool eq = isEqualFill(activeGlass, currentFullWeight);
+        oledWeight(currentFullWeight, true, activeGlass, eq);
 
         ledsSetMode(LedMode::GLASS_GREEN_SOLID);
         setState(State::GLASS_DETECTED);
       } else if (haveRead) {
         // live Anzeige (stabil oder nicht)
-        oledWeight(w_filt, isStable, GlassKind::NONE, true);
+        oledWeight(w_filt, isStable, nullptr, true);
       }
       break;
     }
 
     case State::GLASS_DETECTED: {
+      // Glas sollte liegen bleiben; wenn weg -> zurück
+      if (haveRead && isStable) {
+        if (fabsf(w_filt) < 1.0f) {
+          oledMsg2("Glas weg", "Warte auf Glas");
+          ledsSetMode(LedMode::OK_ALT_GB);
+          activeGlass = nullptr;
+          resetLearnCandidate();
+          setState(State::IDLE_WAIT_GLASS);
+          break;
+        }
+
+        GlassProfile* maybe = detectGlass(w_filt);
+        if (!maybe && activeGlass && fabsf(w_filt - currentFullWeight) <= UNKNOWN_MATCH_TOL_G) {
+          maybe = activeGlass;
+        }
+        if (!maybe) {
+          setError(ErrCode::GLASS_UNKNOWN);
+          break;
+        }
+
+        // Tracking aktualisieren, falls leicht anders gewogen wird
+        activeGlass = maybe;
+        currentFullWeight = w_filt;
+      }
+
       // Nach 2s -> bereit
-      const bool eq = isEqualFill(glass, currentFullWeight);
-      oledWeight(w_filt, isStable, glass, eq);
+      const bool eq = isEqualFill(activeGlass, currentFullWeight);
+      oledWeight(w_filt, isStable, activeGlass, eq);
 
       if (now - detectAtMs >= READY_AFTER_DETECT_MS) {
         oledMsg2("Bereit", "Zeitmessung...");
@@ -646,7 +787,8 @@ void loop() {
       // wenn Glas entfernt wird -> wieder idle (ohne Fehler)
       if (haveRead && isStable && fabsf(w) < 1.0f) {
         oledMsg2("Glas weg", "Warte auf Glas");
-        glass = GlassKind::NONE;
+        activeGlass = nullptr;
+        resetLearnCandidate();
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
         break;
@@ -662,8 +804,8 @@ void loop() {
         setState(State::TIMING);
       } else {
         // Statusanzeige
-        const bool eq = isEqualFill(glass, currentFullWeight);
-        oledWeight(w_filt, isStable, glass, eq);
+        const bool eq = isEqualFill(activeGlass, currentFullWeight);
+        oledWeight(w_filt, isStable, activeGlass, eq);
       }
       break;
     }
@@ -677,32 +819,13 @@ void loop() {
 
       // Wenn Glas komplett weg -> wir stoppen trotzdem (als „Ende“)
       if (haveRead && isStable && fabsf(w) < 1.0f) {
-        const uint32_t dt = now - tStartMs;
-        char buf[24];
-        snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
-        oledMsg2("Fertig", buf);
-
-        // Referenz speichern für „gleich voll“-Vergleich
-        storeRef(glass, currentFullWeight);
-
-        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
-        showUntilMs = now + 6000;
-        setState(State::SHOW_RESULT);
+        finalizeTiming(now);
         break;
       }
 
       // Normale Stop-Bedingung
       if (haveRead && riseFromMin >= STOP_RISE_G) {
-        const uint32_t dt = now - tStartMs;
-        char buf[24];
-        snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
-        oledMsg2("Fertig", buf);
-
-        storeRef(glass, currentFullWeight);
-
-        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
-        showUntilMs = now + 6000;
-        setState(State::SHOW_RESULT);
+        finalizeTiming(now);
       }
       break;
     }
@@ -712,7 +835,8 @@ void loop() {
         // zurück in Grundzustand
         oledMsg2("Warte auf Glas", "...");
         ledsSetMode(LedMode::OK_ALT_GB);
-        glass = GlassKind::NONE;
+        activeGlass = nullptr;
+        resetLearnCandidate();
         setState(State::IDLE_WAIT_GLASS);
       }
       break;
@@ -740,7 +864,8 @@ void loop() {
           err = ErrCode::OK;
           oledMsg2("OK", "Warte auf Glas");
           ledsSetMode(LedMode::OK_ALT_GB);
-          glass = GlassKind::NONE;
+          activeGlass = nullptr;
+          resetLearnCandidate();
           setState(State::IDLE_WAIT_GLASS);
         } else {
           // bleibt im Fehler, zeigt Hinweis
@@ -751,5 +876,10 @@ void loop() {
       }
       break;
     }
+  }
+
+  // Debug-Anzeige nach der Logik, damit immer die aktuellen Gewichte sichtbar sind
+  if (DEBUG_MODE) {
+    oledDebugWeights();
   }
 }
