@@ -790,7 +790,7 @@ void loop() {
       oledWeight(w_filt, isStable, activeGlass, eq);
 
       if (now - detectAtMs >= READY_AFTER_DETECT_MS) {
-        oledMsg2("Bereit", "Zeitmessung...");
+        oledMsg2("Bereit", "Zeitnahme starten");
         readyAtMs = now;
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::READY_FOR_TIMING);
@@ -822,10 +822,6 @@ void loop() {
         ledsSetMode(LedMode::TIMING_BLUE_BLINK);
         oledMsg2("Laeuft...", "Trinken...");
         setState(State::TIMING);
-      } else {
-        // Statusanzeige
-        const bool eq = isEqualFill(activeGlass, currentFullWeight);
-        oledWeight(w_filt, isStable, activeGlass, eq);
       }
       break;
     }
