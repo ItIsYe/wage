@@ -214,6 +214,13 @@ static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
 
 /* =========================================================
+   FORWARD DECLARATIONS
+   ========================================================= */
+static const char* glassLabel(const GlassProfile* g);
+static void setState(State s);
+static void finalizeTiming(uint32_t now);
+
+/* =========================================================
    HELPERS
    ========================================================= */
 
