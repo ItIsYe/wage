@@ -34,6 +34,8 @@ static constexpr float FILL_TOL_G = 8.0f;
 // Start-/Stop-Schwellen für die Zeitmessung
 static constexpr float START_DROP_G   = 10.0f;   // Start, wenn Gewicht um >=10g fällt
 static constexpr float STOP_RISE_G    = 10.0f;   // Stop, wenn Gewicht ab Minimum wieder >=10g steigt
+static constexpr uint32_t DROP_HOLD_MS = 150;    // Wie lange ein Drop anliegen muss, bevor gestartet wird
+static constexpr float GLASS_RANGE_TOL_G = 20.0f; // Toleranz beim Zurückstellen (Stop-Check)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 2000; // Wartezeit nach Glaserkennung bis „bereit“
 static constexpr uint32_t SHOW_RESULT_MS        = 6000; // Wie lange das Ergebnis angezeigt wird
 
@@ -187,6 +189,7 @@ static uint32_t showUntilMs= 0;
 
 static float timingStartWeight = 0.0f;
 static float minDuringTiming = 1e9f;
+static uint32_t dropSinceMs = 0;
 
 // standby
 static uint32_t lastActionMs = 0;
@@ -581,8 +584,9 @@ static void trackLearnCandidate(float stableWeight, uint32_t now) {
 
 static void finalizeTiming(uint32_t now) {
   const uint32_t dt = now - tStartMs;
+  const float seconds = dt / 1000.0f;
   char buf[24];
-  snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
+  snprintf(buf, sizeof(buf), "Zeit: %.1fs", seconds);
   oledMsg2("Fertig", buf);
 
   // Referenz speichern für „gleich voll“-Vergleich
@@ -789,9 +793,10 @@ void loop() {
       const bool eq = isEqualFill(activeGlass, currentFullWeight);
       oledWeight(w_filt, isStable, activeGlass, eq);
 
-      if (now - detectAtMs >= READY_AFTER_DETECT_MS) {
+      if (haveRead && isStable && (now - detectAtMs >= READY_AFTER_DETECT_MS)) {
         oledMsg2("Bereit", "Zeitmessung...");
         readyAtMs = now;
+        dropSinceMs = 0;
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::READY_FOR_TIMING);
       }
@@ -800,7 +805,7 @@ void loop() {
 
     case State::READY_FOR_TIMING: {
       // Start wenn Gewicht signifikant sinkt gegenüber initialer „full“ Referenz
-      // (nur wenn stabil oder zumindest plausibel)
+      // nur, wenn die Messung stabil ist
       const float w = w_filt;
       const float drop = currentFullWeight - w;
 
@@ -814,50 +819,57 @@ void loop() {
         break;
       }
 
-      // Startbedingung
+      // Startbedingung: signifikanter Drop muss kurz anliegen, auch wenn die Waage während des Abhebens wackelt
       if (haveRead && drop >= START_DROP_G) {
-        tStartMs = now;
-        timingStartWeight = w;
-        minDuringTiming = w;
-        ledsSetMode(LedMode::TIMING_BLUE_BLINK);
-        oledMsg2("Laeuft...", "Trinken...");
-        setState(State::TIMING);
+        if (dropSinceMs == 0) dropSinceMs = now;
+        if (now - dropSinceMs >= DROP_HOLD_MS) {
+          tStartMs = now;
+          timingStartWeight = w;
+          minDuringTiming = w;
+          dropSinceMs = 0;
+          ledsSetMode(LedMode::TIMING_BLUE_BLINK);
+          oledMsg2("Laeuft...", "Trinken...");
+          setState(State::TIMING);
+        }
       } else {
-        // Statusanzeige
-        const bool eq = isEqualFill(activeGlass, currentFullWeight);
-        oledWeight(w_filt, isStable, activeGlass, eq);
+        // Anzeige „Bereit" beibehalten, damit vor dem Start klar ersichtlich ist,
+        // dass die Zeitmessung wartet. Keine Live-Gewichtsaktualisierung nötig.
+        dropSinceMs = 0;
       }
       break;
     }
 
     case State::TIMING: {
-      // Stop wenn Gewicht „signifikant“ steigt gegenüber dem Minimum seit Start
+      // Stop nur, wenn das Gewicht nach Rueckstellen des Glases stabil ansteigt
       const float w = w_filt;
       minDuringTiming = min(minDuringTiming, w);
 
       const float riseFromMin = w - minDuringTiming;
+      const bool glassBackInRange = activeGlass &&
+        (w >= (activeGlass->minWeight - GLASS_RANGE_TOL_G)) &&
+        (w <= (activeGlass->maxWeight + GLASS_RANGE_TOL_G));
 
-      // Wenn Glas komplett weg -> wir stoppen trotzdem (als „Ende“)
-      if (haveRead && isStable && fabsf(w) < 1.0f) {
-        finalizeTiming(now);
-        break;
-      }
-
-      // Normale Stop-Bedingung
-      if (haveRead && riseFromMin >= STOP_RISE_G) {
+      if (haveRead && isStable && glassBackInRange && riseFromMin >= STOP_RISE_G) {
         finalizeTiming(now);
       }
       break;
     }
 
     case State::SHOW_RESULT: {
-      if (now >= showUntilMs) {
-        // zurück in Grundzustand
+      const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < 1.0f;
+
+      if (now < showUntilMs) {
+        // Ergebnis stehen lassen, auch wenn das Glas sofort entfernt wurde
+      } else if (emptyAndStable) {
+        // zurück in Grundzustand erst, wenn wirklich leer
         oledMsg2("Warte auf Glas", "...");
         ledsSetMode(LedMode::OK_ALT_GB);
         activeGlass = nullptr;
         resetLearnCandidate();
         setState(State::IDLE_WAIT_GLASS);
+      } else {
+        // nach Anzeige der Zeit zum Leerräumen auffordern
+        oledMsg2("Bitte leeren", "Glas entfernen");
       }
       break;
     }
