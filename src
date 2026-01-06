@@ -790,7 +790,7 @@ void loop() {
       const bool eq = isEqualFill(activeGlass, currentFullWeight);
       oledWeight(w_filt, isStable, activeGlass, eq);
 
-      if (now - detectAtMs >= READY_AFTER_DETECT_MS) {
+      if (haveRead && isStable && (now - detectAtMs >= READY_AFTER_DETECT_MS)) {
         oledMsg2("Bereit", "Zeitmessung...");
         readyAtMs = now;
         ledsSetMode(LedMode::OK_ALT_GB);
@@ -801,7 +801,7 @@ void loop() {
 
     case State::READY_FOR_TIMING: {
       // Start wenn Gewicht signifikant sinkt gegenüber initialer „full“ Referenz
-      // (nur wenn stabil oder zumindest plausibel)
+      // nur, wenn die Messung stabil ist
       const float w = w_filt;
       const float drop = currentFullWeight - w;
 
@@ -816,7 +816,7 @@ void loop() {
       }
 
       // Startbedingung
-      if (haveRead && drop >= START_DROP_G) {
+      if (haveRead && isStable && drop >= START_DROP_G) {
         tStartMs = now;
         timingStartWeight = w;
         minDuringTiming = w;
@@ -831,20 +831,14 @@ void loop() {
     }
 
     case State::TIMING: {
-      // Stop wenn Gewicht „signifikant“ steigt gegenüber dem Minimum seit Start
+      // Stop nur, wenn das Gewicht nach Rueckstellen des Glases stabil ansteigt
       const float w = w_filt;
       minDuringTiming = min(minDuringTiming, w);
 
       const float riseFromMin = w - minDuringTiming;
 
-      // Wenn Glas komplett weg -> wir stoppen trotzdem (als „Ende“)
-      if (haveRead && isStable && fabsf(w) < 1.0f) {
-        finalizeTiming(now);
-        break;
-      }
-
-      // Normale Stop-Bedingung
-      if (haveRead && riseFromMin >= STOP_RISE_G) {
+      const bool glassPresent = fabsf(w) > 5.0f; // Verhindert Abbruch waehrend das Glas in der Hand ist
+      if (haveRead && isStable && glassPresent && riseFromMin >= STOP_RISE_G) {
         finalizeTiming(now);
       }
       break;
