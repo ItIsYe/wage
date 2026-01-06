@@ -581,8 +581,9 @@ static void trackLearnCandidate(float stableWeight, uint32_t now) {
 
 static void finalizeTiming(uint32_t now) {
   const uint32_t dt = now - tStartMs;
+  const float seconds = dt / 1000.0f;
   char buf[24];
-  snprintf(buf, sizeof(buf), "Zeit: %lus", (unsigned long)(dt/1000));
+  snprintf(buf, sizeof(buf), "Zeit: %.1fs", seconds);
   oledMsg2("Fertig", buf);
 
   // Referenz speichern für „gleich voll“-Vergleich
@@ -850,13 +851,18 @@ void loop() {
     }
 
     case State::SHOW_RESULT: {
-      if (now >= showUntilMs) {
-        // zurück in Grundzustand
+      const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < 1.0f;
+
+      if (emptyAndStable) {
+        // zurück in Grundzustand erst, wenn wirklich leer
         oledMsg2("Warte auf Glas", "...");
         ledsSetMode(LedMode::OK_ALT_GB);
         activeGlass = nullptr;
         resetLearnCandidate();
         setState(State::IDLE_WAIT_GLASS);
+      } else if (now >= showUntilMs) {
+        // nach Anzeige der Zeit zum Leerräumen auffordern
+        oledMsg2("Bitte leeren", "Glas entfernen");
       }
       break;
     }
