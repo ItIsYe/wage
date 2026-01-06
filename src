@@ -823,9 +823,8 @@ void loop() {
         oledMsg2("Laeuft...", "Trinken...");
         setState(State::TIMING);
       } else {
-        // Statusanzeige
-        const bool eq = isEqualFill(activeGlass, currentFullWeight);
-        oledWeight(w_filt, isStable, activeGlass, eq);
+        // Anzeige „Bereit" beibehalten, damit vor dem Start klar ersichtlich ist,
+        // dass die Zeitmessung wartet. Keine Live-Gewichtsaktualisierung nötig.
       }
       break;
     }
