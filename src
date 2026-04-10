@@ -61,7 +61,7 @@ static constexpr bool INVERT1 = true;
 static constexpr bool INVERT2 = true;
 
 // Objekterkennung (g)
-static constexpr float OBJECT_PRESENT_G = 10.0f;
+static constexpr float OBJECT_PRESENT_G = 6.0f;
 
 // Prozentlogik relativ zum Referenzgewicht (% vom Referenzgewicht)
 static constexpr float START_DROP_PERCENT = 5.0f; // Start: Drop >= x%
