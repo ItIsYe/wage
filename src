@@ -219,8 +219,10 @@ enum class LedMode : uint8_t {
   ALL_OFF=0,
   ERROR_BLINK_RED,
   OK_ALT_GB,
+  READY_GREEN_BLINK,
   GLASS_GREEN_SOLID,
-  TIMING_BLUE_BLINK,
+  TIMING_BLUE_SPINNER,
+  RESULT_FLASH_GB_ONCE,
   STANDBY_TWINKLE
 };
 
@@ -228,6 +230,7 @@ static LedMode ledMode = LedMode::ALL_OFF;
 static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
+static uint8_t ledBlueSpinIdx = 0;
 
 /* =========================================================
    FORWARD DECLARATIONS
@@ -285,6 +288,8 @@ static void ledsSetMode(LedMode m) {
   ledMode = m;
   ledTickMs = millis();
   ledFlip = false;
+  if (m == LedMode::READY_GREEN_BLINK) ledFlip = true; // startet sichtbar "an"
+  ledBlueSpinIdx = 0;
   twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
 }
 
@@ -323,19 +328,42 @@ static void ledsService() {
       }
       break;
 
+    case LedMode::READY_GREEN_BLINK:
+      if (now - ledTickMs >= 450) {
+        ledTickMs = now;
+        ledFlip = !ledFlip;
+      }
+      allPins(RED_PINS,   RED_N,   false);
+      allPins(BLUE_PINS,  BLUE_N,  false);
+      allPins(GREEN_PINS, GREEN_N, ledFlip);
+      break;
+
     case LedMode::GLASS_GREEN_SOLID:
       allPins(RED_PINS,   RED_N,   false);
       allPins(BLUE_PINS,  BLUE_N,  false);
       allPins(GREEN_PINS, GREEN_N, true);
       break;
 
-    case LedMode::TIMING_BLUE_BLINK:
-      if (now - ledTickMs >= 250) {
+    case LedMode::TIMING_BLUE_SPINNER: {
+      static const uint8_t BLUE_SPIN_ORDER[BLUE_N] = {0, 2, 3, 1}; // oben -> rechts -> unten -> links
+      if (now - ledTickMs >= 180) {
         ledTickMs = now;
-        ledFlip = !ledFlip;
+        ledBlueSpinIdx = (uint8_t)((ledBlueSpinIdx + 1) % BLUE_N);
+      }
+      allPins(RED_PINS,   RED_N,   false);
+      allPins(GREEN_PINS, GREEN_N, false);
+      allPins(BLUE_PINS,  BLUE_N,  false);
+      digitalWrite(BLUE_PINS[BLUE_SPIN_ORDER[ledBlueSpinIdx]], HIGH);
+      break;
+    }
+
+    case LedMode::RESULT_FLASH_GB_ONCE:
+      if (now - ledTickMs < 200) {
         allPins(RED_PINS,   RED_N,   false);
-        allPins(GREEN_PINS, GREEN_N, false);
-        allPins(BLUE_PINS,  BLUE_N,  ledFlip);
+        allPins(GREEN_PINS, GREEN_N, true);
+        allPins(BLUE_PINS,  BLUE_N,  true);
+      } else {
+        ledsSetMode(LedMode::GLASS_GREEN_SOLID);
       }
       break;
 
@@ -598,7 +626,7 @@ static void finalizeTiming(uint32_t now) {
   snprintf(buf, sizeof(buf), "Zeit: %.1fs", dt / 1000.0f);
   oledMsg2("Fertig", buf);
 
-  ledsSetMode(LedMode::GLASS_GREEN_SOLID);
+  ledsSetMode(LedMode::RESULT_FLASH_GB_ONCE);
   showUntilMs = now + SHOW_RESULT_MS;
   setState(State::SHOW_RESULT);
 }
@@ -747,7 +775,7 @@ void loop() {
         oledMsg2("Bereit fuer", "Zeitmessung");
         dropSinceMs = 0;
         stopCandidateSinceMs = 0;
-        ledsSetMode(LedMode::OK_ALT_GB);
+        ledsSetMode(LedMode::READY_GREEN_BLINK);
         setState(State::READY_FOR_TIMING);
       }
       break;
@@ -772,7 +800,7 @@ void loop() {
           minDuringTiming = w;
           dropSinceMs = 0;
           stopCandidateSinceMs = 0;
-          ledsSetMode(LedMode::TIMING_BLUE_BLINK);
+          ledsSetMode(LedMode::TIMING_BLUE_SPINNER);
           setState(State::TIMING);
         }
       } else if (drop <= (startDropThresholdG - START_RESET_HYST_G)) {
