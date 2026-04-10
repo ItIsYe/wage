@@ -18,6 +18,9 @@ static float oledScale = 1.5f;
 static constexpr bool DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = true;
+// Timing-Last begrenzen (OLED + Logs nicht in jeder Loop-Runde)
+static constexpr uint32_t TIMING_OLED_UPDATE_MS = 100;
+static constexpr uint32_t TIMING_LOG_UPDATE_MS  = 180;
 
 // =========================================================
 // LED DEBUG (SEPARAT VOM NORMALBETRIEB)
@@ -206,6 +209,9 @@ static float stopRiseThresholdG = 0.0f;
 static uint32_t detectAtMs = 0;
 static uint32_t tStartMs   = 0;
 static uint32_t showUntilMs= 0;
+static uint32_t lastTimingOledMs = 0;
+static uint32_t lastTimingLogMs = 0;
+static uint32_t lastTimingShownDeciSecond = UINT32_MAX;
 
 static float minDuringTiming = 1e9f;
 static uint32_t dropSinceMs = 0;
@@ -248,6 +254,8 @@ static float percentOfReference(float referenceWeight, float percent);
 static void refreshTimingThresholds();
 static const char* stateToStr(State s);
 static void initOledScale();
+static bool shouldUpdateTimingOled(uint32_t now, uint32_t elapsedMs);
+static bool shouldLogTiming(uint32_t now);
 
 /* =========================================================
    HELPERS
@@ -489,6 +497,28 @@ static void oledTimingLive(uint32_t dtMs) {
   display.print(dtMs / 1000.0f, 1);
   display.print("s");
   display.display();
+}
+
+static bool shouldUpdateTimingOled(uint32_t now, uint32_t elapsedMs) {
+  const uint32_t deciSecond = elapsedMs / 100;
+  if (lastTimingShownDeciSecond == UINT32_MAX) {
+    lastTimingShownDeciSecond = deciSecond;
+    lastTimingOledMs = now;
+    return true;
+  }
+
+  if ((now - lastTimingOledMs) < TIMING_OLED_UPDATE_MS) return false;
+  if (deciSecond == lastTimingShownDeciSecond) return false;
+
+  lastTimingShownDeciSecond = deciSecond;
+  lastTimingOledMs = now;
+  return true;
+}
+
+static bool shouldLogTiming(uint32_t now) {
+  if ((now - lastTimingLogMs) < TIMING_LOG_UPDATE_MS) return false;
+  lastTimingLogMs = now;
+  return true;
 }
 
 static void oledDebugWeights() {
@@ -747,7 +777,7 @@ void loop() {
   uint32_t raw1 = 0, raw2 = 0;
   const bool haveRead = readScalesOnce(raw1, raw2);
 
-  if (haveRead) {
+  if (haveRead && MASTER_DEBUG_LOG && state != State::TIMING) {
     serialPrintAll(raw1, raw2);
   }
 
@@ -844,6 +874,9 @@ void loop() {
           minDuringTiming = w;
           dropSinceMs = 0;
           stopCandidateSinceMs = 0;
+          lastTimingOledMs = 0;
+          lastTimingLogMs = 0;
+          lastTimingShownDeciSecond = UINT32_MAX;
           ledsSetMode(LedMode::TIMING_BLUE_SPINNER);
           setState(State::TIMING);
         }
@@ -867,7 +900,10 @@ void loop() {
     }
 
     case State::TIMING: {
-      oledTimingLive(now - tStartMs);
+      const uint32_t dt = now - tStartMs;
+      if (shouldUpdateTimingOled(now, dt)) {
+        oledTimingLive(dt);
+      }
 
       if (haveRead) {
         const float w = w_filt;
@@ -897,7 +933,7 @@ void loop() {
           }
         }
 
-        if (MASTER_DEBUG_LOG) {
+        if (MASTER_DEBUG_LOG && shouldLogTiming(now)) {
           Serial.print("[TIMING] w=");
           Serial.print(w, 2);
           Serial.print(" min=");
