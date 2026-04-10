@@ -9,7 +9,7 @@
    ========================================================= */
 
 // OLED-Textskalierung (gut sichtbar, zentrale Stelle)
-static constexpr uint8_t OLED_STATUS_TEXT_SCALE = 1; // Statuszeilen
+static constexpr uint8_t OLED_STATUS_TEXT_SCALE = 2; // Statuszeilen
 static constexpr uint8_t OLED_TIME_TEXT_SCALE   = 2; // Live-/Endzeit
 
 // Debug-OLED: zeigt Roh-/Filterwerte in jedem Zustand
