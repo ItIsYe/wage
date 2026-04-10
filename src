@@ -20,24 +20,37 @@ static constexpr bool DEBUG_MODE = false;
 static constexpr bool MASTER_DEBUG_LOG = true;
 
 // =========================================================
-// LED DEBUG (separat, ganz bewusst vom Normalbetrieb getrennt)
+// LED DEBUG (SEPARAT VOM NORMALBETRIEB)
 // =========================================================
-// Hauptschalter: Nur wenn true, werden die manuellen LED-Flags genutzt.
+// Aktivierung: true = nur manuelle LED-Zustaende, false = normale LED-Logik.
 static constexpr bool LED_DEBUG_MODE = false;
 
 // Manuelle LED-Schalter (wirken nur bei LED_DEBUG_MODE = true)
-static constexpr bool LED_DEBUG_GREEN_1 = false; // GREEN_PINS[0]
-static constexpr bool LED_DEBUG_GREEN_2 = false; // GREEN_PINS[1]
-static constexpr bool LED_DEBUG_GREEN_3 = false; // GREEN_PINS[2]
-static constexpr bool LED_DEBUG_GREEN_4 = false; // GREEN_PINS[3]
+// Gruen:
+// - LED Green 1 = unten rechts
+// - LED Green 2 = oben rechts
+// - LED Green 3 = oben links
+// - LED Green 4 = unten links
+static constexpr bool LED_DEBUG_GREEN_1 = false; // unten rechts (GREEN_PINS[0])
+static constexpr bool LED_DEBUG_GREEN_2 = false; // oben rechts  (GREEN_PINS[1])
+static constexpr bool LED_DEBUG_GREEN_3 = false; // oben links   (GREEN_PINS[2])
+static constexpr bool LED_DEBUG_GREEN_4 = false; // unten links  (GREEN_PINS[3])
 
-static constexpr bool LED_DEBUG_BLUE_1  = false; // BLUE_PINS[0]
-static constexpr bool LED_DEBUG_BLUE_2  = false; // BLUE_PINS[1]
-static constexpr bool LED_DEBUG_BLUE_3  = false; // BLUE_PINS[2]
-static constexpr bool LED_DEBUG_BLUE_4  = false; // BLUE_PINS[3]
+// Blau:
+// - LED Blue 1 = mitte oben
+// - LED Blue 2 = mitte links
+// - LED Blue 3 = mitte rechts
+// - LED Blue 4 = mitte unten
+static constexpr bool LED_DEBUG_BLUE_1  = false; // mitte oben   (BLUE_PINS[0])
+static constexpr bool LED_DEBUG_BLUE_2  = false; // mitte links  (BLUE_PINS[1])
+static constexpr bool LED_DEBUG_BLUE_3  = false; // mitte rechts (BLUE_PINS[2])
+static constexpr bool LED_DEBUG_BLUE_4  = false; // mitte unten  (BLUE_PINS[3])
 
-static constexpr bool LED_DEBUG_RED_1   = false; // RED_PINS[0]
-static constexpr bool LED_DEBUG_RED_2   = false; // RED_PINS[1]
+// Rot:
+// - LED Red 1 = oben links & unten rechts
+// - LED Red 2 = oben rechts & unten links
+static constexpr bool LED_DEBUG_RED_1   = false; // oben links & unten rechts (RED_PINS[0])
+static constexpr bool LED_DEBUG_RED_2   = false; // oben rechts & unten links (RED_PINS[1])
 
 // Kalibrierung (g)
 static float CAL1 = -9000.0f;
