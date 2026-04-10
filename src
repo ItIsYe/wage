@@ -53,15 +53,15 @@ static constexpr bool LED_DEBUG_RED_1   = false; // oben links & unten rechts (R
 static constexpr bool LED_DEBUG_RED_2   = false; // oben rechts & unten links (RED_PINS[1])
 
 // Kalibrierung (g)
-static float CAL1 = -9000.0f;
-static float CAL2 = -9000.0f;
+static float CAL1 = -235.15f;
+static float CAL2 = -235.15f;
 
 // Invertieren, falls Last in falsche Richtung zählt
 static constexpr bool INVERT1 = true;
 static constexpr bool INVERT2 = true;
 
 // Objekterkennung (g)
-static constexpr float OBJECT_PRESENT_G = 6.0f;
+static constexpr float OBJECT_PRESENT_G = 100.0f;
 
 // Prozentlogik relativ zum Referenzgewicht (% vom Referenzgewicht)
 static constexpr float START_DROP_PERCENT = 5.0f; // Start: Drop >= x%
@@ -70,7 +70,7 @@ static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Mindestschwelle (g)
 static constexpr uint32_t DROP_HOLD_MS = 150;          // Drop-Haltezeit (ms)
 static constexpr uint32_t STOP_HOLD_MS = 220;          // Stop-Haltezeit (ms)
 static constexpr float STOP_RESET_HYST_G = 0.8f;       // Kandidat-Reset-Hysterese (g)
-static constexpr float START_RESET_HYST_G = 3.0f;      // Start-Reset-Hysterese (g)
+static constexpr float START_RESET_HYST_G = 30.0f;      // Start-Reset-Hysterese (g)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
 static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
 static constexpr float EMPTY_THRESHOLD_G = 1.0f;       // "leer" (g)
