@@ -9,8 +9,10 @@
    ========================================================= */
 
 // OLED-Textskalierung (gut sichtbar, zentrale Stelle)
-static constexpr uint8_t OLED_STATUS_TEXT_SCALE = 2; // Statuszeilen
-static constexpr uint8_t OLED_TIME_TEXT_SCALE   = 2; // Live-/Endzeit
+// OLED-Scale: Hier den Wert direkt setzen (Komma oder Punkt, z. B. "1,9" / "1.9")
+static const char* OLED_SCALE_CONFIG = "2,0";
+// Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
+static float oledScale = 2.0f;
 
 // Debug-OLED: zeigt Roh-/Filterwerte in jedem Zustand
 static constexpr bool DEBUG_MODE = false;
@@ -202,6 +204,7 @@ static void finalizeTiming(uint32_t now);
 static float percentOfReference(float referenceWeight, float percent);
 static void refreshTimingThresholds();
 static const char* stateToStr(State s);
+static void initOledScale();
 
 /* =========================================================
    HELPERS
@@ -301,25 +304,53 @@ static void oledInit() {
   display.display();
 }
 
+static void initOledScale() {
+  String normalized = OLED_SCALE_CONFIG;
+  normalized.replace(',', '.');        // "1,9" -> "1.9"
+
+  float parsed = normalized.toFloat(); // ungültig -> 0.0f
+  if (parsed <= 0.0f) parsed = 1.0f;
+
+  oledScale = parsed;
+
+  if (MASTER_DEBUG_LOG) {
+    Serial.print("[OLED] scale config=");
+    Serial.print(OLED_SCALE_CONFIG);
+    Serial.print(" normalized=");
+    Serial.print(normalized);
+    Serial.print(" parsed=");
+    Serial.println(oledScale, 2);
+  }
+}
+
+static uint8_t oledTextSizeFromScale() {
+  int textSize = (int)lroundf(oledScale);
+  if (textSize < 1) textSize = 1;
+  if (textSize > 8) textSize = 8;
+  return (uint8_t)textSize;
+}
+
 static void oledMsg2(const char* line1, const char* line2) {
   if (!display.width()) return;
+  const uint8_t textScale = oledTextSizeFromScale();
   display.clearDisplay();
-  display.setTextSize(OLED_STATUS_TEXT_SCALE);
+  display.setTextSize(textScale);
   display.setCursor(0,0);
   display.println(line1);
-  display.setCursor(0, (int)(OLED_STATUS_TEXT_SCALE * 8) + 2);
+  display.setCursor(0, (int)(textScale * 8) + 2);
   display.println(line2);
   display.display();
 }
 
 static void oledTimingLive(uint32_t dtMs) {
   if (!display.width()) return;
+  const uint8_t textScale = oledTextSizeFromScale();
   display.clearDisplay();
-  display.setTextSize(OLED_STATUS_TEXT_SCALE);
+  display.setTextSize(textScale);
   display.setCursor(0,0);
   display.println("Zeitmessung");
   display.println("laeuft...");
-  display.setTextSize(OLED_TIME_TEXT_SCALE);
+  display.setTextSize(textScale);
   display.setCursor(0, 16);
   display.print(dtMs / 1000.0f, 1);
   display.print("s");
@@ -328,8 +359,9 @@ static void oledTimingLive(uint32_t dtMs) {
 
 static void oledDebugWeights() {
   if (!display.width()) return;
+  const uint8_t textScale = oledTextSizeFromScale();
   display.clearDisplay();
-  display.setTextSize(OLED_STATUS_TEXT_SCALE);
+  display.setTextSize(textScale);
   display.setCursor(0,0);
 
   display.print("DBG R1:");
@@ -557,6 +589,7 @@ static void setState(State s) {
 
 void setup() {
   Serial.begin(115200);
+  initOledScale();
   randomSeed(esp_random());
 
   ledsInit();

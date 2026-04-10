@@ -30,7 +30,7 @@
 ## OLED- und LED-Verhalten
 
 - OLED:
-  - Skalierung zentral ganz oben im Config-Block (`OLED_STATUS_TEXT_SCALE`, `OLED_TIME_TEXT_SCALE`)
+  - Skalierung zentral ganz oben im Config-Block (`OLED_SCALE_CONFIG`, akzeptiert z. B. `"1,9"` oder `"1.9"`)
   - Boot: `Start... / Initialisierung`
   - Nullung: `Nullung... / Bitte nichts auflegen`
   - Idle: `Warte auf Glas`
