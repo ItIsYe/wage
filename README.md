@@ -41,9 +41,11 @@
   - Nach Ergebnis: `Bitte leeren / Glas entfernen`
 - LED:
   - Fehler = rot blinkend
-  - Warten/Bereit = grün/blau alternierend
+  - Warten = grün/blau alternierend
+  - Bereit fuer Zeitmessung (`READY_FOR_TIMING`) = nur gruen blinkend
   - Glas erkannt = grün dauerhaft
-  - Zeit läuft = blau blinkend
+  - Zeit läuft (`TIMING`) = blaue LEDs laufen im Kreis (oben -> rechts -> unten -> links)
+  - Ergebnis (`SHOW_RESULT`) = gruen+blau einmal kurz gemeinsam, danach gruen dauerhaft
   - Standby = sanftes Random-Twinkle
 
 ## Prozent-Logik (Start/Stop)
