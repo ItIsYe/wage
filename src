@@ -10,9 +10,9 @@
 
 // OLED-Textskalierung (gut sichtbar, zentrale Stelle)
 // OLED-Scale: Hier den Wert direkt setzen (Komma oder Punkt, z. B. "1,9" / "1.9")
-static const char* OLED_SCALE_CONFIG = "2,0";
+static const char* OLED_SCALE_CONFIG = "1,5";
 // Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
-static float oledScale = 2.0f;
+static float oledScale = 1.5f;
 
 // Debug-OLED: zeigt Roh-/Filterwerte in jedem Zustand
 static constexpr bool DEBUG_MODE = false;
