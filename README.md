@@ -29,7 +29,7 @@
 ## OLED- und LED-Verhalten
 
 - OLED:
-  - Skalierung zentral über Config (`OLED_STATUS_TEXT_SCALE`, `OLED_TIME_TEXT_SCALE`)
+  - Skalierung zentral ganz oben im Config-Block (`OLED_STATUS_TEXT_SCALE`, `OLED_TIME_TEXT_SCALE`)
   - Boot: `Start... / Initialisierung`
   - Nullung: `Nullung... / Bitte nichts auflegen`
   - Idle: `Warte auf Glas`
@@ -44,3 +44,11 @@
   - Glas erkannt = grün dauerhaft
   - Zeit läuft = blau blinkend
   - Standby = sanftes Random-Twinkle
+
+## Prozent-Logik (Start/Stop)
+
+- `readyReferenceWeight` ist das stabile Referenzgewicht des erkannten Glases.
+- Beide Schwellen werden direkt als `% vom Referenzgewicht` gerechnet:
+  - Start: `max(MIN_DYNAMIC_THRESHOLD_G, ref * START_DROP_PERCENT / 100)`
+  - Stop: `max(MIN_DYNAMIC_THRESHOLD_G, ref * STOP_RISE_PERCENT / 100)`
+- Damit bleiben Start/Stop robust bei leichten und schweren Gläsern.

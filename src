@@ -5,54 +5,58 @@
 #include <Adafruit_SSD1306.h>
 
 /* =========================================================
-   BENUTZER-EINSTELLUNGEN (alles Wichtige direkt hier ändern)
+   CONFIG (hier einstellen)
    ========================================================= */
 
-// Debug-Modus: true = OLED zeigt dauerhaft Live-Gewichte (auch während anderer Zustände)
+// OLED-Textskalierung (gut sichtbar, zentrale Stelle)
+static constexpr uint8_t OLED_STATUS_TEXT_SCALE = 1; // Statuszeilen
+static constexpr uint8_t OLED_TIME_TEXT_SCALE   = 2; // Live-/Endzeit
+
+// Debug-OLED: zeigt Roh-/Filterwerte in jedem Zustand
 static constexpr bool DEBUG_MODE = false;
-// Master-Debug-Logging (Serial) soll fuer Diagnose immer aktiv bleiben
+// Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = true;
 
-// Kalibrierfaktoren für die beiden Wägezellen
-static float CAL1 = -9000.0f;   // Zelle 1
-static float CAL2 = -9000.0f;   // Zelle 2
+// Kalibrierung (g)
+static float CAL1 = -9000.0f;
+static float CAL2 = -9000.0f;
 
-// Falls beide Zellen „verkehrt herum“ laufen (Gewicht wird negativ), hier invertieren
+// Invertieren, falls Last in falsche Richtung zählt
 static constexpr bool INVERT1 = true;
 static constexpr bool INVERT2 = true;
 
-// Objekt-/Glaserkennung (nur vorhanden vs. nicht vorhanden)
-static constexpr float OBJECT_PRESENT_G = 15.0f; // ab hier gilt: Objekt liegt auf
+// Objekterkennung (g)
+static constexpr float OBJECT_PRESENT_G = 15.0f;
 
-// Start-/Stop-Schwellen für die Zeitmessung (dynamisch aus Referenzgewicht berechnet)
-static constexpr float START_DROP_PERCENT = 5.0f; // Start bei X% Gewichtsabfall vom Referenzgewicht
-static constexpr float STOP_RISE_PERCENT  = 5.0f; // Stop bei X% Anstieg vom Minimum (bezogen auf Referenzgewicht)
-static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Untergrenze gegen zu empfindliche Trigger
-static constexpr uint32_t DROP_HOLD_MS = 150;    // Wie lange ein Drop anliegen muss, bevor gestartet wird
-static constexpr uint32_t STOP_HOLD_MS = 220;    // Wie lange eine Stop-Bedingung anliegen muss
-static constexpr float START_RESET_HYST_G = 3.0f; // Hysterese: Start-Candidate nur resetten, wenn Drop fast weg ist
-static constexpr uint32_t READY_AFTER_DETECT_MS = 1200; // Wartezeit nach Erkennung bis „bereit"
-static constexpr uint32_t SHOW_RESULT_MS        = 6000; // Wie lange das Ergebnis angezeigt wird
-static constexpr float EMPTY_THRESHOLD_G = 1.0f;         // "leer" fuer Objekt-entfernt/Retare
-static constexpr float RETARE_TOL_G = 1.5f;              // Falls leer+stabil, aber Offset ausserhalb: nachnullen
+// Prozentlogik relativ zum Referenzgewicht (% vom Referenzgewicht)
+static constexpr float START_DROP_PERCENT = 5.0f; // Start: Drop >= x%
+static constexpr float STOP_RISE_PERCENT  = 5.0f; // Stop: Rise >= x%
+static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Mindestschwelle (g)
+static constexpr uint32_t DROP_HOLD_MS = 150;          // Drop-Haltezeit (ms)
+static constexpr uint32_t STOP_HOLD_MS = 220;          // Stop-Haltezeit (ms)
+static constexpr float START_RESET_HYST_G = 3.0f;      // Start-Reset-Hysterese (g)
+static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
+static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
+static constexpr float EMPTY_THRESHOLD_G = 1.0f;       // "leer" (g)
+static constexpr float RETARE_TOL_G = 1.5f;            // Re-Tare bei Offset > x g
 
-// Anzeige- und Wartezeiten
-static constexpr uint32_t BOOT_MSG_MS     = 1200; // Starttext vor Nullung
-static constexpr uint16_t TARE_SAMPLES    = 25;   // Samples fürs Tarieren
-static constexpr uint32_t STANDBY_AFTER_MS = 25000; // Idle-Dauer bis Standby
-static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 200; // LED-Twinkle Minimum
-static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 900; // LED-Twinkle Maximum
+// Anzeige / Wartezeiten
+static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
+static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
+static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
+static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 200; // Twinkle min (ms)
+static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 900; // Twinkle max (ms)
 
-// Filter- und Stabilitäts-Settings
-static constexpr uint8_t  MA_N = 10;            // Moving-Average-Fenster
-static constexpr float    STABLE_BAND_G   = 2.0f;  // Schwankung im Fenster, die als stabil gilt
-static constexpr uint32_t STABLE_WINDOW_MS= 800;   // Fenstergröße für Stabilität
-static constexpr uint32_t STABLE_HOLD_MS  = 800;   // Wie lange stabil bleiben muss
+// Filter / Stabilität
+static constexpr uint8_t  MA_N = 10;              // MA-Fenster
+static constexpr float    STABLE_BAND_G    = 2.0f;// max Bandbreite (g)
+static constexpr uint32_t STABLE_WINDOW_MS = 800; // Stabilitätsfenster (ms)
+static constexpr uint32_t STABLE_HOLD_MS   = 800; // Stabil halten (ms)
 
-// Fehlergrenzen / Autorecovery
-static constexpr float NEGATIVE_CLAMP_G   = -3.0f;  // Werte leicht unter 0 werden auf 0 gesetzt
-static constexpr float NEGATIVE_ERROR_G   = -15.0f; // Nur bei stark negativen Werten -> Fehler + Recovery
-static constexpr uint32_t RECOVER_WAIT_MS = 1200;   // Wartezeit vor erneutem Tare nach Fehler
+// Fehler / Recovery
+static constexpr float NEGATIVE_CLAMP_G   = -3.0f;  // kleine Negativwerte -> 0 g
+static constexpr float NEGATIVE_ERROR_G   = -15.0f; // harter Fehler ab x g
+static constexpr uint32_t RECOVER_WAIT_MS = 1200;   // Recovery-Wartezeit (ms)
 
 /* =========================================================
    HARDWARE CONFIG
@@ -70,8 +74,6 @@ static constexpr uint8_t I2C_SCL  = 22;
 static constexpr uint8_t OLED_ADDR = 0x3C;
 static constexpr int SCREEN_W = 128;
 static constexpr int SCREEN_H = 32;
-static constexpr uint8_t OLED_STATUS_TEXT_SCALE = 1; // normale Statusmeldungen
-static constexpr uint8_t OLED_TIME_TEXT_SCALE   = 2; // grosse Zeitdarstellung
 
 // LEDs (deine Belegung)
 static constexpr uint8_t GREEN_PINS[] = {16, 17, 18, 19};
@@ -196,7 +198,8 @@ static uint32_t twinkleNextMs = 0;
    ========================================================= */
 static void setState(State s);
 static void finalizeTiming(uint32_t now);
-static void updateTimingThresholdsFromReference(float referenceWeight);
+static float percentOfReference(float referenceWeight, float percent);
+static void refreshTimingThresholds();
 static const char* stateToStr(State s);
 
 /* =========================================================
@@ -468,10 +471,20 @@ static bool isObjectPresentStable(float weight, bool stable) {
   return stable && (weight >= OBJECT_PRESENT_G);
 }
 
-static void updateTimingThresholdsFromReference(float referenceWeight) {
-  readyReferenceWeight = max(referenceWeight, OBJECT_PRESENT_G);
-  startDropThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, readyReferenceWeight * (START_DROP_PERCENT * 0.01f));
-  stopRiseThresholdG  = max(MIN_DYNAMIC_THRESHOLD_G, readyReferenceWeight * (STOP_RISE_PERCENT * 0.01f));
+static float percentOfReference(float referenceWeight, float percent) {
+  return referenceWeight * (percent * 0.01f);
+}
+
+static void refreshTimingThresholds() {
+  readyReferenceWeight = max(readyReferenceWeight, OBJECT_PRESENT_G);
+  startDropThresholdG = max(
+    MIN_DYNAMIC_THRESHOLD_G,
+    percentOfReference(readyReferenceWeight, START_DROP_PERCENT)
+  );
+  stopRiseThresholdG = max(
+    MIN_DYNAMIC_THRESHOLD_G,
+    percentOfReference(readyReferenceWeight, STOP_RISE_PERCENT)
+  );
 
   if (MASTER_DEBUG_LOG) {
     Serial.print("[THRESH] ref=");
@@ -480,7 +493,7 @@ static void updateTimingThresholdsFromReference(float referenceWeight) {
     Serial.print(startDropThresholdG, 2);
     Serial.print("g stopRise=");
     Serial.print(stopRiseThresholdG, 2);
-    Serial.println("g");
+    Serial.println("g (% vom ref)");
   }
 }
 
@@ -633,7 +646,8 @@ void loop() {
       }
 
       if (haveRead && (now - detectAtMs >= READY_AFTER_DETECT_MS)) {
-        updateTimingThresholdsFromReference(w_filt);
+        readyReferenceWeight = max(readyReferenceWeight, w_filt);
+        refreshTimingThresholds();
         oledMsg2("Bereit fuer", "Zeitmessung");
         dropSinceMs = 0;
         stopCandidateSinceMs = 0;
