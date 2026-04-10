@@ -13,10 +13,33 @@
 9. `CHECK_RETARE`
 10. zurück zu `IDLE_WAIT_GLASS`
 
-## Timing-Logik
+## Vereinfachte Final-Logik
 
-- READY friert eine Referenz (`readyReferenceWeight`) ein und zieht sie nur nach oben nach.
-- Start wird bei signifikantem Gewichtsabfall (`START_DROP_G`) mit Hold-Zeit (`DROP_HOLD_MS`) ausgelöst.
-- TIMING trackt ein Minimum (`minDuringTiming`).
-- Stop wird ausgelöst, wenn das Gewicht vom Minimum wieder signifikant ansteigt (`STOP_RISE_G`) und die Bedingung stabil über `STOP_HOLD_MS` anliegt.
-- Nach Ergebnisanzeige wird auf echtes Leerräumen gewartet, danach optional nur im leeren/stabilen Zustand nachnullt (`CHECK_RETARE`).
+- Es gibt **keine Glasprofile, keine 0.2/0.7-Erkennung und keine Lernlogik** mehr.
+- In `IDLE_WAIT_GLASS` wird nur noch unterschieden:
+  - Objekt vorhanden (`OBJECT_PRESENT_G` + stabil)
+  - kein Objekt vorhanden
+- Nach Erkennung folgt kurz `GLASS_DETECTED`, dann `READY_FOR_TIMING`.
+- In `READY_FOR_TIMING` startet die Messung bei signifikantem Gewichtsabfall (`START_DROP_G` + `DROP_HOLD_MS`).
+- In `TIMING` wird das Minimum getrackt; Stop erfolgt beim signifikanten Anstieg vom Minimum (`STOP_RISE_G` + `STOP_HOLD_MS`).
+- Während `TIMING` läuft die Zeit live sichtbar auf dem OLED.
+- Nach `SHOW_RESULT` wird gewartet, bis die Waage wirklich leer/stabil ist.
+- `CHECK_RETARE` taret nur bei leer + stabil + Offset außerhalb `RETARE_TOL_G`.
+
+## OLED- und LED-Verhalten
+
+- OLED:
+  - Boot: `Start... / Initialisierung`
+  - Nullung: `Nullung... / Bitte nichts auflegen`
+  - Idle: `Warte auf Glas`
+  - Detected: `Glas erkannt`
+  - Ready: `Bereit fuer / Zeitmessung`
+  - Timing: Live-Zeit in Sekunden
+  - Ergebnis: `Fertig / Zeit: ...`
+  - Nach Ergebnis: `Bitte leeren / Glas entfernen`
+- LED:
+  - Fehler = rot blinkend
+  - Warten/Bereit = grün/blau alternierend
+  - Glas erkannt = grün dauerhaft
+  - Zeit läuft = blau blinkend
+  - Standby = sanftes Random-Twinkle
