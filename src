@@ -24,9 +24,10 @@ static constexpr bool INVERT2 = true;
 // Objekt-/Glaserkennung (nur vorhanden vs. nicht vorhanden)
 static constexpr float OBJECT_PRESENT_G = 15.0f; // ab hier gilt: Objekt liegt auf
 
-// Start-/Stop-Schwellen für die Zeitmessung
-static constexpr float START_DROP_G   = 10.0f;   // Start, wenn Gewicht um >=10g fällt
-static constexpr float STOP_RISE_G    = 10.0f;   // Stop, wenn Gewicht ab Minimum wieder >=10g steigt
+// Start-/Stop-Schwellen für die Zeitmessung (dynamisch aus Referenzgewicht berechnet)
+static constexpr float START_DROP_PERCENT = 5.0f; // Start bei X% Gewichtsabfall vom Referenzgewicht
+static constexpr float STOP_RISE_PERCENT  = 5.0f; // Stop bei X% Anstieg vom Minimum (bezogen auf Referenzgewicht)
+static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Untergrenze gegen zu empfindliche Trigger
 static constexpr uint32_t DROP_HOLD_MS = 150;    // Wie lange ein Drop anliegen muss, bevor gestartet wird
 static constexpr uint32_t STOP_HOLD_MS = 220;    // Wie lange eine Stop-Bedingung anliegen muss
 static constexpr float START_RESET_HYST_G = 3.0f; // Hysterese: Start-Candidate nur resetten, wenn Drop fast weg ist
@@ -69,6 +70,8 @@ static constexpr uint8_t I2C_SCL  = 22;
 static constexpr uint8_t OLED_ADDR = 0x3C;
 static constexpr int SCREEN_W = 128;
 static constexpr int SCREEN_H = 32;
+static constexpr uint8_t OLED_STATUS_TEXT_SCALE = 1; // normale Statusmeldungen
+static constexpr uint8_t OLED_TIME_TEXT_SCALE   = 2; // grosse Zeitdarstellung
 
 // LEDs (deine Belegung)
 static constexpr uint8_t GREEN_PINS[] = {16, 17, 18, 19};
@@ -155,6 +158,8 @@ static bool isStable = false;
 // object tracking
 static bool objectPresent = false;
 static float readyReferenceWeight = 0.0f;
+static float startDropThresholdG = 0.0f;
+static float stopRiseThresholdG = 0.0f;
 
 // timing
 static uint32_t detectAtMs = 0;
@@ -191,6 +196,7 @@ static uint32_t twinkleNextMs = 0;
    ========================================================= */
 static void setState(State s);
 static void finalizeTiming(uint32_t now);
+static void updateTimingThresholdsFromReference(float referenceWeight);
 static const char* stateToStr(State s);
 
 /* =========================================================
@@ -294,9 +300,10 @@ static void oledInit() {
 static void oledMsg2(const char* line1, const char* line2) {
   if (!display.width()) return;
   display.clearDisplay();
-  display.setTextSize(1);
+  display.setTextSize(OLED_STATUS_TEXT_SCALE);
   display.setCursor(0,0);
   display.println(line1);
+  display.setCursor(0, (int)(OLED_STATUS_TEXT_SCALE * 8) + 2);
   display.println(line2);
   display.display();
 }
@@ -304,11 +311,11 @@ static void oledMsg2(const char* line1, const char* line2) {
 static void oledTimingLive(uint32_t dtMs) {
   if (!display.width()) return;
   display.clearDisplay();
-  display.setTextSize(1);
+  display.setTextSize(OLED_STATUS_TEXT_SCALE);
   display.setCursor(0,0);
   display.println("Zeitmessung");
   display.println("laeuft...");
-  display.setTextSize(2);
+  display.setTextSize(OLED_TIME_TEXT_SCALE);
   display.setCursor(0, 16);
   display.print(dtMs / 1000.0f, 1);
   display.print("s");
@@ -318,7 +325,7 @@ static void oledTimingLive(uint32_t dtMs) {
 static void oledDebugWeights() {
   if (!display.width()) return;
   display.clearDisplay();
-  display.setTextSize(1);
+  display.setTextSize(OLED_STATUS_TEXT_SCALE);
   display.setCursor(0,0);
 
   display.print("DBG R1:");
@@ -459,6 +466,22 @@ static void tareBoth() {
 
 static bool isObjectPresentStable(float weight, bool stable) {
   return stable && (weight >= OBJECT_PRESENT_G);
+}
+
+static void updateTimingThresholdsFromReference(float referenceWeight) {
+  readyReferenceWeight = max(referenceWeight, OBJECT_PRESENT_G);
+  startDropThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, readyReferenceWeight * (START_DROP_PERCENT * 0.01f));
+  stopRiseThresholdG  = max(MIN_DYNAMIC_THRESHOLD_G, readyReferenceWeight * (STOP_RISE_PERCENT * 0.01f));
+
+  if (MASTER_DEBUG_LOG) {
+    Serial.print("[THRESH] ref=");
+    Serial.print(readyReferenceWeight, 2);
+    Serial.print("g startDrop=");
+    Serial.print(startDropThresholdG, 2);
+    Serial.print("g stopRise=");
+    Serial.print(stopRiseThresholdG, 2);
+    Serial.println("g");
+  }
 }
 
 static void finalizeTiming(uint32_t now) {
@@ -610,6 +633,7 @@ void loop() {
       }
 
       if (haveRead && (now - detectAtMs >= READY_AFTER_DETECT_MS)) {
+        updateTimingThresholdsFromReference(w_filt);
         oledMsg2("Bereit fuer", "Zeitmessung");
         dropSinceMs = 0;
         stopCandidateSinceMs = 0;
@@ -631,7 +655,7 @@ void loop() {
         break;
       }
 
-      if (haveRead && drop >= START_DROP_G) {
+      if (haveRead && drop >= startDropThresholdG) {
         if (dropSinceMs == 0) dropSinceMs = now;
         if (now - dropSinceMs >= DROP_HOLD_MS) {
           tStartMs = now;
@@ -641,7 +665,7 @@ void loop() {
           ledsSetMode(LedMode::TIMING_BLUE_BLINK);
           setState(State::TIMING);
         }
-      } else if (drop <= (START_DROP_G - START_RESET_HYST_G)) {
+      } else if (drop <= (startDropThresholdG - START_RESET_HYST_G)) {
         dropSinceMs = 0;
       }
 
@@ -650,6 +674,10 @@ void loop() {
         Serial.print(w, 2);
         Serial.print(" ref=");
         Serial.print(readyReferenceWeight, 2);
+        Serial.print(" startThr=");
+        Serial.print(startDropThresholdG, 2);
+        Serial.print(" stopThr=");
+        Serial.print(stopRiseThresholdG, 2);
         Serial.print(" drop=");
         Serial.println(drop, 2);
       }
@@ -663,7 +691,7 @@ void loop() {
 
       oledTimingLive(now - tStartMs);
 
-      if (haveRead && riseFromMin >= STOP_RISE_G) {
+      if (haveRead && riseFromMin >= stopRiseThresholdG) {
         if (stopCandidateSinceMs == 0) stopCandidateSinceMs = now;
         if (now - stopCandidateSinceMs >= STOP_HOLD_MS) {
           finalizeTiming(now);
@@ -678,7 +706,9 @@ void loop() {
         Serial.print(" min=");
         Serial.print(minDuringTiming, 2);
         Serial.print(" rise=");
-        Serial.println(riseFromMin, 2);
+        Serial.print(riseFromMin, 2);
+        Serial.print(" stopThr=");
+        Serial.println(stopRiseThresholdG, 2);
       }
       break;
     }
