@@ -24,6 +24,9 @@
 - In `TIMING` wird das Minimum getrackt; Stop erfolgt beim signifikanten Anstieg vom Minimum (`STOP_RISE_PERCENT` vom Referenzgewicht, in g berechnet + `STOP_HOLD_MS`).
 - Die Stop-Kandidatenlogik in `TIMING` arbeitet mit kurzer Reset-Hysterese (`STOP_RESET_HYST_G`), damit kurze Messlücken/Rauschen den Stop nicht ständig zurücksetzen.
 - Während `TIMING` läuft die Zeit live sichtbar auf dem OLED.
+- OLED- und Serial-Updates in `TIMING` sind bewusst getaktet, um Lastspitzen zu reduzieren:
+  - OLED-Live-Zeit: alle `TIMING_OLED_UPDATE_MS` (aktuell 100 ms)
+  - Timing-Logs: alle `TIMING_LOG_UPDATE_MS` (aktuell 160 ms)
 - Nach `SHOW_RESULT` wird gewartet, bis die Waage wirklich leer/stabil ist.
 - `CHECK_RETARE` taret nur bei leer + stabil + Offset außerhalb `RETARE_TOL_G`.
 

@@ -18,6 +18,8 @@ static float oledScale = 1.5f;
 static constexpr bool DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = true;
+static constexpr uint32_t TIMING_OLED_UPDATE_MS = 100; // OLED-Takt waehrend TIMING
+static constexpr uint32_t TIMING_LOG_UPDATE_MS  = 160; // Log-Takt waehrend TIMING
 
 // =========================================================
 // LED DEBUG (SEPARAT VOM NORMALBETRIEB)
@@ -206,6 +208,8 @@ static float stopRiseThresholdG = 0.0f;
 static uint32_t detectAtMs = 0;
 static uint32_t tStartMs   = 0;
 static uint32_t showUntilMs= 0;
+static uint32_t timingOledLastMs = 0;
+static uint32_t timingLogLastMs  = 0;
 
 static float minDuringTiming = 1e9f;
 static uint32_t dropSinceMs = 0;
@@ -713,6 +717,10 @@ static void setState(State s) {
     Serial.print(" -> ");
     Serial.println(stateToStr(s));
   }
+  if (s == State::TIMING) {
+    timingOledLastMs = 0;
+    timingLogLastMs = 0;
+  }
   state = s;
   lastActionMs = millis();
 }
@@ -741,13 +749,15 @@ void setup() {
 
 void loop() {
   const uint32_t now = millis();
+  const bool timingLogTick = (state == State::TIMING) && ((now - timingLogLastMs) >= TIMING_LOG_UPDATE_MS);
+  if (timingLogTick) timingLogLastMs = now;
 
   ledsService();
 
   uint32_t raw1 = 0, raw2 = 0;
   const bool haveRead = readScalesOnce(raw1, raw2);
 
-  if (haveRead) {
+  if (haveRead && (state != State::TIMING || timingLogTick)) {
     serialPrintAll(raw1, raw2);
   }
 
@@ -867,7 +877,10 @@ void loop() {
     }
 
     case State::TIMING: {
-      oledTimingLive(now - tStartMs);
+      if (timingOledLastMs == 0 || (now - timingOledLastMs) >= TIMING_OLED_UPDATE_MS) {
+        oledTimingLive(now - tStartMs);
+        timingOledLastMs = now;
+      }
 
       if (haveRead) {
         const float w = w_filt;
@@ -897,7 +910,7 @@ void loop() {
           }
         }
 
-        if (MASTER_DEBUG_LOG) {
+        if (MASTER_DEBUG_LOG && timingLogTick) {
           Serial.print("[TIMING] w=");
           Serial.print(w, 2);
           Serial.print(" min=");
