@@ -10,6 +10,8 @@
 
 // Debug-Modus: true = OLED zeigt dauerhaft Live-Gewichte (auch während anderer Zustände)
 static constexpr bool DEBUG_MODE = false;
+// Master-Debug-Logging (Serial) soll fuer Diagnose immer aktiv bleiben
+static constexpr bool MASTER_DEBUG_LOG = true;
 
 // Kalibrierfaktoren für die beiden Wägezellen
 static float CAL1 = -9000.0f;   // Zelle 1
@@ -35,9 +37,13 @@ static constexpr float FILL_TOL_G = 8.0f;
 static constexpr float START_DROP_G   = 10.0f;   // Start, wenn Gewicht um >=10g fällt
 static constexpr float STOP_RISE_G    = 10.0f;   // Stop, wenn Gewicht ab Minimum wieder >=10g steigt
 static constexpr uint32_t DROP_HOLD_MS = 150;    // Wie lange ein Drop anliegen muss, bevor gestartet wird
+static constexpr uint32_t STOP_HOLD_MS = 220;    // Wie lange eine Stop-Bedingung anliegen muss
+static constexpr float START_RESET_HYST_G = 3.0f; // Hysterese: Start-Candidate nur resetten, wenn Drop fast weg ist
 static constexpr float GLASS_RANGE_TOL_G = 20.0f; // Toleranz beim Zurückstellen (Stop-Check)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 2000; // Wartezeit nach Glaserkennung bis „bereit“
 static constexpr uint32_t SHOW_RESULT_MS        = 6000; // Wie lange das Ergebnis angezeigt wird
+static constexpr float EMPTY_THRESHOLD_G = 1.0f;         // "leer" fuer Glas-entfernt/Retare
+static constexpr float RETARE_TOL_G = 1.5f;              // Falls leer+stabil, aber Offset ausserhalb: nachnullen
 
 // Anzeige- und Wartezeiten
 static constexpr uint32_t BOOT_MSG_MS     = 1200; // Starttext vor Nullung
@@ -132,6 +138,8 @@ enum class State : uint8_t {
   READY_FOR_TIMING,
   TIMING,
   SHOW_RESULT,
+  WAIT_EMPTY_AFTER_RESULT,
+  CHECK_RETARE,
   STANDBY,
   ERROR_RECOVER
 };
@@ -190,6 +198,8 @@ static uint32_t showUntilMs= 0;
 static float timingStartWeight = 0.0f;
 static float minDuringTiming = 1e9f;
 static uint32_t dropSinceMs = 0;
+static uint32_t stopCandidateSinceMs = 0;
+static float readyReferenceWeight = 0.0f;
 
 // standby
 static uint32_t lastActionMs = 0;
@@ -222,6 +232,7 @@ static uint32_t twinkleNextMs = 0;
 static const char* glassLabel(const GlassProfile* g);
 static void setState(State s);
 static void finalizeTiming(uint32_t now);
+static const char* stateToStr(State s);
 
 /* =========================================================
    HELPERS
@@ -611,7 +622,30 @@ static void setError(ErrCode e) {
   recoverUntilMs = millis() + RECOVER_WAIT_MS;
 }
 
+static const char* stateToStr(State s) {
+  switch (s) {
+    case State::BOOT_MSG: return "BOOT_MSG";
+    case State::BOOT_TARE: return "BOOT_TARE";
+    case State::IDLE_WAIT_GLASS: return "IDLE_WAIT_GLASS";
+    case State::GLASS_DETECTED: return "GLASS_DETECTED";
+    case State::READY_FOR_TIMING: return "READY_FOR_TIMING";
+    case State::TIMING: return "TIMING";
+    case State::SHOW_RESULT: return "SHOW_RESULT";
+    case State::WAIT_EMPTY_AFTER_RESULT: return "WAIT_EMPTY_AFTER_RESULT";
+    case State::CHECK_RETARE: return "CHECK_RETARE";
+    case State::STANDBY: return "STANDBY";
+    case State::ERROR_RECOVER: return "ERROR_RECOVER";
+  }
+  return "UNKNOWN";
+}
+
 static void setState(State s) {
+  if (MASTER_DEBUG_LOG && state != s) {
+    Serial.print("[STATE] ");
+    Serial.print(stateToStr(state));
+    Serial.print(" -> ");
+    Serial.println(stateToStr(s));
+  }
   state = s;
   lastActionMs = millis();
 }
@@ -717,7 +751,7 @@ void loop() {
         const float w = w_filt;
 
         // „nichts drauf“ -> OLED zeigt Gewicht, equalFull irrelevant
-        if (fabsf(w) < 1.0f) {
+        if (fabsf(w) < EMPTY_THRESHOLD_G) {
           resetLearnCandidate();
           oledWeight(w, true, nullptr, true);
           break;
@@ -750,6 +784,7 @@ void loop() {
         activeGlass = found;
         currentFullWeight = w;
         detectAtMs = now;
+        readyReferenceWeight = w;
 
         const bool eq = isEqualFill(activeGlass, currentFullWeight);
         oledWeight(currentFullWeight, true, activeGlass, eq);
@@ -766,7 +801,7 @@ void loop() {
     case State::GLASS_DETECTED: {
       // Glas sollte liegen bleiben; wenn weg -> zurück
       if (haveRead && isStable) {
-        if (fabsf(w_filt) < 1.0f) {
+        if (fabsf(w_filt) < EMPTY_THRESHOLD_G) {
           oledMsg2("Glas weg", "Warte auf Glas");
           ledsSetMode(LedMode::OK_ALT_GB);
           activeGlass = nullptr;
@@ -784,9 +819,12 @@ void loop() {
           break;
         }
 
-        // Tracking aktualisieren, falls leicht anders gewogen wird
+        // Tracking aktualisieren, falls leicht anders gewogen wird.
+        // Referenz fuer READY absichtlich nur nach oben nachziehen,
+        // damit ein frueher Trink-Drop vor READY den Start nicht blockiert.
         activeGlass = maybe;
         currentFullWeight = w_filt;
+        readyReferenceWeight = max(readyReferenceWeight, w_filt);
       }
 
       // Nach 2s -> bereit
@@ -797,6 +835,14 @@ void loop() {
         oledMsg2("Bereit", "Zeitmessung...");
         readyAtMs = now;
         dropSinceMs = 0;
+        stopCandidateSinceMs = 0;
+        readyReferenceWeight = max(readyReferenceWeight, currentFullWeight);
+        if (MASTER_DEBUG_LOG) {
+          Serial.print("[READY] ref=");
+          Serial.print(readyReferenceWeight, 2);
+          Serial.print("g current=");
+          Serial.println(w_filt, 2);
+        }
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::READY_FOR_TIMING);
       }
@@ -804,13 +850,12 @@ void loop() {
     }
 
     case State::READY_FOR_TIMING: {
-      // Start wenn Gewicht signifikant sinkt gegenüber initialer „full“ Referenz
-      // nur, wenn die Messung stabil ist
+      // Start wenn Gewicht signifikant sinkt gegenueber eingefrorener READY-Referenz.
       const float w = w_filt;
-      const float drop = currentFullWeight - w;
+      const float drop = readyReferenceWeight - w;
 
       // wenn Glas entfernt wird -> wieder idle (ohne Fehler)
-      if (haveRead && isStable && fabsf(w) < 1.0f) {
+      if (haveRead && isStable && fabsf(w) < EMPTY_THRESHOLD_G) {
         oledMsg2("Glas weg", "Warte auf Glas");
         activeGlass = nullptr;
         resetLearnCandidate();
@@ -819,7 +864,8 @@ void loop() {
         break;
       }
 
-      // Startbedingung: signifikanter Drop muss kurz anliegen, auch wenn die Waage während des Abhebens wackelt
+      // Startbedingung: signifikanter Drop muss kurz anliegen.
+      // Nicht hart an isStable koppeln, sonst blockiert Trinken waehrend Bewegung.
       if (haveRead && drop >= START_DROP_G) {
         if (dropSinceMs == 0) dropSinceMs = now;
         if (now - dropSinceMs >= DROP_HOLD_MS) {
@@ -827,20 +873,37 @@ void loop() {
           timingStartWeight = w;
           minDuringTiming = w;
           dropSinceMs = 0;
+          stopCandidateSinceMs = 0;
+          if (MASTER_DEBUG_LOG) {
+            Serial.print("[START] drop=");
+            Serial.print(drop, 2);
+            Serial.print("g ref=");
+            Serial.print(readyReferenceWeight, 2);
+            Serial.print(" w=");
+            Serial.println(w, 2);
+          }
           ledsSetMode(LedMode::TIMING_BLUE_BLINK);
           oledMsg2("Laeuft...", "Trinken...");
           setState(State::TIMING);
         }
-      } else {
-        // Anzeige „Bereit" beibehalten, damit vor dem Start klar ersichtlich ist,
-        // dass die Zeitmessung wartet. Keine Live-Gewichtsaktualisierung nötig.
+      } else if (drop <= (START_DROP_G - START_RESET_HYST_G)) {
         dropSinceMs = 0;
+      }
+      if (MASTER_DEBUG_LOG && haveRead) {
+        Serial.print("[READY] w=");
+        Serial.print(w, 2);
+        Serial.print(" ref=");
+        Serial.print(readyReferenceWeight, 2);
+        Serial.print(" drop=");
+        Serial.print(drop, 2);
+        Serial.print(" hold=");
+        Serial.println(dropSinceMs ? (now - dropSinceMs) : 0);
       }
       break;
     }
 
     case State::TIMING: {
-      // Stop nur, wenn das Gewicht nach Rueckstellen des Glases stabil ansteigt
+      // Stop bei robustem Rebound nach Minimum ODER plausibler Glas-Rueckkehr.
       const float w = w_filt;
       minDuringTiming = min(minDuringTiming, w);
 
@@ -848,29 +911,80 @@ void loop() {
       const bool glassBackInRange = activeGlass &&
         (w >= (activeGlass->minWeight - GLASS_RANGE_TOL_G)) &&
         (w <= (activeGlass->maxWeight + GLASS_RANGE_TOL_G));
+      const bool reboundReached = riseFromMin >= STOP_RISE_G;
+      const bool stopCondition = reboundReached && (glassBackInRange || isStable);
 
-      if (haveRead && isStable && glassBackInRange && riseFromMin >= STOP_RISE_G) {
-        finalizeTiming(now);
+      if (haveRead && stopCondition) {
+        if (stopCandidateSinceMs == 0) stopCandidateSinceMs = now;
+        if (now - stopCandidateSinceMs >= STOP_HOLD_MS) {
+          if (MASTER_DEBUG_LOG) {
+            Serial.print("[STOP] rise=");
+            Serial.print(riseFromMin, 2);
+            Serial.print("g min=");
+            Serial.print(minDuringTiming, 2);
+            Serial.print(" w=");
+            Serial.print(w, 2);
+            Serial.print(" inRange=");
+            Serial.print(glassBackInRange ? 1 : 0);
+            Serial.print(" stable=");
+            Serial.println(isStable ? 1 : 0);
+          }
+          finalizeTiming(now);
+        }
+      } else {
+        stopCandidateSinceMs = 0;
+      }
+      if (MASTER_DEBUG_LOG && haveRead) {
+        Serial.print("[TIMING] w=");
+        Serial.print(w, 2);
+        Serial.print(" min=");
+        Serial.print(minDuringTiming, 2);
+        Serial.print(" rise=");
+        Serial.print(riseFromMin, 2);
+        Serial.print(" inRange=");
+        Serial.print(glassBackInRange ? 1 : 0);
+        Serial.print(" stopHold=");
+        Serial.println(stopCandidateSinceMs ? (now - stopCandidateSinceMs) : 0);
       }
       break;
     }
 
     case State::SHOW_RESULT: {
-      const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < 1.0f;
-
       if (now < showUntilMs) {
         // Ergebnis stehen lassen, auch wenn das Glas sofort entfernt wurde
-      } else if (emptyAndStable) {
-        // zurück in Grundzustand erst, wenn wirklich leer
-        oledMsg2("Warte auf Glas", "...");
-        ledsSetMode(LedMode::OK_ALT_GB);
-        activeGlass = nullptr;
-        resetLearnCandidate();
-        setState(State::IDLE_WAIT_GLASS);
       } else {
-        // nach Anzeige der Zeit zum Leerräumen auffordern
         oledMsg2("Bitte leeren", "Glas entfernen");
+        setState(State::WAIT_EMPTY_AFTER_RESULT);
       }
+      break;
+    }
+
+    case State::WAIT_EMPTY_AFTER_RESULT: {
+      const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < EMPTY_THRESHOLD_G;
+      if (!emptyAndStable) {
+        oledMsg2("Bitte leeren", "Glas entfernen");
+      } else {
+        oledMsg2("Pruefe Nullpunkt", "...");
+        setState(State::CHECK_RETARE);
+      }
+      break;
+    }
+
+    case State::CHECK_RETARE: {
+      if (!(haveRead && isStable)) break;
+
+      if (fabsf(w_filt) > RETARE_TOL_G) {
+        Serial.print("[RETARE] empty+stable offset=");
+        Serial.print(w_filt, 2);
+        Serial.println("g -> tare");
+        oledMsg2("Nullung...", "Offset korr.");
+        tareBoth();
+      }
+      oledMsg2("Warte auf Glas", "...");
+      ledsSetMode(LedMode::OK_ALT_GB);
+      activeGlass = nullptr;
+      resetLearnCandidate();
+      setState(State::IDLE_WAIT_GLASS);
       break;
     }
 
