@@ -53,3 +53,16 @@
   - Start: `max(MIN_DYNAMIC_THRESHOLD_G, ref * START_DROP_PERCENT / 100)`
   - Stop: `max(MIN_DYNAMIC_THRESHOLD_G, ref * STOP_RISE_PERCENT / 100)`
 - Damit bleiben Start/Stop robust bei leichten und schweren Gläsern.
+
+
+## LED-Debug-Modus (separat)
+
+- Der neue Bereich steht oben im Config-/Debug-Teil in `src`.
+- Hauptschalter: `LED_DEBUG_MODE`
+  - `false` = normaler LED-Betrieb wie bisher
+  - `true` = nur manuelle LED-Zustaende, normale LED-Engine ist komplett uebersteuert
+- Manuelle Einzelsteuerung pro LED:
+  - Gruen: `LED_DEBUG_GREEN_1` bis `LED_DEBUG_GREEN_4`
+  - Blau: `LED_DEBUG_BLUE_1` bis `LED_DEBUG_BLUE_4`
+  - Rot: `LED_DEBUG_RED_1` bis `LED_DEBUG_RED_2`
+- Im Debug-Modus gibt es bewusst keine Blinkmuster und keine zustandsbasierte LED-Automatik.

@@ -19,6 +19,26 @@ static constexpr bool DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = true;
 
+// =========================================================
+// LED DEBUG (separat, ganz bewusst vom Normalbetrieb getrennt)
+// =========================================================
+// Hauptschalter: Nur wenn true, werden die manuellen LED-Flags genutzt.
+static constexpr bool LED_DEBUG_MODE = false;
+
+// Manuelle LED-Schalter (wirken nur bei LED_DEBUG_MODE = true)
+static constexpr bool LED_DEBUG_GREEN_1 = false; // GREEN_PINS[0]
+static constexpr bool LED_DEBUG_GREEN_2 = false; // GREEN_PINS[1]
+static constexpr bool LED_DEBUG_GREEN_3 = false; // GREEN_PINS[2]
+static constexpr bool LED_DEBUG_GREEN_4 = false; // GREEN_PINS[3]
+
+static constexpr bool LED_DEBUG_BLUE_1  = false; // BLUE_PINS[0]
+static constexpr bool LED_DEBUG_BLUE_2  = false; // BLUE_PINS[1]
+static constexpr bool LED_DEBUG_BLUE_3  = false; // BLUE_PINS[2]
+static constexpr bool LED_DEBUG_BLUE_4  = false; // BLUE_PINS[3]
+
+static constexpr bool LED_DEBUG_RED_1   = false; // RED_PINS[0]
+static constexpr bool LED_DEBUG_RED_2   = false; // RED_PINS[1]
+
 // Kalibrierung (g)
 static float CAL1 = -9000.0f;
 static float CAL2 = -9000.0f;
@@ -214,6 +234,30 @@ static inline void allPins(const uint8_t* arr, uint8_t n, bool on) {
   for (uint8_t i=0;i<n;i++) digitalWrite(arr[i], on ? HIGH : LOW);
 }
 
+
+static void ledsApplyDebugManualStates() {
+  const bool greenDbg[GREEN_N] = {
+    LED_DEBUG_GREEN_1,
+    LED_DEBUG_GREEN_2,
+    LED_DEBUG_GREEN_3,
+    LED_DEBUG_GREEN_4
+  };
+  const bool blueDbg[BLUE_N] = {
+    LED_DEBUG_BLUE_1,
+    LED_DEBUG_BLUE_2,
+    LED_DEBUG_BLUE_3,
+    LED_DEBUG_BLUE_4
+  };
+  const bool redDbg[RED_N] = {
+    LED_DEBUG_RED_1,
+    LED_DEBUG_RED_2
+  };
+
+  for (uint8_t i=0;i<GREEN_N;i++) digitalWrite(GREEN_PINS[i], greenDbg[i] ? HIGH : LOW);
+  for (uint8_t i=0;i<BLUE_N;i++)  digitalWrite(BLUE_PINS[i],  blueDbg[i] ? HIGH : LOW);
+  for (uint8_t i=0;i<RED_N;i++)   digitalWrite(RED_PINS[i],   redDbg[i] ? HIGH : LOW);
+}
+
 static void ledsInit() {
   for (uint8_t i=0;i<GREEN_N;i++) pinMode(GREEN_PINS[i], OUTPUT);
   for (uint8_t i=0;i<BLUE_N;i++)  pinMode(BLUE_PINS[i], OUTPUT);
@@ -232,6 +276,11 @@ static void ledsSetMode(LedMode m) {
 }
 
 static void ledsService() {
+  if (LED_DEBUG_MODE) {
+    ledsApplyDebugManualStates();
+    return;
+  }
+
   const uint32_t now = millis();
 
   switch (ledMode) {
