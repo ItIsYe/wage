@@ -62,7 +62,17 @@
   - `false` = normaler LED-Betrieb wie bisher
   - `true` = nur manuelle LED-Zustaende, normale LED-Engine ist komplett uebersteuert
 - Manuelle Einzelsteuerung pro LED:
-  - Gruen: `LED_DEBUG_GREEN_1` bis `LED_DEBUG_GREEN_4`
-  - Blau: `LED_DEBUG_BLUE_1` bis `LED_DEBUG_BLUE_4`
-  - Rot: `LED_DEBUG_RED_1` bis `LED_DEBUG_RED_2`
+  - Gruen:
+    - `LED_DEBUG_GREEN_1` = unten rechts
+    - `LED_DEBUG_GREEN_2` = oben rechts
+    - `LED_DEBUG_GREEN_3` = oben links
+    - `LED_DEBUG_GREEN_4` = unten links
+  - Blau:
+    - `LED_DEBUG_BLUE_1` = mitte oben
+    - `LED_DEBUG_BLUE_2` = mitte links
+    - `LED_DEBUG_BLUE_3` = mitte rechts
+    - `LED_DEBUG_BLUE_4` = mitte unten
+  - Rot:
+    - `LED_DEBUG_RED_1` = oben links & unten rechts
+    - `LED_DEBUG_RED_2` = oben rechts & unten links
 - Im Debug-Modus gibt es bewusst keine Blinkmuster und keine zustandsbasierte LED-Automatik.
