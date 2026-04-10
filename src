@@ -34,6 +34,7 @@ static constexpr float STOP_RISE_PERCENT  = 5.0f; // Stop: Rise >= x%
 static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Mindestschwelle (g)
 static constexpr uint32_t DROP_HOLD_MS = 150;          // Drop-Haltezeit (ms)
 static constexpr uint32_t STOP_HOLD_MS = 220;          // Stop-Haltezeit (ms)
+static constexpr float STOP_RESET_HYST_G = 0.8f;       // Kandidat-Reset-Hysterese (g)
 static constexpr float START_RESET_HYST_G = 3.0f;      // Start-Reset-Hysterese (g)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
 static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
@@ -699,30 +700,50 @@ void loop() {
     }
 
     case State::TIMING: {
-      const float w = w_filt;
-      minDuringTiming = min(minDuringTiming, w);
-      const float riseFromMin = w - minDuringTiming;
-
       oledTimingLive(now - tStartMs);
 
-      if (haveRead && riseFromMin >= stopRiseThresholdG) {
-        if (stopCandidateSinceMs == 0) stopCandidateSinceMs = now;
-        if (now - stopCandidateSinceMs >= STOP_HOLD_MS) {
-          finalizeTiming(now);
-        }
-      } else {
-        stopCandidateSinceMs = 0;
-      }
+      if (haveRead) {
+        const float w = w_filt;
 
-      if (MASTER_DEBUG_LOG && haveRead) {
-        Serial.print("[TIMING] w=");
-        Serial.print(w, 2);
-        Serial.print(" min=");
-        Serial.print(minDuringTiming, 2);
-        Serial.print(" rise=");
-        Serial.print(riseFromMin, 2);
-        Serial.print(" stopThr=");
-        Serial.println(stopRiseThresholdG, 2);
+        // Minimum nur während "freiem Lauf" weiter nachführen.
+        // Sobald ein Stop-Kandidat aktiv ist, wird das Minimum eingefroren,
+        // damit die Schwelle nicht von Messrauschen "wegläuft".
+        if (stopCandidateSinceMs == 0 && w < minDuringTiming) {
+          minDuringTiming = w;
+        }
+
+        const float stopThreshold = minDuringTiming + stopRiseThresholdG;
+        const float rebound = w - minDuringTiming;
+        const bool aboveStopThreshold = (w >= stopThreshold);
+        const uint32_t stopHoldMs = (stopCandidateSinceMs == 0) ? 0 : (now - stopCandidateSinceMs);
+
+        if (aboveStopThreshold) {
+          if (stopCandidateSinceMs == 0) stopCandidateSinceMs = now;
+          if ((now - stopCandidateSinceMs) >= STOP_HOLD_MS) {
+            finalizeTiming(now);
+            break;
+          }
+        } else if (stopCandidateSinceMs != 0) {
+          const float resetLimit = stopThreshold - STOP_RESET_HYST_G;
+          if (w < resetLimit) {
+            stopCandidateSinceMs = 0;
+          }
+        }
+
+        if (MASTER_DEBUG_LOG) {
+          Serial.print("[TIMING] w=");
+          Serial.print(w, 2);
+          Serial.print(" min=");
+          Serial.print(minDuringTiming, 2);
+          Serial.print(" stopThr=");
+          Serial.print(stopThreshold, 2);
+          Serial.print(" rebound=");
+          Serial.print(rebound, 2);
+          Serial.print(" candHold=");
+          Serial.print(stopHoldMs);
+          Serial.print("ms active=");
+          Serial.println(stopCandidateSinceMs != 0 ? 1 : 0);
+        }
       }
       break;
     }
