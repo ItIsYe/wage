@@ -46,7 +46,11 @@
   - Glas erkannt = grün dauerhaft
   - Zeit läuft (`TIMING`) = blaue LEDs laufen im Kreis (oben -> rechts -> unten -> links)
   - Ergebnis (`SHOW_RESULT`) = gruen+blau einmal kurz gemeinsam, danach gruen dauerhaft
-  - Standby = sanftes Random-Twinkle
+  - Standby = ruhiges, begrenztes Twinkle:
+    - Gruen/Blau veraendern sich nur in kleinen, langsamen Schritten
+    - nie hektische Blinksalven
+    - Rot nur als seltener Akzent
+    - bei Rot ist immer nur **eine** rote Gruppe gleichzeitig aktiv
 
 ## Prozent-Logik (Start/Stop)
 

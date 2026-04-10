@@ -80,8 +80,11 @@ static constexpr float RETARE_TOL_G = 1.5f;            // Re-Tare bei Offset > x
 static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
 static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
-static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 200; // Twinkle min (ms)
-static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 900; // Twinkle max (ms)
+static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
+static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
+static constexpr uint32_t STANDBY_RED_HOLD_MIN_MS = 700; // rote Akzentdauer min (ms)
+static constexpr uint32_t STANDBY_RED_HOLD_MAX_MS = 1600;// rote Akzentdauer max (ms)
+static constexpr uint8_t STANDBY_RED_EVENT_CHANCE_PERCENT = 12; // Chance pro Tick
 
 // Filter / Stabilität
 static constexpr uint8_t  MA_N = 10;              // MA-Fenster
@@ -231,6 +234,10 @@ static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
 static uint8_t ledBlueSpinIdx = 0;
+static bool standbyGreenOn[GREEN_N] = {};
+static bool standbyBlueOn[BLUE_N] = {};
+static int8_t standbyRedActive = -1;
+static uint32_t standbyRedUntilMs = 0;
 
 /* =========================================================
    FORWARD DECLARATIONS
@@ -248,6 +255,18 @@ static void initOledScale();
 
 static inline void allPins(const uint8_t* arr, uint8_t n, bool on) {
   for (uint8_t i=0;i<n;i++) digitalWrite(arr[i], on ? HIGH : LOW);
+}
+
+static inline uint8_t countOn(const bool* arr, uint8_t n) {
+  uint8_t c = 0;
+  for (uint8_t i=0;i<n;i++) if (arr[i]) c++;
+  return c;
+}
+
+static void standbyApplyOutputs() {
+  for (uint8_t i=0;i<GREEN_N;i++) digitalWrite(GREEN_PINS[i], standbyGreenOn[i] ? HIGH : LOW);
+  for (uint8_t i=0;i<BLUE_N;i++)  digitalWrite(BLUE_PINS[i],  standbyBlueOn[i] ? HIGH : LOW);
+  for (uint8_t i=0;i<RED_N;i++)   digitalWrite(RED_PINS[i],   (standbyRedActive == (int8_t)i) ? HIGH : LOW);
 }
 
 
@@ -291,6 +310,11 @@ static void ledsSetMode(LedMode m) {
   if (m == LedMode::READY_GREEN_BLINK) ledFlip = true; // startet sichtbar "an"
   ledBlueSpinIdx = 0;
   twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
+  for (uint8_t i=0;i<GREEN_N;i++) standbyGreenOn[i] = false;
+  for (uint8_t i=0;i<BLUE_N;i++)  standbyBlueOn[i] = false;
+  standbyGreenOn[random(0, GREEN_N)] = true; // ruhiger Startpunkt
+  standbyRedActive = -1;
+  standbyRedUntilMs = 0;
 }
 
 static void ledsService() {
@@ -370,16 +394,36 @@ static void ledsService() {
     case LedMode::STANDBY_TWINKLE: {
       if (now >= twinkleNextMs) {
         twinkleNextMs = now + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
-        const uint8_t total = GREEN_N + BLUE_N + RED_N;
-        uint8_t idx = random(0, total);
 
-        uint8_t pin;
-        if (idx < GREEN_N) pin = GREEN_PINS[idx];
-        else if (idx < GREEN_N + BLUE_N) pin = BLUE_PINS[idx - GREEN_N];
-        else pin = RED_PINS[idx - GREEN_N - BLUE_N];
+        // Gruen/Blau: nur kleine, ruhige Aenderungen pro Tick
+        if (random(0, 100) < 38) {
+          uint8_t i = random(0, GREEN_N);
+          standbyGreenOn[i] = !standbyGreenOn[i];
+        }
+        if (random(0, 100) < 32) {
+          uint8_t i = random(0, BLUE_N);
+          standbyBlueOn[i] = !standbyBlueOn[i];
+        }
 
-        digitalWrite(pin, !digitalRead(pin));
+        uint8_t gbOn = countOn(standbyGreenOn, GREEN_N) + countOn(standbyBlueOn, BLUE_N);
+        if (gbOn == 0) {
+          standbyGreenOn[random(0, GREEN_N)] = true;
+        } else if (gbOn > 3) {
+          if (countOn(standbyBlueOn, BLUE_N) > 0) standbyBlueOn[random(0, BLUE_N)] = false;
+          else standbyGreenOn[random(0, GREEN_N)] = false;
+        }
       }
+
+      // Rot: nur als seltener Akzent und niemals beide Gruppen gleichzeitig
+      if (standbyRedActive >= 0 && now >= standbyRedUntilMs) {
+        standbyRedActive = -1;
+      }
+      if (standbyRedActive < 0 && random(0, 100) < STANDBY_RED_EVENT_CHANCE_PERCENT) {
+        standbyRedActive = (int8_t)random(0, RED_N);
+        standbyRedUntilMs = now + random(STANDBY_RED_HOLD_MIN_MS, STANDBY_RED_HOLD_MAX_MS);
+      }
+
+      standbyApplyOutputs();
       break;
     }
   }
