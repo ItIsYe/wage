@@ -30,15 +30,18 @@
 ## OLED- und LED-Verhalten
 
 - OLED:
+  - Display-Treiber: **SH1106 (I2C, 128x64)** via `Adafruit_SH110X`
+  - Rotation bleibt auf `180°` (`setRotation(2)`)
   - Skalierung zentral ganz oben im Config-Block (`OLED_SCALE_CONFIG`, akzeptiert z. B. `"1,9"` oder `"1.9"`)
   - Boot: `Start... / Initialisierung`
   - Nullung: `Nullung... / Bitte nichts auflegen`
   - Idle: `Warte auf Glas`
   - Detected: `Glas erkannt`
   - Ready: `Bereit fuer / Zeitmessung`
-  - Timing: Live-Zeit in Sekunden
+  - Timing: Live-Zeit in Sekunden (bei 128x64 mit größerer Zeitzeile für bessere Lesbarkeit)
   - Ergebnis: `Fertig / Zeit: ...`
   - Nach Ergebnis: `Bitte leeren / Glas entfernen`
+  - Debug-OLED (`DEBUG_MODE`): zeigt Rohwerte, Mittelwert, Filter, Stabilität, State, Objektstatus und Fehlercode
 - LED:
   - Fehler = rot blinkend
   - Warten = grün/blau alternierend

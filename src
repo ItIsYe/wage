@@ -2,7 +2,7 @@
 #include <HX711.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <Adafruit_SH110X.h>
 
 /* =========================================================
    CONFIG (hier einstellen)
@@ -112,7 +112,7 @@ static constexpr uint8_t I2C_SDA  = 21;
 static constexpr uint8_t I2C_SCL  = 22;
 static constexpr uint8_t OLED_ADDR = 0x3C;
 static constexpr int SCREEN_W = 128;
-static constexpr int SCREEN_H = 32;
+static constexpr int SCREEN_H = 64;
 
 // LEDs (deine Belegung)
 static constexpr uint8_t GREEN_PINS[] = {16, 17, 18, 19};
@@ -135,7 +135,7 @@ HX711 scale2;
    DISPLAY
    ========================================================= */
 
-Adafruit_SSD1306 display(SCREEN_W, SCREEN_H, &Wire, -1);
+Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
 
 /* =========================================================
    ERROR CODES
@@ -431,10 +431,10 @@ static void ledsService() {
 
 static void oledInit() {
   Wire.begin(I2C_SDA, I2C_SCL);
-  if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) return;
+  if (!display.begin(OLED_ADDR, true)) return;
   display.setRotation(2);
   display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
+  display.setTextColor(SH110X_WHITE);
   display.display();
 }
 
@@ -467,25 +467,42 @@ static uint8_t oledTextSizeFromScale() {
 static void oledMsg2(const char* line1, const char* line2) {
   if (!display.width()) return;
   const uint8_t textScale = oledTextSizeFromScale();
+  const int lineHeight = (int)textScale * 8;
+  const int gap = 4;
+  int line2Y = lineHeight + gap;
+  const int maxY = display.height() - lineHeight;
+  if (line2Y > maxY) line2Y = maxY;
   display.clearDisplay();
   display.setTextSize(textScale);
   display.setCursor(0,0);
   display.println(line1);
-  display.setCursor(0, (int)(textScale * 8) + 2);
+  display.setCursor(0, line2Y);
   display.println(line2);
   display.display();
 }
 
 static void oledTimingLive(uint32_t dtMs) {
   if (!display.width()) return;
-  const uint8_t textScale = oledTextSizeFromScale();
+  const uint8_t baseScale = oledTextSizeFromScale();
+  const uint8_t titleScale = (baseScale > 1) ? 1 : baseScale;
+  uint8_t timeScale = (display.height() >= 64) ? 2 : baseScale;
+  if (timeScale < 1) timeScale = 1;
+  if (timeScale > 4) timeScale = 4;
+
+  const int titleLineHeight = (int)titleScale * 8;
+  const int timeLineHeight = (int)timeScale * 8;
+  const int timeY = display.height() - timeLineHeight - 2;
   display.clearDisplay();
-  display.setTextSize(textScale);
+  display.setTextSize(titleScale);
   display.setCursor(0,0);
   display.println("Zeitmessung");
   display.println("laeuft...");
-  display.setTextSize(textScale);
-  display.setCursor(0, 16);
+  if (titleLineHeight * 2 < timeY - 2) {
+    display.setCursor(0, titleLineHeight * 2 + 2);
+    display.println("Live:");
+  }
+  display.setTextSize(timeScale);
+  display.setCursor(0, timeY);
   display.print(dtMs / 1000.0f, 1);
   display.print("s");
   display.display();
@@ -493,7 +510,7 @@ static void oledTimingLive(uint32_t dtMs) {
 
 static void oledDebugWeights() {
   if (!display.width()) return;
-  const uint8_t textScale = oledTextSizeFromScale();
+  const uint8_t textScale = 1;
   display.clearDisplay();
   display.setTextSize(textScale);
   display.setCursor(0,0);
@@ -512,6 +529,11 @@ static void oledDebugWeights() {
   display.print(isStable ? "Y" : "N");
   display.print(" S:");
   display.print((int)state);
+  display.setCursor(0, 24);
+  display.print("OBJ:");
+  display.print(objectPresent ? "Y" : "N");
+  display.print(" E:");
+  display.println(errToStr(err));
 
   display.display();
 }
