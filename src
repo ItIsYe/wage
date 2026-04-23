@@ -3,6 +3,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
+#include <Adafruit_NeoPixel.h>
 
 /* =========================================================
    CONFIG (hier einstellen)
@@ -27,30 +28,30 @@ static constexpr bool LED_DEBUG_MODE = false;
 
 // Manuelle LED-Schalter (wirken nur bei LED_DEBUG_MODE = true)
 // Gruen:
-// - LED Green 1 = unten rechts
-// - LED Green 2 = oben rechts
-// - LED Green 3 = oben links
-// - LED Green 4 = unten links
-static constexpr bool LED_DEBUG_GREEN_1 = false; // unten rechts (GREEN_PINS[0])
-static constexpr bool LED_DEBUG_GREEN_2 = false; // oben rechts  (GREEN_PINS[1])
-static constexpr bool LED_DEBUG_GREEN_3 = false; // oben links   (GREEN_PINS[2])
-static constexpr bool LED_DEBUG_GREEN_4 = false; // unten links  (GREEN_PINS[3])
+// - Green 1 = Segment 3 (unten rechts)
+// - Green 2 = Segment 1 (oben rechts)
+// - Green 3 = Segment 7 (oben links)
+// - Green 4 = Segment 5 (unten links)
+static constexpr bool LED_DEBUG_GREEN_1 = false; // Segment 3 (unten rechts)
+static constexpr bool LED_DEBUG_GREEN_2 = false; // Segment 1 (oben rechts)
+static constexpr bool LED_DEBUG_GREEN_3 = false; // Segment 7 (oben links)
+static constexpr bool LED_DEBUG_GREEN_4 = false; // Segment 5 (unten links)
 
 // Blau:
-// - LED Blue 1 = mitte oben
-// - LED Blue 2 = mitte links
-// - LED Blue 3 = mitte rechts
-// - LED Blue 4 = mitte unten
-static constexpr bool LED_DEBUG_BLUE_1  = false; // mitte oben   (BLUE_PINS[0])
-static constexpr bool LED_DEBUG_BLUE_2  = false; // mitte links  (BLUE_PINS[1])
-static constexpr bool LED_DEBUG_BLUE_3  = false; // mitte rechts (BLUE_PINS[2])
-static constexpr bool LED_DEBUG_BLUE_4  = false; // mitte unten  (BLUE_PINS[3])
+// - Blue 1 = Segment 0 (oben)
+// - Blue 2 = Segment 6 (links)
+// - Blue 3 = Segment 2 (rechts)
+// - Blue 4 = Segment 4 (unten)
+static constexpr bool LED_DEBUG_BLUE_1  = false; // Segment 0 (oben)
+static constexpr bool LED_DEBUG_BLUE_2  = false; // Segment 6 (links)
+static constexpr bool LED_DEBUG_BLUE_3  = false; // Segment 2 (rechts)
+static constexpr bool LED_DEBUG_BLUE_4  = false; // Segment 4 (unten)
 
 // Rot:
-// - LED Red 1 = oben links & unten rechts
-// - LED Red 2 = oben rechts & unten links
-static constexpr bool LED_DEBUG_RED_1   = false; // oben links & unten rechts (RED_PINS[0])
-static constexpr bool LED_DEBUG_RED_2   = false; // oben rechts & unten links (RED_PINS[1])
+// - Red 1 = Segmente 7 + 3 (oben links + unten rechts)
+// - Red 2 = Segmente 1 + 5 (oben rechts + unten links)
+static constexpr bool LED_DEBUG_RED_1   = false; // Segmente 7 + 3
+static constexpr bool LED_DEBUG_RED_2   = false; // Segmente 1 + 5
 
 // Kalibrierung (g)
 static float CAL1 = -235.15f;
@@ -114,15 +115,17 @@ static constexpr uint8_t OLED_ADDR = 0x3C;
 static constexpr int SCREEN_W = 128;
 static constexpr int SCREEN_H = 64;
 
-// LEDs (deine Belegung)
-static constexpr uint8_t GREEN_PINS[] = {16, 17, 18, 19};
-static constexpr uint8_t BLUE_PINS[]  = {4, 5, 13, 14};
-static constexpr uint8_t RED_PINS[]   = {23, 27};
-
-// LED counts
-static constexpr uint8_t GREEN_N = sizeof(GREEN_PINS) / sizeof(GREEN_PINS[0]);
-static constexpr uint8_t BLUE_N  = sizeof(BLUE_PINS)  / sizeof(BLUE_PINS[0]);
-static constexpr uint8_t RED_N   = sizeof(RED_PINS)   / sizeof(RED_PINS[0]);
+// WS2812B-Ring:
+// - LED 0 = oben
+// - Zaehlrichtung = im Uhrzeigersinn
+// - 8 Segmente à 5 Pixel
+static constexpr uint8_t LED_RING_PIN = 5;
+static constexpr uint16_t LED_RING_PIXELS = 40;
+static constexpr uint8_t LED_SEGMENT_COUNT = 8;
+static constexpr uint8_t PIXELS_PER_SEGMENT = 5;
+static constexpr uint8_t GREEN_N = 4;
+static constexpr uint8_t BLUE_N = 4;
+static constexpr uint8_t RED_N = 2;
 
 /* =========================================================
    SCALE / CALIBRATION
@@ -136,6 +139,7 @@ HX711 scale2;
    ========================================================= */
 
 Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
+Adafruit_NeoPixel ledRing(LED_RING_PIXELS, LED_RING_PIN, NEO_GRB + NEO_KHZ800);
 
 /* =========================================================
    ERROR CODES
@@ -239,6 +243,14 @@ static bool standbyBlueOn[BLUE_N] = {};
 static int8_t standbyRedActive = -1;
 static uint32_t standbyRedUntilMs = 0;
 
+// Segment-Definition (Ring):
+// 0=oben, 1=oben rechts, 2=rechts, 3=unten rechts,
+// 4=unten, 5=unten links, 6=links, 7=oben links.
+static constexpr uint8_t GREEN_SEGMENTS[GREEN_N] = {3, 1, 7, 5};
+static constexpr uint8_t BLUE_SEGMENTS[BLUE_N]   = {0, 6, 2, 4};
+static constexpr uint8_t RED_SEGMENTS[RED_N][2]  = {{7, 3}, {1, 5}};
+static constexpr uint8_t BLUE_SPIN_SEGMENTS[BLUE_N] = {0, 2, 4, 6};
+
 /* =========================================================
    FORWARD DECLARATIONS
    ========================================================= */
@@ -253,20 +265,50 @@ static void initOledScale();
    HELPERS
    ========================================================= */
 
-static inline void allPins(const uint8_t* arr, uint8_t n, bool on) {
-  for (uint8_t i=0;i<n;i++) digitalWrite(arr[i], on ? HIGH : LOW);
-}
-
 static inline uint8_t countOn(const bool* arr, uint8_t n) {
   uint8_t c = 0;
   for (uint8_t i=0;i<n;i++) if (arr[i]) c++;
   return c;
 }
 
+static inline void ringClear() {
+  ledRing.clear();
+}
+
+static inline void ringShow() {
+  ledRing.show();
+}
+
+static void ringSetSegmentColor(uint8_t segment, uint32_t color) {
+  if (segment >= LED_SEGMENT_COUNT) return;
+  const uint16_t start = (uint16_t)segment * PIXELS_PER_SEGMENT;
+  for (uint8_t i = 0; i < PIXELS_PER_SEGMENT; ++i) {
+    ledRing.setPixelColor(start + i, color);
+  }
+}
+
+static void ringSetRedGroup(uint8_t redGroupIdx, uint32_t color) {
+  if (redGroupIdx >= RED_N) return;
+  ringSetSegmentColor(RED_SEGMENTS[redGroupIdx][0], color);
+  ringSetSegmentColor(RED_SEGMENTS[redGroupIdx][1], color);
+}
+
 static void standbyApplyOutputs() {
-  for (uint8_t i=0;i<GREEN_N;i++) digitalWrite(GREEN_PINS[i], standbyGreenOn[i] ? HIGH : LOW);
-  for (uint8_t i=0;i<BLUE_N;i++)  digitalWrite(BLUE_PINS[i],  standbyBlueOn[i] ? HIGH : LOW);
-  for (uint8_t i=0;i<RED_N;i++)   digitalWrite(RED_PINS[i],   (standbyRedActive == (int8_t)i) ? HIGH : LOW);
+  const uint32_t greenDim = ledRing.Color(0, 28, 0);
+  const uint32_t blueDim  = ledRing.Color(0, 0, 30);
+  const uint32_t redDim   = ledRing.Color(26, 0, 0);
+
+  ringClear();
+  for (uint8_t i = 0; i < GREEN_N; i++) {
+    if (standbyGreenOn[i]) ringSetSegmentColor(GREEN_SEGMENTS[i], greenDim);
+  }
+  for (uint8_t i = 0; i < BLUE_N; i++) {
+    if (standbyBlueOn[i]) ringSetSegmentColor(BLUE_SEGMENTS[i], blueDim);
+  }
+  if (standbyRedActive >= 0) {
+    ringSetRedGroup((uint8_t)standbyRedActive, redDim);
+  }
+  ringShow();
 }
 
 
@@ -288,18 +330,28 @@ static void ledsApplyDebugManualStates() {
     LED_DEBUG_RED_2
   };
 
-  for (uint8_t i=0;i<GREEN_N;i++) digitalWrite(GREEN_PINS[i], greenDbg[i] ? HIGH : LOW);
-  for (uint8_t i=0;i<BLUE_N;i++)  digitalWrite(BLUE_PINS[i],  blueDbg[i] ? HIGH : LOW);
-  for (uint8_t i=0;i<RED_N;i++)   digitalWrite(RED_PINS[i],   redDbg[i] ? HIGH : LOW);
+  const uint32_t green = ledRing.Color(0, 90, 0);
+  const uint32_t blue  = ledRing.Color(0, 0, 100);
+  const uint32_t red   = ledRing.Color(90, 0, 0);
+
+  ringClear();
+  for (uint8_t i = 0; i < GREEN_N; i++) {
+    if (greenDbg[i]) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
+  }
+  for (uint8_t i = 0; i < BLUE_N; i++) {
+    if (blueDbg[i]) ringSetSegmentColor(BLUE_SEGMENTS[i], blue);
+  }
+  for (uint8_t i = 0; i < RED_N; i++) {
+    if (redDbg[i]) ringSetRedGroup(i, red);
+  }
+  ringShow();
 }
 
 static void ledsInit() {
-  for (uint8_t i=0;i<GREEN_N;i++) pinMode(GREEN_PINS[i], OUTPUT);
-  for (uint8_t i=0;i<BLUE_N;i++)  pinMode(BLUE_PINS[i], OUTPUT);
-  for (uint8_t i=0;i<RED_N;i++)   pinMode(RED_PINS[i], OUTPUT);
-  allPins(GREEN_PINS, GREEN_N, false);
-  allPins(BLUE_PINS,  BLUE_N,  false);
-  allPins(RED_PINS,   RED_N,   false);
+  ledRing.begin();
+  ledRing.setBrightness(96);
+  ringClear();
+  ringShow();
 }
 
 static void ledsSetMode(LedMode m) {
@@ -324,32 +376,39 @@ static void ledsService() {
   }
 
   const uint32_t now = millis();
+  const uint32_t green = ledRing.Color(0, 90, 0);
+  const uint32_t blue  = ledRing.Color(0, 0, 100);
+  const uint32_t red   = ledRing.Color(100, 0, 0);
 
   switch (ledMode) {
     case LedMode::ALL_OFF:
-      allPins(GREEN_PINS, GREEN_N, false);
-      allPins(BLUE_PINS,  BLUE_N,  false);
-      allPins(RED_PINS,   RED_N,   false);
+      ringClear();
+      ringShow();
       break;
 
     case LedMode::ERROR_BLINK_RED:
       if (now - ledTickMs >= 350) {
         ledTickMs = now;
         ledFlip = !ledFlip;
-        allPins(RED_PINS, RED_N, ledFlip);
-        allPins(GREEN_PINS, GREEN_N, false);
-        allPins(BLUE_PINS,  BLUE_N,  false);
       }
+      ringClear();
+      ringSetRedGroup(ledFlip ? 0 : 1, red);
+      ringShow();
       break;
 
     case LedMode::OK_ALT_GB:
       if (now - ledTickMs >= 450) {
         ledTickMs = now;
         ledFlip = !ledFlip;
-        allPins(RED_PINS,   RED_N,   false);
-        allPins(GREEN_PINS, GREEN_N, ledFlip);
-        allPins(BLUE_PINS,  BLUE_N,  !ledFlip);
       }
+      ringClear();
+      for (uint8_t i = 0; i < GREEN_N; i++) {
+        if (ledFlip) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
+      }
+      for (uint8_t i = 0; i < BLUE_N; i++) {
+        if (!ledFlip) ringSetSegmentColor(BLUE_SEGMENTS[i], blue);
+      }
+      ringShow();
       break;
 
     case LedMode::READY_GREEN_BLINK:
@@ -357,35 +416,36 @@ static void ledsService() {
         ledTickMs = now;
         ledFlip = !ledFlip;
       }
-      allPins(RED_PINS,   RED_N,   false);
-      allPins(BLUE_PINS,  BLUE_N,  false);
-      allPins(GREEN_PINS, GREEN_N, ledFlip);
+      ringClear();
+      if (ledFlip) {
+        for (uint8_t i = 0; i < GREEN_N; i++) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
+      }
+      ringShow();
       break;
 
     case LedMode::GLASS_GREEN_SOLID:
-      allPins(RED_PINS,   RED_N,   false);
-      allPins(BLUE_PINS,  BLUE_N,  false);
-      allPins(GREEN_PINS, GREEN_N, true);
+      ringClear();
+      for (uint8_t i = 0; i < GREEN_N; i++) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
+      ringShow();
       break;
 
     case LedMode::TIMING_BLUE_SPINNER: {
-      static const uint8_t BLUE_SPIN_ORDER[BLUE_N] = {0, 2, 3, 1}; // oben -> rechts -> unten -> links
       if (now - ledTickMs >= 180) {
         ledTickMs = now;
         ledBlueSpinIdx = (uint8_t)((ledBlueSpinIdx + 1) % BLUE_N);
       }
-      allPins(RED_PINS,   RED_N,   false);
-      allPins(GREEN_PINS, GREEN_N, false);
-      allPins(BLUE_PINS,  BLUE_N,  false);
-      digitalWrite(BLUE_PINS[BLUE_SPIN_ORDER[ledBlueSpinIdx]], HIGH);
+      ringClear();
+      ringSetSegmentColor(BLUE_SPIN_SEGMENTS[ledBlueSpinIdx], blue);
+      ringShow();
       break;
     }
 
     case LedMode::RESULT_FLASH_GB_ONCE:
       if (now - ledTickMs < 200) {
-        allPins(RED_PINS,   RED_N,   false);
-        allPins(GREEN_PINS, GREEN_N, true);
-        allPins(BLUE_PINS,  BLUE_N,  true);
+        ringClear();
+        for (uint8_t i = 0; i < GREEN_N; i++) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
+        for (uint8_t i = 0; i < BLUE_N; i++) ringSetSegmentColor(BLUE_SEGMENTS[i], blue);
+        ringShow();
       } else {
         ledsSetMode(LedMode::GLASS_GREEN_SOLID);
       }
