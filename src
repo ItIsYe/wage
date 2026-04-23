@@ -492,7 +492,7 @@ static void ledsService() {
 static void oledInit() {
   Wire.begin(I2C_SDA, I2C_SCL);
   if (!display.begin(OLED_ADDR, true)) return;
-  display.setRotation(2);
+  display.setRotation(0);
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
   display.display();
