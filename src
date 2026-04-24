@@ -58,8 +58,6 @@ static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
-static constexpr uint32_t STANDBY_RED_HOLD_MIN_MS = 700; // rote Akzentdauer min (ms)
-static constexpr uint32_t STANDBY_RED_HOLD_MAX_MS = 1600;// rote Akzentdauer max (ms)
 static constexpr uint8_t STANDBY_RED_EVENT_CHANCE_PERCENT = 12; // Chance pro Tick
 
 // Filter / Stabilität
@@ -222,10 +220,23 @@ static void initOledScale();
    HELPERS
    ========================================================= */
 
-static inline uint8_t countOn(const bool* arr, uint8_t n) {
-  uint8_t c = 0;
-  for (uint8_t i=0;i<n;i++) if (arr[i]) c++;
-  return c;
+static inline uint8_t brightnessByteFromPercent(uint8_t percent) {
+  if (percent > 100) percent = 100;
+  // 0..100% -> 0..255
+  return (uint8_t)((uint16_t)percent * 255u / 100u);
+}
+
+static inline void pixelsClear() {
+  ledStrip.clear();
+}
+
+static inline void pixelsShow() {
+  ledStrip.show();
+}
+
+static uint8_t brightnessPercentToByte(uint8_t percent) {
+  if (percent > 100) percent = 100;
+  return (uint8_t)((percent * 255U + 50U) / 100U);
 }
 
 static inline uint8_t brightnessPercentToByte(uint8_t percent) {
@@ -387,8 +398,7 @@ static void ledsService() {
         standbyRedPixel = (int8_t)random(0, PIXEL_COUNT);
         standbyRedUntilMs = now + random(STANDBY_RED_HOLD_MIN_MS, STANDBY_RED_HOLD_MAX_MS);
       }
-
-      standbyApplyOutputs();
+      pixelsShow();
       break;
     }
   }
