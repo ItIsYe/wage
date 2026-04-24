@@ -31,7 +31,7 @@
 
 - OLED:
   - Display-Treiber: **SH1106 (I2C, 128x64)** via `Adafruit_SH110X`
-  - Rotation bleibt auf `180°` (`setRotation(2)`)
+  - Rotation ist im Config-Block schaltbar (`OLED_ROTATION_180`: `false`=normal, `true`=180°)
   - Skalierung zentral ganz oben im Config-Block (`OLED_SCALE_CONFIG`, akzeptiert z. B. `"1,9"` oder `"1.9"`)
   - Boot: `Start... / Initialisierung`
   - Nullung: `Nullung... / Bitte nichts auflegen`
@@ -43,6 +43,10 @@
   - Nach Ergebnis: `Bitte leeren / Glas entfernen`
   - Debug-OLED (`DEBUG_MODE`): zeigt Rohwerte, Mittelwert, Filter, Stabilität, State, Objektstatus und Fehlercode
 - LED:
+  - WS2812B-Ring mit **25 Pixeln** (`LED_PIXEL_COUNT`)
+  - **Keine Segmentlogik** mehr; alle Muster sind über direkte Pixel-Indizes/-Gruppen umgesetzt
+  - Helligkeit zentral als Prozentwert (`LED_BRIGHTNESS_PERCENT`, 0..100 % -> intern 0..255)
+  - Optionaler Pixel-Debug `LED_DEBUG_ALL_PIXELS_ON` schaltet alle Pixel ein (übersteuert alles)
   - Fehler = rot blinkend
   - Warten = grün/blau alternierend
   - Bereit fuer Zeitmessung (`READY_FOR_TIMING`) = nur gruen blinkend
@@ -70,7 +74,10 @@
 - Hauptschalter: `LED_DEBUG_MODE`
   - `false` = normaler LED-Betrieb wie bisher
   - `true` = nur manuelle LED-Zustaende, normale LED-Engine ist komplett uebersteuert
-- Manuelle Einzelsteuerung pro LED:
+- Globaler Testschalter: `LED_DEBUG_ALL_PIXELS_ON`
+  - `false` = kein Einfluss
+  - `true` = alle 25 Pixel dauerhaft an (übersteuert auch `LED_DEBUG_MODE`)
+- Manuelle Steuerung über Pixelgruppen:
   - Gruen:
     - `LED_DEBUG_GREEN_1` = unten rechts
     - `LED_DEBUG_GREEN_2` = oben rechts
