@@ -20,38 +20,15 @@ static constexpr bool DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = true;
 
-// =========================================================
-// LED DEBUG (SEPARAT VOM NORMALBETRIEB)
-// =========================================================
-// Aktivierung: true = nur manuelle LED-Zustaende, false = normale LED-Logik.
-static constexpr bool LED_DEBUG_MODE = false;
+// OLED-Rotation (0..3)
+static constexpr uint8_t OLED_ROTATION = 0;
 
-// Manuelle LED-Schalter (wirken nur bei LED_DEBUG_MODE = true)
-// Gruen:
-// - Green 1 = Segment 3 (unten rechts)
-// - Green 2 = Segment 1 (oben rechts)
-// - Green 3 = Segment 7 (oben links)
-// - Green 4 = Segment 5 (unten links)
-static constexpr bool LED_DEBUG_GREEN_1 = false; // Segment 3 (unten rechts)
-static constexpr bool LED_DEBUG_GREEN_2 = false; // Segment 1 (oben rechts)
-static constexpr bool LED_DEBUG_GREEN_3 = false; // Segment 7 (oben links)
-static constexpr bool LED_DEBUG_GREEN_4 = false; // Segment 5 (unten links)
-
-// Blau:
-// - Blue 1 = Segment 0 (oben)
-// - Blue 2 = Segment 6 (links)
-// - Blue 3 = Segment 2 (rechts)
-// - Blue 4 = Segment 4 (unten)
-static constexpr bool LED_DEBUG_BLUE_1  = false; // Segment 0 (oben)
-static constexpr bool LED_DEBUG_BLUE_2  = false; // Segment 6 (links)
-static constexpr bool LED_DEBUG_BLUE_3  = false; // Segment 2 (rechts)
-static constexpr bool LED_DEBUG_BLUE_4  = false; // Segment 4 (unten)
-
-// Rot:
-// - Red 1 = Segmente 7 + 3 (oben links + unten rechts)
-// - Red 2 = Segmente 1 + 5 (oben rechts + unten links)
-static constexpr bool LED_DEBUG_RED_1   = false; // Segmente 7 + 3
-static constexpr bool LED_DEBUG_RED_2   = false; // Segmente 1 + 5
+// Pixel-Anzahl
+static constexpr uint16_t PIXEL_COUNT = 25;
+// Pixel-Debug: alle Pixel dauerhaft an (nur wenn true)
+static constexpr bool PIXEL_DEBUG_ALL_ON = false;
+// Pixel-Helligkeit in Prozent (0..100), intern auf 0..255 umgerechnet
+static constexpr uint8_t PIXEL_BRIGHTNESS_PERCENT = 38;
 
 // Kalibrierung (g)
 static float CAL1 = -235.15f;
@@ -83,8 +60,6 @@ static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
-static constexpr uint32_t STANDBY_RED_HOLD_MIN_MS = 700; // rote Akzentdauer min (ms)
-static constexpr uint32_t STANDBY_RED_HOLD_MAX_MS = 1600;// rote Akzentdauer max (ms)
 static constexpr uint8_t STANDBY_RED_EVENT_CHANCE_PERCENT = 12; // Chance pro Tick
 
 // Filter / Stabilität
@@ -115,17 +90,8 @@ static constexpr uint8_t OLED_ADDR = 0x3C;
 static constexpr int SCREEN_W = 128;
 static constexpr int SCREEN_H = 64;
 
-// WS2812B-Ring:
-// - LED 0 = oben
-// - Zaehlrichtung = im Uhrzeigersinn
-// - 8 Segmente à 5 Pixel
-static constexpr uint8_t LED_RING_PIN = 5;
-static constexpr uint16_t LED_RING_PIXELS = 40;
-static constexpr uint8_t LED_SEGMENT_COUNT = 8;
-static constexpr uint8_t PIXELS_PER_SEGMENT = 5;
-static constexpr uint8_t GREEN_N = 4;
-static constexpr uint8_t BLUE_N = 4;
-static constexpr uint8_t RED_N = 2;
+// WS2812B RGB-Strip
+static constexpr uint8_t LED_STRIP_PIN = 5;
 
 /* =========================================================
    SCALE / CALIBRATION
@@ -139,7 +105,7 @@ HX711 scale2;
    ========================================================= */
 
 Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
-Adafruit_NeoPixel ledRing(LED_RING_PIXELS, LED_RING_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 
 /* =========================================================
    ERROR CODES
@@ -237,19 +203,8 @@ static LedMode ledMode = LedMode::ALL_OFF;
 static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
-static uint8_t ledBlueSpinIdx = 0;
-static bool standbyGreenOn[GREEN_N] = {};
-static bool standbyBlueOn[BLUE_N] = {};
-static int8_t standbyRedActive = -1;
-static uint32_t standbyRedUntilMs = 0;
-
-// Segment-Definition (Ring):
-// 0=oben, 1=oben rechts, 2=rechts, 3=unten rechts,
-// 4=unten, 5=unten links, 6=links, 7=oben links.
-static constexpr uint8_t GREEN_SEGMENTS[GREEN_N] = {3, 1, 7, 5};
-static constexpr uint8_t BLUE_SEGMENTS[BLUE_N]   = {0, 6, 2, 4};
-static constexpr uint8_t RED_SEGMENTS[RED_N][2]  = {{7, 3}, {1, 5}};
-static constexpr uint8_t BLUE_SPIN_SEGMENTS[BLUE_N] = {0, 2, 4, 6};
+static uint8_t spinnerHead = 0;
+static uint8_t standbyCount = 0;
 
 /* =========================================================
    FORWARD DECLARATIONS
@@ -265,93 +220,40 @@ static void initOledScale();
    HELPERS
    ========================================================= */
 
-static inline uint8_t countOn(const bool* arr, uint8_t n) {
-  uint8_t c = 0;
-  for (uint8_t i=0;i<n;i++) if (arr[i]) c++;
-  return c;
+static inline uint8_t brightnessByteFromPercent(uint8_t percent) {
+  if (percent > 100) percent = 100;
+  // 0..100% -> 0..255
+  return (uint8_t)((uint16_t)percent * 255u / 100u);
 }
 
-static inline void ringClear() {
-  ledRing.clear();
+static inline void pixelsClear() {
+  ledStrip.clear();
 }
 
-static inline void ringShow() {
-  ledRing.show();
+static inline void pixelsShow() {
+  ledStrip.show();
 }
 
-static void ringSetSegmentColor(uint8_t segment, uint32_t color) {
-  if (segment >= LED_SEGMENT_COUNT) return;
-  const uint16_t start = (uint16_t)segment * PIXELS_PER_SEGMENT;
-  for (uint8_t i = 0; i < PIXELS_PER_SEGMENT; ++i) {
-    ledRing.setPixelColor(start + i, color);
+static inline void pixelsSetAll(uint32_t color) {
+  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) {
+    ledStrip.setPixelColor(i, color);
   }
 }
 
-static void ringSetRedGroup(uint8_t redGroupIdx, uint32_t color) {
-  if (redGroupIdx >= RED_N) return;
-  ringSetSegmentColor(RED_SEGMENTS[redGroupIdx][0], color);
-  ringSetSegmentColor(RED_SEGMENTS[redGroupIdx][1], color);
+static void pixelsSetGroup(const uint8_t* indices, uint8_t n, uint32_t color) {
+  for (uint8_t i = 0; i < n; ++i) {
+    if (indices[i] < PIXEL_COUNT) ledStrip.setPixelColor(indices[i], color);
+  }
 }
 
-static void standbyApplyOutputs() {
-  const uint32_t greenDim = ledRing.Color(0, 28, 0);
-  const uint32_t blueDim  = ledRing.Color(0, 0, 30);
-  const uint32_t redDim   = ledRing.Color(26, 0, 0);
-
-  ringClear();
-  for (uint8_t i = 0; i < GREEN_N; i++) {
-    if (standbyGreenOn[i]) ringSetSegmentColor(GREEN_SEGMENTS[i], greenDim);
-  }
-  for (uint8_t i = 0; i < BLUE_N; i++) {
-    if (standbyBlueOn[i]) ringSetSegmentColor(BLUE_SEGMENTS[i], blueDim);
-  }
-  if (standbyRedActive >= 0) {
-    ringSetRedGroup((uint8_t)standbyRedActive, redDim);
-  }
-  ringShow();
-}
-
-
-static void ledsApplyDebugManualStates() {
-  const bool greenDbg[GREEN_N] = {
-    LED_DEBUG_GREEN_1,
-    LED_DEBUG_GREEN_2,
-    LED_DEBUG_GREEN_3,
-    LED_DEBUG_GREEN_4
-  };
-  const bool blueDbg[BLUE_N] = {
-    LED_DEBUG_BLUE_1,
-    LED_DEBUG_BLUE_2,
-    LED_DEBUG_BLUE_3,
-    LED_DEBUG_BLUE_4
-  };
-  const bool redDbg[RED_N] = {
-    LED_DEBUG_RED_1,
-    LED_DEBUG_RED_2
-  };
-
-  const uint32_t green = ledRing.Color(0, 90, 0);
-  const uint32_t blue  = ledRing.Color(0, 0, 100);
-  const uint32_t red   = ledRing.Color(90, 0, 0);
-
-  ringClear();
-  for (uint8_t i = 0; i < GREEN_N; i++) {
-    if (greenDbg[i]) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
-  }
-  for (uint8_t i = 0; i < BLUE_N; i++) {
-    if (blueDbg[i]) ringSetSegmentColor(BLUE_SEGMENTS[i], blue);
-  }
-  for (uint8_t i = 0; i < RED_N; i++) {
-    if (redDbg[i]) ringSetRedGroup(i, red);
-  }
-  ringShow();
-}
+static constexpr uint8_t GROUP_A[] = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24};
+static constexpr uint8_t GROUP_B[] = {1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23};
 
 static void ledsInit() {
-  ledRing.begin();
-  ledRing.setBrightness(96);
-  ringClear();
-  ringShow();
+  ledStrip.begin();
+  ledStrip.setBrightness(brightnessByteFromPercent(PIXEL_BRIGHTNESS_PERCENT));
+  pixelsClear();
+  pixelsShow();
 }
 
 static void ledsSetMode(LedMode m) {
@@ -360,30 +262,27 @@ static void ledsSetMode(LedMode m) {
   ledTickMs = millis();
   ledFlip = false;
   if (m == LedMode::READY_GREEN_BLINK) ledFlip = true; // startet sichtbar "an"
-  ledBlueSpinIdx = 0;
+  spinnerHead = 0;
+  standbyCount = 0;
   twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
-  for (uint8_t i=0;i<GREEN_N;i++) standbyGreenOn[i] = false;
-  for (uint8_t i=0;i<BLUE_N;i++)  standbyBlueOn[i] = false;
-  standbyGreenOn[random(0, GREEN_N)] = true; // ruhiger Startpunkt
-  standbyRedActive = -1;
-  standbyRedUntilMs = 0;
 }
 
 static void ledsService() {
-  if (LED_DEBUG_MODE) {
-    ledsApplyDebugManualStates();
+  if (PIXEL_DEBUG_ALL_ON) {
+    pixelsSetAll(ledStrip.Color(90, 90, 90));
+    pixelsShow();
     return;
   }
 
   const uint32_t now = millis();
-  const uint32_t green = ledRing.Color(0, 90, 0);
-  const uint32_t blue  = ledRing.Color(0, 0, 100);
-  const uint32_t red   = ledRing.Color(100, 0, 0);
+  const uint32_t green = ledStrip.Color(0, 90, 0);
+  const uint32_t blue  = ledStrip.Color(0, 0, 100);
+  const uint32_t red   = ledStrip.Color(100, 0, 0);
 
   switch (ledMode) {
     case LedMode::ALL_OFF:
-      ringClear();
-      ringShow();
+      pixelsClear();
+      pixelsShow();
       break;
 
     case LedMode::ERROR_BLINK_RED:
@@ -391,9 +290,13 @@ static void ledsService() {
         ledTickMs = now;
         ledFlip = !ledFlip;
       }
-      ringClear();
-      ringSetRedGroup(ledFlip ? 0 : 1, red);
-      ringShow();
+      pixelsClear();
+      if (ledFlip) {
+        pixelsSetGroup(GROUP_A, (uint8_t)(sizeof(GROUP_A) / sizeof(GROUP_A[0])), red);
+      } else {
+        pixelsSetGroup(GROUP_B, (uint8_t)(sizeof(GROUP_B) / sizeof(GROUP_B[0])), red);
+      }
+      pixelsShow();
       break;
 
     case LedMode::OK_ALT_GB:
@@ -401,14 +304,13 @@ static void ledsService() {
         ledTickMs = now;
         ledFlip = !ledFlip;
       }
-      ringClear();
-      for (uint8_t i = 0; i < GREEN_N; i++) {
-        if (ledFlip) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
+      pixelsClear();
+      if (ledFlip) {
+        pixelsSetGroup(GROUP_A, (uint8_t)(sizeof(GROUP_A) / sizeof(GROUP_A[0])), green);
+      } else {
+        pixelsSetGroup(GROUP_B, (uint8_t)(sizeof(GROUP_B) / sizeof(GROUP_B[0])), blue);
       }
-      for (uint8_t i = 0; i < BLUE_N; i++) {
-        if (!ledFlip) ringSetSegmentColor(BLUE_SEGMENTS[i], blue);
-      }
-      ringShow();
+      pixelsShow();
       break;
 
     case LedMode::READY_GREEN_BLINK:
@@ -416,36 +318,35 @@ static void ledsService() {
         ledTickMs = now;
         ledFlip = !ledFlip;
       }
-      ringClear();
-      if (ledFlip) {
-        for (uint8_t i = 0; i < GREEN_N; i++) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
-      }
-      ringShow();
+      pixelsClear();
+      if (ledFlip) pixelsSetAll(green);
+      pixelsShow();
       break;
 
     case LedMode::GLASS_GREEN_SOLID:
-      ringClear();
-      for (uint8_t i = 0; i < GREEN_N; i++) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
-      ringShow();
+      pixelsSetAll(green);
+      pixelsShow();
       break;
 
     case LedMode::TIMING_BLUE_SPINNER: {
       if (now - ledTickMs >= 180) {
         ledTickMs = now;
-        ledBlueSpinIdx = (uint8_t)((ledBlueSpinIdx + 1) % BLUE_N);
+        spinnerHead = (uint8_t)((spinnerHead + 1) % PIXEL_COUNT);
       }
-      ringClear();
-      ringSetSegmentColor(BLUE_SPIN_SEGMENTS[ledBlueSpinIdx], blue);
-      ringShow();
+      pixelsClear();
+      ledStrip.setPixelColor(spinnerHead, blue);
+      ledStrip.setPixelColor((spinnerHead + PIXEL_COUNT - 1) % PIXEL_COUNT, ledStrip.Color(0, 0, 50));
+      ledStrip.setPixelColor((spinnerHead + 1) % PIXEL_COUNT, ledStrip.Color(0, 0, 35));
+      pixelsShow();
       break;
     }
 
     case LedMode::RESULT_FLASH_GB_ONCE:
       if (now - ledTickMs < 200) {
-        ringClear();
-        for (uint8_t i = 0; i < GREEN_N; i++) ringSetSegmentColor(GREEN_SEGMENTS[i], green);
-        for (uint8_t i = 0; i < BLUE_N; i++) ringSetSegmentColor(BLUE_SEGMENTS[i], blue);
-        ringShow();
+        pixelsClear();
+        pixelsSetGroup(GROUP_A, (uint8_t)(sizeof(GROUP_A) / sizeof(GROUP_A[0])), green);
+        pixelsSetGroup(GROUP_B, (uint8_t)(sizeof(GROUP_B) / sizeof(GROUP_B[0])), blue);
+        pixelsShow();
       } else {
         ledsSetMode(LedMode::GLASS_GREEN_SOLID);
       }
@@ -454,36 +355,19 @@ static void ledsService() {
     case LedMode::STANDBY_TWINKLE: {
       if (now >= twinkleNextMs) {
         twinkleNextMs = now + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
-
-        // Gruen/Blau: nur kleine, ruhige Aenderungen pro Tick
-        if (random(0, 100) < 38) {
-          uint8_t i = random(0, GREEN_N);
-          standbyGreenOn[i] = !standbyGreenOn[i];
-        }
-        if (random(0, 100) < 32) {
-          uint8_t i = random(0, BLUE_N);
-          standbyBlueOn[i] = !standbyBlueOn[i];
-        }
-
-        uint8_t gbOn = countOn(standbyGreenOn, GREEN_N) + countOn(standbyBlueOn, BLUE_N);
-        if (gbOn == 0) {
-          standbyGreenOn[random(0, GREEN_N)] = true;
-        } else if (gbOn > 3) {
-          if (countOn(standbyBlueOn, BLUE_N) > 0) standbyBlueOn[random(0, BLUE_N)] = false;
-          else standbyGreenOn[random(0, GREEN_N)] = false;
-        }
+        standbyCount = (uint8_t)random(2, 5);
+        spinnerHead = (uint8_t)random(0, PIXEL_COUNT);
       }
-
-      // Rot: nur als seltener Akzent und niemals beide Gruppen gleichzeitig
-      if (standbyRedActive >= 0 && now >= standbyRedUntilMs) {
-        standbyRedActive = -1;
+      pixelsClear();
+      for (uint8_t i = 0; i < standbyCount; ++i) {
+        uint16_t idx = (spinnerHead + i * 7u) % PIXEL_COUNT;
+        const bool blueToggle = ((now / 400u) + i) % 2u;
+        ledStrip.setPixelColor(idx, blueToggle ? ledStrip.Color(0, 0, 32) : ledStrip.Color(0, 26, 0));
       }
-      if (standbyRedActive < 0 && random(0, 100) < STANDBY_RED_EVENT_CHANCE_PERCENT) {
-        standbyRedActive = (int8_t)random(0, RED_N);
-        standbyRedUntilMs = now + random(STANDBY_RED_HOLD_MIN_MS, STANDBY_RED_HOLD_MAX_MS);
+      if (random(0, 100) < STANDBY_RED_EVENT_CHANCE_PERCENT) {
+        ledStrip.setPixelColor(random(0, PIXEL_COUNT), ledStrip.Color(20, 0, 0));
       }
-
-      standbyApplyOutputs();
+      pixelsShow();
       break;
     }
   }
@@ -492,7 +376,7 @@ static void ledsService() {
 static void oledInit() {
   Wire.begin(I2C_SDA, I2C_SCL);
   if (!display.begin(OLED_ADDR, true)) return;
-  display.setRotation(0);
+  display.setRotation(OLED_ROTATION);
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
   display.display();

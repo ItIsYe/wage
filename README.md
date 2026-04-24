@@ -31,7 +31,7 @@
 
 - OLED:
   - Display-Treiber: **SH1106 (I2C, 128x64)** via `Adafruit_SH110X`
-  - Rotation bleibt auf `180°` (`setRotation(2)`)
+  - Rotation kommt aus `OLED_ROTATION` (0..3)
   - Skalierung zentral ganz oben im Config-Block (`OLED_SCALE_CONFIG`, akzeptiert z. B. `"1,9"` oder `"1.9"`)
   - Boot: `Start... / Initialisierung`
   - Nullung: `Nullung... / Bitte nichts auflegen`
@@ -43,17 +43,16 @@
   - Nach Ergebnis: `Bitte leeren / Glas entfernen`
   - Debug-OLED (`DEBUG_MODE`): zeigt Rohwerte, Mittelwert, Filter, Stabilität, State, Objektstatus und Fehlercode
 - LED:
+  - 25 einzeln adressierbare Pixel (`PIXEL_COUNT = 25`)
+  - Keine Segment- und keine Positionslogik
+  - Keine alte Einzel-LED-Gruppenlogik mehr
   - Fehler = rot blinkend
-  - Warten = grün/blau alternierend
+  - Warten = Gruppe A/B alternierend in grün/blau (gerade/ungerade Pixel)
   - Bereit fuer Zeitmessung (`READY_FOR_TIMING`) = nur gruen blinkend
-  - Glas erkannt = grün dauerhaft
-  - Zeit läuft (`TIMING`) = blaue LEDs laufen im Kreis (oben -> rechts -> unten -> links)
-  - Ergebnis (`SHOW_RESULT`) = gruen+blau einmal kurz gemeinsam, danach gruen dauerhaft
-  - Standby = ruhiges, begrenztes Twinkle:
-    - Gruen/Blau veraendern sich nur in kleinen, langsamen Schritten
-    - nie hektische Blinksalven
-    - Rot nur als seltener Akzent
-    - bei Rot ist immer nur **eine** rote Gruppe gleichzeitig aktiv
+  - Glas erkannt = alle Pixel grün dauerhaft
+  - Zeit läuft (`TIMING`) = blauer Pixel-Spinner direkt über Pixelindex
+  - Ergebnis (`SHOW_RESULT`) = Gruppe A grün + Gruppe B blau, kurz
+  - Standby = ruhiges Twinkle über wenige zufällige Pixel + seltener roter Akzent
 
 ## Prozent-Logik (Start/Stop)
 
@@ -64,24 +63,11 @@
 - Damit bleiben Start/Stop robust bei leichten und schweren Gläsern.
 
 
-## LED-Debug-Modus (separat)
+## Pixel-Debug und Helligkeit
 
-- Der neue Bereich steht oben im Config-/Debug-Teil in `src`.
-- Hauptschalter: `LED_DEBUG_MODE`
-  - `false` = normaler LED-Betrieb wie bisher
-  - `true` = nur manuelle LED-Zustaende, normale LED-Engine ist komplett uebersteuert
-- Manuelle Einzelsteuerung pro LED:
-  - Gruen:
-    - `LED_DEBUG_GREEN_1` = unten rechts
-    - `LED_DEBUG_GREEN_2` = oben rechts
-    - `LED_DEBUG_GREEN_3` = oben links
-    - `LED_DEBUG_GREEN_4` = unten links
-  - Blau:
-    - `LED_DEBUG_BLUE_1` = mitte oben
-    - `LED_DEBUG_BLUE_2` = mitte links
-    - `LED_DEBUG_BLUE_3` = mitte rechts
-    - `LED_DEBUG_BLUE_4` = mitte unten
-  - Rot:
-    - `LED_DEBUG_RED_1` = oben links & unten rechts
-    - `LED_DEBUG_RED_2` = oben rechts & unten links
-- Im Debug-Modus gibt es bewusst keine Blinkmuster und keine zustandsbasierte LED-Automatik.
+- `PIXEL_DEBUG_ALL_ON`
+  - `false` = normaler Pixel-Betrieb
+  - `true` = alle 25 Pixel dauerhaft an (übersteuert Muster nur für Debug)
+- `PIXEL_BRIGHTNESS_PERCENT`
+  - Wertebereich 0..100 %
+  - Wird intern sauber auf 0..255 für `setBrightness()` umgerechnet
