@@ -31,7 +31,7 @@
 
 - OLED:
   - Display-Treiber: **SH1106 (I2C, 128x64)** via `Adafruit_SH110X`
-  - Rotation ist im Config-Block schaltbar (`OLED_ROTATION_180`: `false`=normal, `true`=180°)
+  - Rotation über `OLED_ROTATION` im Config-Block (aktuell `2` = 180°)
   - Skalierung zentral ganz oben im Config-Block (`OLED_SCALE_CONFIG`, akzeptiert z. B. `"1,9"` oder `"1.9"`)
   - Boot: `Start... / Initialisierung`
   - Nullung: `Nullung... / Bitte nichts auflegen`
@@ -43,17 +43,15 @@
   - Nach Ergebnis: `Bitte leeren / Glas entfernen`
   - Debug-OLED (`DEBUG_MODE`): zeigt Rohwerte, Mittelwert, Filter, Stabilität, State, Objektstatus und Fehlercode
 - LED:
-  - WS2812B-Ring mit **25 Pixeln** (`LED_PIXEL_COUNT`)
-  - **Keine Segmentlogik** mehr; alle Muster sind über direkte Pixel-Indizes/-Gruppen umgesetzt
-  - Helligkeit zentral als Prozentwert (`LED_BRIGHTNESS_PERCENT`, 0..100 % -> intern 0..255)
-  - Optionaler Pixel-Debug `LED_DEBUG_ALL_PIXELS_ON` schaltet alle Pixel ein (übersteuert alles)
+  - Es gibt nur noch **einen RGB-Streifen mit 25 Pixeln** (`PIXEL_COUNT = 25`)
+  - Helligkeit zentral in `%` (`PIXEL_BRIGHTNESS_PERCENT`), intern auf `0..255` umgerechnet
   - Fehler = rot blinkend
-  - Warten = Gruppe A/B alternierend in grün/blau (gerade/ungerade Pixel)
+  - Warten = alternierendes Pixelmuster (grün/blau)
   - Bereit fuer Zeitmessung (`READY_FOR_TIMING`) = nur gruen blinkend
-  - Glas erkannt = alle Pixel grün dauerhaft
-  - Zeit läuft (`TIMING`) = blauer Pixel-Spinner direkt über Pixelindex
-  - Ergebnis (`SHOW_RESULT`) = Gruppe A grün + Gruppe B blau, kurz
-  - Standby = ruhiges Twinkle über wenige zufällige Pixel + seltener roter Akzent
+  - Glas erkannt = alle Pixel grün
+  - Zeit läuft (`TIMING`) = ein blauer Pixel wandert über die Indizes
+  - Ergebnis (`SHOW_RESULT`) = kurzer Cyan-Flash, danach wieder grün
+  - Standby = ruhiges Twinkle über einzelne Pixel + seltener roter Akzentpixel
 
 ## Prozent-Logik (Start/Stop)
 
@@ -63,28 +61,8 @@
   - Stop: `max(MIN_DYNAMIC_THRESHOLD_G, ref * STOP_RISE_PERCENT / 100)`
 - Damit bleiben Start/Stop robust bei leichten und schweren Gläsern.
 
+## Pixel-Debug-Modus (separat)
 
-## Pixel-Debug und Helligkeit
-
-- Der neue Bereich steht oben im Config-/Debug-Teil in `src`.
-- Hauptschalter: `LED_DEBUG_MODE`
-  - `false` = normaler LED-Betrieb wie bisher
-  - `true` = nur manuelle LED-Zustaende, normale LED-Engine ist komplett uebersteuert
-- Globaler Testschalter: `LED_DEBUG_ALL_PIXELS_ON`
-  - `false` = kein Einfluss
-  - `true` = alle 25 Pixel dauerhaft an (übersteuert auch `LED_DEBUG_MODE`)
-- Manuelle Steuerung über Pixelgruppen:
-  - Gruen:
-    - `LED_DEBUG_GREEN_1` = unten rechts
-    - `LED_DEBUG_GREEN_2` = oben rechts
-    - `LED_DEBUG_GREEN_3` = oben links
-    - `LED_DEBUG_GREEN_4` = unten links
-  - Blau:
-    - `LED_DEBUG_BLUE_1` = mitte oben
-    - `LED_DEBUG_BLUE_2` = mitte links
-    - `LED_DEBUG_BLUE_3` = mitte rechts
-    - `LED_DEBUG_BLUE_4` = mitte unten
-  - Rot:
-    - `LED_DEBUG_RED_1` = oben links & unten rechts
-    - `LED_DEBUG_RED_2` = oben rechts & unten links
-- Im Debug-Modus gibt es bewusst keine Blinkmuster und keine zustandsbasierte LED-Automatik.
+- Hauptschalter im Config-Block: `PIXEL_DEBUG_ALL_ON`
+  - `false` = normaler Pixel-Betrieb
+  - `true` = alle 25 Pixel dauerhaft an (ohne State-Muster)
