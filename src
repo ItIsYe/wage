@@ -95,8 +95,6 @@ static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
-static constexpr uint32_t STANDBY_RED_HOLD_MIN_MS = 700; // rote Akzentdauer min (ms)
-static constexpr uint32_t STANDBY_RED_HOLD_MAX_MS = 1600;// rote Akzentdauer max (ms)
 static constexpr uint8_t STANDBY_RED_EVENT_CHANCE_PERCENT = 12; // Chance pro Tick
 
 // Filter / Stabilität
@@ -278,18 +276,18 @@ static void initOledScale();
    HELPERS
    ========================================================= */
 
-static inline uint8_t countOn(const bool* arr, uint8_t n) {
-  uint8_t c = 0;
-  for (uint8_t i=0;i<n;i++) if (arr[i]) c++;
-  return c;
+static inline uint8_t brightnessByteFromPercent(uint8_t percent) {
+  if (percent > 100) percent = 100;
+  // 0..100% -> 0..255
+  return (uint8_t)((uint16_t)percent * 255u / 100u);
 }
 
-static inline void ringClear() {
-  ledRing.clear();
+static inline void pixelsClear() {
+  ledStrip.clear();
 }
 
-static inline void ringShow() {
-  ledRing.show();
+static inline void pixelsShow() {
+  ledStrip.show();
 }
 
 static uint8_t brightnessPercentToByte(uint8_t percent) {
@@ -402,13 +400,9 @@ static void ledsSetMode(LedMode m) {
   ledTickMs = millis();
   ledFlip = false;
   if (m == LedMode::READY_GREEN_BLINK) ledFlip = true; // startet sichtbar "an"
-  ledBlueSpinIdx = 0;
+  spinnerHead = 0;
+  standbyCount = 0;
   twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
-  for (uint8_t i=0;i<GREEN_N;i++) standbyGreenOn[i] = false;
-  for (uint8_t i=0;i<BLUE_N;i++)  standbyBlueOn[i] = false;
-  standbyGreenOn[random(0, GREEN_N)] = true; // ruhiger Startpunkt
-  standbyRedActive = -1;
-  standbyRedUntilMs = 0;
 }
 
 static void ledsService() {
@@ -424,14 +418,14 @@ static void ledsService() {
   }
 
   const uint32_t now = millis();
-  const uint32_t green = ledRing.Color(0, 90, 0);
-  const uint32_t blue  = ledRing.Color(0, 0, 100);
-  const uint32_t red   = ledRing.Color(100, 0, 0);
+  const uint32_t green = ledStrip.Color(0, 90, 0);
+  const uint32_t blue  = ledStrip.Color(0, 0, 100);
+  const uint32_t red   = ledStrip.Color(100, 0, 0);
 
   switch (ledMode) {
     case LedMode::ALL_OFF:
-      ringClear();
-      ringShow();
+      pixelsClear();
+      pixelsShow();
       break;
 
     case LedMode::ERROR_BLINK_RED:
@@ -439,9 +433,13 @@ static void ledsService() {
         ledTickMs = now;
         ledFlip = !ledFlip;
       }
-      ringClear();
-      ringSetRedGroup(ledFlip ? 0 : 1, red);
-      ringShow();
+      pixelsClear();
+      if (ledFlip) {
+        pixelsSetGroup(GROUP_A, (uint8_t)(sizeof(GROUP_A) / sizeof(GROUP_A[0])), red);
+      } else {
+        pixelsSetGroup(GROUP_B, (uint8_t)(sizeof(GROUP_B) / sizeof(GROUP_B[0])), red);
+      }
+      pixelsShow();
       break;
 
     case LedMode::OK_ALT_GB:
@@ -456,7 +454,7 @@ static void ledsService() {
       for (uint8_t i = 0; i < BLUE_N; i++) {
         if (!ledFlip) ringSetBlueGroup(i, blue);
       }
-      ringShow();
+      pixelsShow();
       break;
 
     case LedMode::READY_GREEN_BLINK:
@@ -480,7 +478,7 @@ static void ledsService() {
     case LedMode::TIMING_BLUE_SPINNER: {
       if (now - ledTickMs >= 180) {
         ledTickMs = now;
-        ledBlueSpinIdx = (uint8_t)((ledBlueSpinIdx + 1) % BLUE_N);
+        spinnerHead = (uint8_t)((spinnerHead + 1) % PIXEL_COUNT);
       }
       ringClear();
       ledRing.setPixelColor(BLUE_SPIN_PIXELS[ledBlueSpinIdx], blue);
@@ -502,36 +500,19 @@ static void ledsService() {
     case LedMode::STANDBY_TWINKLE: {
       if (now >= twinkleNextMs) {
         twinkleNextMs = now + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
-
-        // Gruen/Blau: nur kleine, ruhige Aenderungen pro Tick
-        if (random(0, 100) < 38) {
-          uint8_t i = random(0, GREEN_N);
-          standbyGreenOn[i] = !standbyGreenOn[i];
-        }
-        if (random(0, 100) < 32) {
-          uint8_t i = random(0, BLUE_N);
-          standbyBlueOn[i] = !standbyBlueOn[i];
-        }
-
-        uint8_t gbOn = countOn(standbyGreenOn, GREEN_N) + countOn(standbyBlueOn, BLUE_N);
-        if (gbOn == 0) {
-          standbyGreenOn[random(0, GREEN_N)] = true;
-        } else if (gbOn > 3) {
-          if (countOn(standbyBlueOn, BLUE_N) > 0) standbyBlueOn[random(0, BLUE_N)] = false;
-          else standbyGreenOn[random(0, GREEN_N)] = false;
-        }
+        standbyCount = (uint8_t)random(2, 5);
+        spinnerHead = (uint8_t)random(0, PIXEL_COUNT);
       }
-
-      // Rot: nur als seltener Akzent und niemals beide Gruppen gleichzeitig
-      if (standbyRedActive >= 0 && now >= standbyRedUntilMs) {
-        standbyRedActive = -1;
+      pixelsClear();
+      for (uint8_t i = 0; i < standbyCount; ++i) {
+        uint16_t idx = (spinnerHead + i * 7u) % PIXEL_COUNT;
+        const bool blueToggle = ((now / 400u) + i) % 2u;
+        ledStrip.setPixelColor(idx, blueToggle ? ledStrip.Color(0, 0, 32) : ledStrip.Color(0, 26, 0));
       }
-      if (standbyRedActive < 0 && random(0, 100) < STANDBY_RED_EVENT_CHANCE_PERCENT) {
-        standbyRedActive = (int8_t)random(0, RED_N);
-        standbyRedUntilMs = now + random(STANDBY_RED_HOLD_MIN_MS, STANDBY_RED_HOLD_MAX_MS);
+      if (random(0, 100) < STANDBY_RED_EVENT_CHANCE_PERCENT) {
+        ledStrip.setPixelColor(random(0, PIXEL_COUNT), ledStrip.Color(20, 0, 0));
       }
-
-      standbyApplyOutputs();
+      pixelsShow();
       break;
     }
   }

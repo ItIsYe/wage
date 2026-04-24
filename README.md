@@ -48,16 +48,12 @@
   - Helligkeit zentral als Prozentwert (`LED_BRIGHTNESS_PERCENT`, 0..100 % -> intern 0..255)
   - Optionaler Pixel-Debug `LED_DEBUG_ALL_PIXELS_ON` schaltet alle Pixel ein (übersteuert alles)
   - Fehler = rot blinkend
-  - Warten = grün/blau alternierend
+  - Warten = Gruppe A/B alternierend in grün/blau (gerade/ungerade Pixel)
   - Bereit fuer Zeitmessung (`READY_FOR_TIMING`) = nur gruen blinkend
-  - Glas erkannt = grün dauerhaft
-  - Zeit läuft (`TIMING`) = blaue LEDs laufen im Kreis (oben -> rechts -> unten -> links)
-  - Ergebnis (`SHOW_RESULT`) = gruen+blau einmal kurz gemeinsam, danach gruen dauerhaft
-  - Standby = ruhiges, begrenztes Twinkle:
-    - Gruen/Blau veraendern sich nur in kleinen, langsamen Schritten
-    - nie hektische Blinksalven
-    - Rot nur als seltener Akzent
-    - bei Rot ist immer nur **eine** rote Gruppe gleichzeitig aktiv
+  - Glas erkannt = alle Pixel grün dauerhaft
+  - Zeit läuft (`TIMING`) = blauer Pixel-Spinner direkt über Pixelindex
+  - Ergebnis (`SHOW_RESULT`) = Gruppe A grün + Gruppe B blau, kurz
+  - Standby = ruhiges Twinkle über wenige zufällige Pixel + seltener roter Akzent
 
 ## Prozent-Logik (Start/Stop)
 
@@ -68,7 +64,7 @@
 - Damit bleiben Start/Stop robust bei leichten und schweren Gläsern.
 
 
-## LED-Debug-Modus (separat)
+## Pixel-Debug und Helligkeit
 
 - Der neue Bereich steht oben im Config-/Debug-Teil in `src`.
 - Hauptschalter: `LED_DEBUG_MODE`
