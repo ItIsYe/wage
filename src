@@ -28,8 +28,10 @@ static constexpr uint16_t PIXEL_COUNT = 25;
 static constexpr uint8_t OLED_ROTATION = 0;
 // LED-/Pixel-Debug-Modus: true = alle Pixel dauerhaft an
 static constexpr bool PIXEL_DEBUG_ALL_ON = false;
-// Helligkeit in % (0..100), intern auf 0..255 umgerechnet
+// Standard-Helligkeit in % (0..100), intern auf 0..255 umgerechnet
 static constexpr uint8_t PIXEL_BRIGHTNESS_PERCENT = 50;
+// Standby-Helligkeit in % (0..100), nur fuer Standby-Pattern
+static constexpr uint8_t STANDBY_BRIGHTNESS_PERCENT = 50;
 
 // Kalibrierung (g)
 static float CAL1 = -235.15f;
@@ -213,6 +215,8 @@ static uint32_t twinkleNextMs = 0;
 static uint8_t ledSpinIdx = 0;
 static bool oledDebugLedsCleared = false;
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
+static uint8_t currentBrightnessByte = 0;
+static bool brightnessInitialized = false;
 static uint16_t standbyHue[PIXEL_COUNT] = {};
 static uint8_t standbyValue[PIXEL_COUNT] = {};
 
@@ -243,6 +247,21 @@ static inline void pixelsClear() {
 
 static inline void pixelsShow() {
   ledStrip.show();
+}
+
+static inline void setStripBrightnessPercent(uint8_t percent) {
+  const uint8_t target = brightnessPercentToByte(percent);
+  if (brightnessInitialized && currentBrightnessByte == target) return;
+  ledStrip.setBrightness(target);
+  currentBrightnessByte = target;
+  brightnessInitialized = true;
+}
+
+static inline void applyBrightnessForLedMode() {
+  const uint8_t percent = (ledMode == LedMode::STANDBY_TWINKLE)
+    ? STANDBY_BRIGHTNESS_PERCENT
+    : PIXEL_BRIGHTNESS_PERCENT;
+  setStripBrightnessPercent(percent);
 }
 
 static uint8_t countOn(const bool* flags, uint8_t count) {
@@ -279,7 +298,7 @@ static void standbyApplyOutputs() {
 
 static void ledsInit() {
   ledStrip.begin();
-  ledStrip.setBrightness(brightnessPercentToByte(PIXEL_BRIGHTNESS_PERCENT));
+  setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
   pixelsClear();
   pixelsShow();
 }
@@ -305,10 +324,13 @@ static void ledsSetMode(LedMode m) {
 
 static void ledsService() {
   if (PIXEL_DEBUG_ALL_ON) {
+    setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
     pixelsFill(ledStrip.Color(80, 80, 80));
     pixelsShow();
     return;
   }
+
+  applyBrightnessForLedMode();
 
   const uint32_t now = millis();
   const uint32_t green = ledStrip.Color(0, 90, 0);
