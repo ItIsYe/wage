@@ -61,6 +61,7 @@ static constexpr float RETARE_TOL_G = 0.6f;            // Re-Tare bei Offset > x
 static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
 static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
+static constexpr float STANDBY_WAKE_THRESHOLD_G = 3.0f;  // Aufwachen aus Standby ab x g
 static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
 static constexpr uint8_t STANDBY_HUE_SHIFT_MAX = 20;      // Hue-Drift pro Tick
@@ -1036,7 +1037,7 @@ void loop() {
     }
 
     case State::STANDBY: {
-      if (haveRead && fabsf(w_filt) > 3.0f) {
+      if (haveRead && fabsf(w_filt) > STANDBY_WAKE_THRESHOLD_G) {
         oledMsg2("Aktiv", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
