@@ -20,7 +20,7 @@ static constexpr bool DEBUG_MODE = false;
 // OLED-Debug-Modus (Override): nur OLED-Testbild aktiv
 static constexpr bool OLED_DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
-static constexpr bool MASTER_DEBUG_LOG = true;
+static constexpr bool MASTER_DEBUG_LOG = false;
 
 // Pixel-Konfiguration (oben zentral konfigurierbar)
 static constexpr uint16_t PIXEL_COUNT = 25;
