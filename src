@@ -46,11 +46,11 @@ static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Mindestschwelle (g)
 static constexpr uint32_t DROP_HOLD_MS = 150;          // Drop-Haltezeit (ms)
 static constexpr uint32_t STOP_HOLD_MS = 220;          // Stop-Haltezeit (ms)
 static constexpr float STOP_RESET_HYST_G = 0.8f;       // Kandidat-Reset-Hysterese (g)
-static constexpr float START_RESET_HYST_G = 30.0f;      // Start-Reset-Hysterese (g)
+static constexpr float START_RESET_HYST_G = 1.2f;       // Start-Reset-Hysterese (g)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
 static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
 static constexpr float EMPTY_THRESHOLD_G = 1.0f;       // "leer" (g)
-static constexpr float RETARE_TOL_G = 1.5f;            // Re-Tare bei Offset > x g
+static constexpr float RETARE_TOL_G = 0.6f;            // Re-Tare bei Offset > x g
 
 // Anzeige / Wartezeiten
 static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
@@ -106,6 +106,7 @@ HX711 scale2;
 
 Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
 Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
+static bool oledReady = false;
 
 /* =========================================================
    ERROR CODES
@@ -217,6 +218,7 @@ static float percentOfReference(float referenceWeight, float percent);
 static void refreshTimingThresholds();
 static const char* stateToStr(State s);
 static void initOledScale();
+static bool shouldCheckNegativeError(State s);
 
 /* =========================================================
    HELPERS
@@ -396,8 +398,10 @@ static void ledsService() {
 }
 
 static void oledInit() {
+  oledReady = false;
   Wire.begin(I2C_SDA, I2C_SCL);
   if (!display.begin(OLED_ADDR, true)) return;
+  oledReady = true;
   display.setRotation(OLED_ROTATION);
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
@@ -431,7 +435,7 @@ static uint8_t oledTextSizeFromScale() {
 }
 
 static void oledMsg2(const char* line1, const char* line2) {
-  if (!display.width()) return;
+  if (!oledReady) return;
   const uint8_t textScale = oledTextSizeFromScale();
   const int lineHeight = (int)textScale * 8;
   const int gap = 4;
@@ -448,7 +452,7 @@ static void oledMsg2(const char* line1, const char* line2) {
 }
 
 static void oledTimingLive(uint32_t dtMs) {
-  if (!display.width()) return;
+  if (!oledReady) return;
   const uint8_t baseScale = oledTextSizeFromScale();
   const uint8_t titleScale = (baseScale > 1) ? 1 : baseScale;
   uint8_t timeScale = (display.height() >= 64) ? 2 : baseScale;
@@ -475,7 +479,7 @@ static void oledTimingLive(uint32_t dtMs) {
 }
 
 static void oledDebugWeights() {
-  if (!display.width()) return;
+  if (!oledReady) return;
   const uint8_t textScale = 1;
   display.clearDisplay();
   display.setTextSize(textScale);
@@ -694,6 +698,19 @@ static const char* stateToStr(State s) {
   return "UNKNOWN";
 }
 
+
+static bool shouldCheckNegativeError(State s) {
+  switch (s) {
+    case State::IDLE_WAIT_GLASS:
+    case State::WAIT_EMPTY_AFTER_RESULT:
+    case State::CHECK_RETARE:
+    case State::ERROR_RECOVER:
+      return true;
+    default:
+      return false;
+  }
+}
+
 static void setState(State s) {
   if (MASTER_DEBUG_LOG && state != s) {
     Serial.print("[STATE] ");
@@ -739,7 +756,7 @@ void loop() {
     serialPrintAll(raw1, raw2);
   }
 
-  if (haveRead && w_filt < NEGATIVE_ERROR_G) {
+  if (haveRead && shouldCheckNegativeError(state) && w_filt < NEGATIVE_ERROR_G) {
     setError(ErrCode::NEGATIVE);
   }
 
