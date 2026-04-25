@@ -15,9 +15,9 @@ static const char* OLED_SCALE_CONFIG = "1,5";
 // Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
 static float oledScale = 1.5f;
 
-// Debug-OLED: zeigt Roh-/Filterwerte in jedem Zustand
+// OLED-Debug-Modus: Roh-/Filterwerte in jedem Zustand
 static constexpr bool DEBUG_MODE = false;
-// OLED-Debug-Modus: Testbild fuer Pixel-/Zeilen-/Spaltencheck
+// OLED-Debug-Modus (Override): nur OLED-Testbild aktiv
 static constexpr bool OLED_DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = true;
@@ -63,8 +63,10 @@ static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
 static constexpr uint8_t STANDBY_HUE_SHIFT_MAX = 20;      // Hue-Drift pro Tick
 static constexpr uint8_t STANDBY_SATURATION = 180;        // sanft, aber farbig
-static constexpr uint8_t STANDBY_VALUE_MIN = 22;          // ruhige Grundhelligkeit
-static constexpr uint8_t STANDBY_VALUE_MAX = 60;          // ruhige Max-Helligkeit
+static constexpr uint8_t STANDBY_VALUE_MIN = 52;          // sichtbarere Grundhelligkeit
+static constexpr uint8_t STANDBY_VALUE_MAX = 112;         // sichtbarere Max-Helligkeit
+static constexpr uint8_t STANDBY_ON_MIN = 2;              // mind. aktive Pixel
+static constexpr uint8_t STANDBY_ON_MAX = 9;              // max. aktive Pixel
 
 // Filter / Stabilität
 static constexpr uint8_t  MA_N = 10;              // MA-Fenster
@@ -209,6 +211,7 @@ static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
 static uint8_t ledSpinIdx = 0;
+static bool oledDebugLedsCleared = false;
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
 static uint16_t standbyHue[PIXEL_COUNT] = {};
 static uint8_t standbyValue[PIXEL_COUNT] = {};
@@ -294,7 +297,10 @@ static void ledsSetMode(LedMode m) {
     standbyHue[i] = (uint16_t)random(0, 65536);
     standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
   }
-  standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+  const uint8_t initialOn = (uint8_t)random(STANDBY_ON_MIN, STANDBY_ON_MAX + 1);
+  for (uint8_t i = 0; i < initialOn; ++i) {
+    standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+  }
 }
 
 static void ledsService() {
@@ -380,8 +386,14 @@ static void ledsService() {
           standbyTwinkleOn[i] = !standbyTwinkleOn[i];
         }
         uint8_t onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
-        if (onCount == 0) standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
-        if (onCount > 7) standbyTwinkleOn[random(0, PIXEL_COUNT)] = false;
+        while (onCount < STANDBY_ON_MIN) {
+          standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+          onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
+        }
+        while (onCount > STANDBY_ON_MAX) {
+          standbyTwinkleOn[random(0, PIXEL_COUNT)] = false;
+          onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
+        }
 
         for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
           if (!standbyTwinkleOn[i]) continue;
@@ -768,6 +780,18 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
 
+  if (OLED_DEBUG_MODE) {
+    if (!oledDebugLedsCleared) {
+      pixelsClear();
+      pixelsShow();
+      oledDebugLedsCleared = true;
+    }
+    oledDebugPattern(now);
+    delay(30);
+    return;
+  }
+  oledDebugLedsCleared = false;
+
   ledsService();
 
   uint32_t raw1 = 0, raw2 = 0;
@@ -1008,9 +1032,7 @@ void loop() {
     }
   }
 
-  if (OLED_DEBUG_MODE) {
-    oledDebugPattern(now);
-  } else if (DEBUG_MODE) {
+  if (DEBUG_MODE) {
     oledDebugWeights();
   }
 }
