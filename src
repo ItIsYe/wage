@@ -200,6 +200,7 @@ static uint32_t recoverUntilMs = 0;
 enum class LedMode : uint8_t {
   ALL_OFF=0,
   ERROR_BLINK_RED,
+  RED_SOLID,
   OK_ALT_GB,
   READY_GREEN_BLINK,
   GLASS_GREEN_SOLID,
@@ -350,6 +351,11 @@ static void ledsService() {
       }
       pixelsClear();
       if (ledFlip) pixelsFill(red);
+      pixelsShow();
+      break;
+
+    case LedMode::RED_SOLID:
+      pixelsFill(red);
       pixelsShow();
       break;
 
@@ -794,7 +800,7 @@ void setup() {
   scale1.set_scale(CAL1);
   scale2.set_scale(CAL2);
 
-  ledsSetMode(LedMode::ERROR_BLINK_RED);
+  ledsSetMode(LedMode::RED_SOLID);
   oledMsg2("Start...", "Initialisierung");
   setState(State::BOOT_MSG);
 }
@@ -833,7 +839,8 @@ void loop() {
     case State::BOOT_MSG: {
       if (now - lastActionMs >= BOOT_MSG_MS) {
         oledMsg2("Nullung...", "Bitte nichts auflegen");
-        ledsSetMode(LedMode::OK_ALT_GB);
+        // Nullung = alle rot dauerhaft.
+        ledsSetMode(LedMode::RED_SOLID);
         setState(State::BOOT_TARE);
       }
       break;
@@ -996,6 +1003,8 @@ void loop() {
     }
 
     case State::WAIT_EMPTY_AFTER_RESULT: {
+      // Bitte freihalten / kein Glas aufstellen = alle rot dauerhaft.
+      ledsSetMode(LedMode::RED_SOLID);
       const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < EMPTY_THRESHOLD_G;
       if (!emptyAndStable) {
         oledMsg2("Bitte leeren", "Glas entfernen");
@@ -1007,6 +1016,8 @@ void loop() {
     }
 
     case State::CHECK_RETARE: {
+      // Nullung = alle rot dauerhaft.
+      ledsSetMode(LedMode::RED_SOLID);
       if (!(haveRead && isStable)) break;
 
       if (fabsf(w_filt) > RETARE_TOL_G) {
