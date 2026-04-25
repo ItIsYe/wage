@@ -15,18 +15,23 @@ static const char* OLED_SCALE_CONFIG = "1,5";
 // Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
 static float oledScale = 1.5f;
 
-// Debug-OLED: zeigt Roh-/Filterwerte in jedem Zustand
+// OLED-Debug-Modus: Roh-/Filterwerte in jedem Zustand
 static constexpr bool DEBUG_MODE = false;
+// OLED-Debug-Modus (Override): nur OLED-Testbild aktiv
+static constexpr bool OLED_DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
-static constexpr bool MASTER_DEBUG_LOG = true;
+static constexpr bool MASTER_DEBUG_LOG = false;
 
 // Pixel-Konfiguration (oben zentral konfigurierbar)
 static constexpr uint16_t PIXEL_COUNT = 25;
-static constexpr uint8_t OLED_ROTATION = 2;
-// Pixel-Debug: true = alle Pixel dauerhaft an (separat vom Normalbetrieb)
+// Display-Rotation
+static constexpr uint8_t OLED_ROTATION = 0;
+// LED-/Pixel-Debug-Modus: true = alle Pixel dauerhaft an
 static constexpr bool PIXEL_DEBUG_ALL_ON = false;
-// Pixel-Helligkeit in % (0..100), intern auf 0..255 umgerechnet
-static constexpr uint8_t PIXEL_BRIGHTNESS_PERCENT = 38;
+// Standard-Helligkeit in % (0..100), intern auf 0..255 umgerechnet
+static constexpr uint8_t PIXEL_BRIGHTNESS_PERCENT = 50;
+// Standby-Helligkeit in % (0..100), nur fuer Standby-Pattern
+static constexpr uint8_t STANDBY_BRIGHTNESS_PERCENT = 90;
 
 // Kalibrierung (g)
 static float CAL1 = -235.15f;
@@ -49,18 +54,22 @@ static constexpr float STOP_RESET_HYST_G = 0.8f;       // Kandidat-Reset-Hystere
 static constexpr float START_RESET_HYST_G = 1.2f;       // Start-Reset-Hysterese (g)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
 static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
-static constexpr float EMPTY_THRESHOLD_G = 1.0f;       // "leer" (g)
+static constexpr float EMPTY_THRESHOLD_G = 10.0f;       // "leer" (g)
 static constexpr float RETARE_TOL_G = 0.6f;            // Re-Tare bei Offset > x g
 
 // Anzeige / Wartezeiten
 static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
 static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
+static constexpr float STANDBY_WAKE_THRESHOLD_G = 3.0f;  // Aufwachen aus Standby ab x g
 static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
-static constexpr uint8_t STANDBY_RED_EVENT_CHANCE_PERCENT = 12; // Chance pro Tick
-static constexpr uint32_t STANDBY_RED_HOLD_MIN_MS = 350;  // Rot-Akzent min Dauer (ms)
-static constexpr uint32_t STANDBY_RED_HOLD_MAX_MS = 1100; // Rot-Akzent max Dauer (ms)
+static constexpr uint8_t STANDBY_HUE_SHIFT_MAX = 20;      // Hue-Drift pro Tick
+static constexpr uint8_t STANDBY_SATURATION = 180;        // sanft, aber farbig
+static constexpr uint8_t STANDBY_VALUE_MIN = 52;          // sichtbarere Grundhelligkeit
+static constexpr uint8_t STANDBY_VALUE_MAX = 112;         // sichtbarere Max-Helligkeit
+static constexpr uint8_t STANDBY_ON_MIN = 2;              // mind. aktive Pixel
+static constexpr uint8_t STANDBY_ON_MAX = 9;              // max. aktive Pixel
 
 // Filter / Stabilität
 static constexpr uint8_t  MA_N = 10;              // MA-Fenster
@@ -192,6 +201,7 @@ static uint32_t recoverUntilMs = 0;
 enum class LedMode : uint8_t {
   ALL_OFF=0,
   ERROR_BLINK_RED,
+  RED_SOLID,
   OK_ALT_GB,
   READY_GREEN_BLINK,
   GLASS_GREEN_SOLID,
@@ -205,9 +215,12 @@ static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
 static uint8_t ledSpinIdx = 0;
+static bool oledDebugLedsCleared = false;
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
-static int8_t standbyRedPixel = -1;
-static uint32_t standbyRedUntilMs = 0;
+static uint8_t currentBrightnessByte = 0;
+static bool brightnessInitialized = false;
+static uint16_t standbyHue[PIXEL_COUNT] = {};
+static uint8_t standbyValue[PIXEL_COUNT] = {};
 
 /* =========================================================
    FORWARD DECLARATIONS
@@ -219,6 +232,7 @@ static void refreshTimingThresholds();
 static const char* stateToStr(State s);
 static void initOledScale();
 static bool shouldCheckNegativeError(State s);
+static void oledDebugPattern(uint32_t now);
 
 /* =========================================================
    HELPERS
@@ -235,6 +249,21 @@ static inline void pixelsClear() {
 
 static inline void pixelsShow() {
   ledStrip.show();
+}
+
+static inline void setStripBrightnessPercent(uint8_t percent) {
+  const uint8_t target = brightnessPercentToByte(percent);
+  if (brightnessInitialized && currentBrightnessByte == target) return;
+  ledStrip.setBrightness(target);
+  currentBrightnessByte = target;
+  brightnessInitialized = true;
+}
+
+static inline void applyBrightnessForLedMode() {
+  const uint8_t percent = (ledMode == LedMode::STANDBY_TWINKLE)
+    ? STANDBY_BRIGHTNESS_PERCENT
+    : PIXEL_BRIGHTNESS_PERCENT;
+  setStripBrightnessPercent(percent);
 }
 
 static uint8_t countOn(const bool* flags, uint8_t count) {
@@ -259,25 +288,19 @@ static constexpr uint8_t ALT_PATTERN_A[] = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 2
 static constexpr uint8_t ALT_PATTERN_B[] = {1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23};
 
 static void standbyApplyOutputs() {
-  const uint32_t greenDim = ledStrip.Color(0, 26, 0);
-  const uint32_t blueDim  = ledStrip.Color(0, 0, 30);
-  const uint32_t redDim   = ledStrip.Color(24, 0, 0);
-
   pixelsClear();
   for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
     if (standbyTwinkleOn[i]) {
-      ledStrip.setPixelColor(i, (i % 2 == 0) ? greenDim : blueDim);
+      const uint32_t raw = ledStrip.ColorHSV(standbyHue[i], STANDBY_SATURATION, standbyValue[i]);
+      ledStrip.setPixelColor(i, ledStrip.gamma32(raw));
     }
-  }
-  if (standbyRedPixel >= 0 && standbyRedPixel < PIXEL_COUNT) {
-    ledStrip.setPixelColor((uint8_t)standbyRedPixel, redDim);
   }
   pixelsShow();
 }
 
 static void ledsInit() {
   ledStrip.begin();
-  ledStrip.setBrightness(brightnessPercentToByte(PIXEL_BRIGHTNESS_PERCENT));
+  setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
   pixelsClear();
   pixelsShow();
 }
@@ -290,18 +313,26 @@ static void ledsSetMode(LedMode m) {
   if (m == LedMode::READY_GREEN_BLINK) ledFlip = true; // startet sichtbar "an"
   ledSpinIdx = 0;
   twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
-  for (uint8_t i=0;i<PIXEL_COUNT;i++) standbyTwinkleOn[i] = false;
-  standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
-  standbyRedPixel = -1;
-  standbyRedUntilMs = 0;
+  for (uint8_t i=0;i<PIXEL_COUNT;i++) {
+    standbyTwinkleOn[i] = false;
+    standbyHue[i] = (uint16_t)random(0, 65536);
+    standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
+  }
+  const uint8_t initialOn = (uint8_t)random(STANDBY_ON_MIN, STANDBY_ON_MAX + 1);
+  for (uint8_t i = 0; i < initialOn; ++i) {
+    standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+  }
 }
 
 static void ledsService() {
   if (PIXEL_DEBUG_ALL_ON) {
+    setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
     pixelsFill(ledStrip.Color(80, 80, 80));
     pixelsShow();
     return;
   }
+
+  applyBrightnessForLedMode();
 
   const uint32_t now = millis();
   const uint32_t green = ledStrip.Color(0, 90, 0);
@@ -321,6 +352,11 @@ static void ledsService() {
       }
       pixelsClear();
       if (ledFlip) pixelsFill(red);
+      pixelsShow();
+      break;
+
+    case LedMode::RED_SOLID:
+      pixelsFill(red);
       pixelsShow();
       break;
 
@@ -379,17 +415,21 @@ static void ledsService() {
           standbyTwinkleOn[i] = !standbyTwinkleOn[i];
         }
         uint8_t onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
-        if (onCount == 0) standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
-        if (onCount > 7) standbyTwinkleOn[random(0, PIXEL_COUNT)] = false;
-      }
+        while (onCount < STANDBY_ON_MIN) {
+          standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+          onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
+        }
+        while (onCount > STANDBY_ON_MAX) {
+          standbyTwinkleOn[random(0, PIXEL_COUNT)] = false;
+          onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
+        }
 
-      // Rot: seltener Akzent auf genau einem Pixel.
-      if (standbyRedPixel >= 0 && now >= standbyRedUntilMs) {
-        standbyRedPixel = -1;
-      }
-      if (standbyRedPixel < 0 && random(0, 100) < STANDBY_RED_EVENT_CHANCE_PERCENT) {
-        standbyRedPixel = (int8_t)random(0, PIXEL_COUNT);
-        standbyRedUntilMs = now + random(STANDBY_RED_HOLD_MIN_MS, STANDBY_RED_HOLD_MAX_MS);
+        for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
+          if (!standbyTwinkleOn[i]) continue;
+          const int16_t shift = (int16_t)random(-(int)STANDBY_HUE_SHIFT_MAX, (int)STANDBY_HUE_SHIFT_MAX + 1);
+          standbyHue[i] = (uint16_t)(standbyHue[i] + shift);
+          standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
+        }
       }
       standbyApplyOutputs();
       break;
@@ -505,6 +545,28 @@ static void oledDebugWeights() {
   display.print(" E:");
   display.println(errToStr(err));
 
+  display.display();
+}
+
+static void oledDebugPattern(uint32_t now) {
+  if (!oledReady) return;
+  display.clearDisplay();
+
+  // Rahmen + Kreuz zur Geometriepruefung
+  display.drawRect(0, 0, display.width(), display.height(), SH110X_WHITE);
+  display.drawLine(0, display.height() / 2, display.width() - 1, display.height() / 2, SH110X_WHITE);
+  display.drawLine(display.width() / 2, 0, display.width() / 2, display.height() - 1, SH110X_WHITE);
+
+  // Schachbrett fuer tote Pixel/Zeilen/Spalten
+  for (int16_t y = 2; y < display.height() - 2; ++y) {
+    for (int16_t x = 2; x < display.width() - 2; ++x) {
+      if (((x + y) & 0x03) == 0) display.drawPixel(x, y, SH110X_WHITE);
+    }
+  }
+
+  // Wanderlinie macht Timing-/Ghosting-Probleme sichtbar
+  const int16_t sweepX = (int16_t)(now / 20u) % display.width();
+  display.drawLine(sweepX, 0, sweepX, display.height() - 1, SH110X_WHITE);
   display.display();
 }
 
@@ -739,13 +801,25 @@ void setup() {
   scale1.set_scale(CAL1);
   scale2.set_scale(CAL2);
 
-  ledsSetMode(LedMode::ERROR_BLINK_RED);
+  ledsSetMode(LedMode::RED_SOLID);
   oledMsg2("Start...", "Initialisierung");
   setState(State::BOOT_MSG);
 }
 
 void loop() {
   const uint32_t now = millis();
+
+  if (OLED_DEBUG_MODE) {
+    if (!oledDebugLedsCleared) {
+      pixelsClear();
+      pixelsShow();
+      oledDebugLedsCleared = true;
+    }
+    oledDebugPattern(now);
+    delay(30);
+    return;
+  }
+  oledDebugLedsCleared = false;
 
   ledsService();
 
@@ -766,7 +840,8 @@ void loop() {
     case State::BOOT_MSG: {
       if (now - lastActionMs >= BOOT_MSG_MS) {
         oledMsg2("Nullung...", "Bitte nichts auflegen");
-        ledsSetMode(LedMode::OK_ALT_GB);
+        // Nullung = alle rot dauerhaft.
+        ledsSetMode(LedMode::RED_SOLID);
         setState(State::BOOT_TARE);
       }
       break;
@@ -929,6 +1004,8 @@ void loop() {
     }
 
     case State::WAIT_EMPTY_AFTER_RESULT: {
+      // Bitte freihalten / kein Glas aufstellen = alle rot dauerhaft.
+      ledsSetMode(LedMode::RED_SOLID);
       const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < EMPTY_THRESHOLD_G;
       if (!emptyAndStable) {
         oledMsg2("Bitte leeren", "Glas entfernen");
@@ -940,6 +1017,8 @@ void loop() {
     }
 
     case State::CHECK_RETARE: {
+      // Nullung = alle rot dauerhaft.
+      ledsSetMode(LedMode::RED_SOLID);
       if (!(haveRead && isStable)) break;
 
       if (fabsf(w_filt) > RETARE_TOL_G) {
@@ -958,7 +1037,7 @@ void loop() {
     }
 
     case State::STANDBY: {
-      if (haveRead && fabsf(w_filt) > 3.0f) {
+      if (haveRead && fabsf(w_filt) > STANDBY_WAKE_THRESHOLD_G) {
         oledMsg2("Aktiv", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
