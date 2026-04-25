@@ -29,7 +29,7 @@ static constexpr uint8_t OLED_ROTATION = 0;
 // LED-/Pixel-Debug-Modus: true = alle Pixel dauerhaft an
 static constexpr bool PIXEL_DEBUG_ALL_ON = false;
 // Helligkeit in % (0..100), intern auf 0..255 umgerechnet
-static constexpr uint8_t PIXEL_BRIGHTNESS_PERCENT = 38;
+static constexpr uint8_t PIXEL_BRIGHTNESS_PERCENT = 50;
 
 // Kalibrierung (g)
 static float CAL1 = -235.15f;
@@ -52,7 +52,7 @@ static constexpr float STOP_RESET_HYST_G = 0.8f;       // Kandidat-Reset-Hystere
 static constexpr float START_RESET_HYST_G = 1.2f;       // Start-Reset-Hysterese (g)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
 static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
-static constexpr float EMPTY_THRESHOLD_G = 1.0f;       // "leer" (g)
+static constexpr float EMPTY_THRESHOLD_G = 10.0f;       // "leer" (g)
 static constexpr float RETARE_TOL_G = 0.6f;            // Re-Tare bei Offset > x g
 
 // Anzeige / Wartezeiten
