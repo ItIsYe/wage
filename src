@@ -4,6 +4,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <Adafruit_NeoPixel.h>
+#include <string.h>
 
 /* =========================================================
    CONFIG (hier einstellen)
@@ -21,6 +22,12 @@ static constexpr bool DEBUG_MODE = false;
 static constexpr bool OLED_DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = false;
+
+// Performance-Takte für UI/Logging (funktional unverändert)
+static constexpr uint32_t OLED_TIMING_REFRESH_MS = 100;
+static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
+static constexpr uint32_t SERIAL_BASE_REFRESH_MS = 150;
+static constexpr uint32_t SERIAL_STATE_REFRESH_MS = 150;
 
 // Pixel-Konfiguration (oben zentral konfigurierbar)
 static constexpr uint16_t PIXEL_COUNT = 25;
@@ -216,6 +223,19 @@ static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
 static uint8_t ledSpinIdx = 0;
 static bool oledDebugLedsCleared = false;
+static bool ledFrameDirty = true;
+
+// OLED-Cache gegen redundante Full-Refreshes
+static bool oledMsgValid = false;
+static char oledLastLine1[32] = {0};
+static char oledLastLine2[32] = {0};
+static uint32_t lastOledTimingMs = 0;
+static uint32_t lastOledDebugMs = 0;
+
+// Serial-Rate-Limiter
+static uint32_t lastSerialBaseMs = 0;
+static uint32_t lastSerialReadyMs = 0;
+static uint32_t lastSerialTimingMs = 0;
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
 static uint8_t currentBrightnessByte = 0;
 static bool brightnessInitialized = false;
@@ -295,7 +315,6 @@ static void standbyApplyOutputs() {
       ledStrip.setPixelColor(i, ledStrip.gamma32(raw));
     }
   }
-  pixelsShow();
 }
 
 static void ledsInit() {
@@ -303,6 +322,7 @@ static void ledsInit() {
   setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
   pixelsClear();
   pixelsShow();
+  ledFrameDirty = false;
 }
 
 static void ledsSetMode(LedMode m) {
@@ -312,6 +332,7 @@ static void ledsSetMode(LedMode m) {
   ledFlip = false;
   if (m == LedMode::READY_GREEN_BLINK) ledFlip = true; // startet sichtbar "an"
   ledSpinIdx = 0;
+  ledFrameDirty = true;
   twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
   for (uint8_t i=0;i<PIXEL_COUNT;i++) {
     standbyTwinkleOn[i] = false;
@@ -321,14 +342,19 @@ static void ledsSetMode(LedMode m) {
   const uint8_t initialOn = (uint8_t)random(STANDBY_ON_MIN, STANDBY_ON_MAX + 1);
   for (uint8_t i = 0; i < initialOn; ++i) {
     standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+    ledFrameDirty = true;
   }
 }
 
 static void ledsService() {
   if (PIXEL_DEBUG_ALL_ON) {
+    static bool allOnApplied = false;
     setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
-    pixelsFill(ledStrip.Color(80, 80, 80));
-    pixelsShow();
+    if (!allOnApplied) {
+      pixelsFill(ledStrip.Color(80, 80, 80));
+      pixelsShow();
+      allOnApplied = true;
+    }
     return;
   }
 
@@ -341,65 +367,77 @@ static void ledsService() {
 
   switch (ledMode) {
     case LedMode::ALL_OFF:
-      pixelsClear();
-      pixelsShow();
+      if (ledFrameDirty) {
+        pixelsClear();
+      }
       break;
 
     case LedMode::ERROR_BLINK_RED:
       if (now - ledTickMs >= 350) {
         ledTickMs = now;
         ledFlip = !ledFlip;
+        ledFrameDirty = true;
       }
-      pixelsClear();
-      if (ledFlip) pixelsFill(red);
-      pixelsShow();
+      if (ledFrameDirty) {
+        pixelsClear();
+        if (ledFlip) pixelsFill(red);
+      }
       break;
 
     case LedMode::RED_SOLID:
-      pixelsFill(red);
-      pixelsShow();
+      if (ledFrameDirty) {
+        pixelsFill(red);
+      }
       break;
 
     case LedMode::OK_ALT_GB:
       if (now - ledTickMs >= 450) {
         ledTickMs = now;
         ledFlip = !ledFlip;
+        ledFrameDirty = true;
       }
-      pixelsClear();
-      if (ledFlip) pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), green);
-      else pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), blue);
-      pixelsShow();
+      if (ledFrameDirty) {
+        pixelsClear();
+        if (ledFlip) pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), green);
+        else pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), blue);
+      }
       break;
 
     case LedMode::READY_GREEN_BLINK:
       if (now - ledTickMs >= 450) {
         ledTickMs = now;
         ledFlip = !ledFlip;
+        ledFrameDirty = true;
       }
-      pixelsClear();
-      if (ledFlip) pixelsFill(green);
-      pixelsShow();
+      if (ledFrameDirty) {
+        pixelsClear();
+        if (ledFlip) pixelsFill(green);
+      }
       break;
 
     case LedMode::GLASS_GREEN_SOLID:
-      pixelsFill(green);
-      pixelsShow();
+      if (ledFrameDirty) {
+        pixelsFill(green);
+      }
       break;
 
     case LedMode::TIMING_BLUE_SPINNER:
       if (now - ledTickMs >= 180) {
         ledTickMs = now;
         ledSpinIdx = (uint8_t)((ledSpinIdx + 1) % PIXEL_COUNT);
+        ledFrameDirty = true;
       }
-      pixelsClear();
-      ledStrip.setPixelColor(ledSpinIdx, blue);
-      pixelsShow();
+      if (ledFrameDirty) {
+        pixelsClear();
+        ledStrip.setPixelColor(ledSpinIdx, blue);
+      }
       break;
 
     case LedMode::RESULT_FLASH_GB_ONCE:
       if (now - ledTickMs < 200) {
-        pixelsFill(ledStrip.Color(0, 90, 90));
-        pixelsShow();
+        if (ledFrameDirty) {
+          pixelsFill(ledStrip.Color(0, 90, 90));
+        }
       } else {
         ledsSetMode(LedMode::GLASS_GREEN_SOLID);
       }
@@ -413,14 +451,17 @@ static void ledsService() {
         if (random(0, 100) < 45) {
           uint8_t i = random(0, PIXEL_COUNT);
           standbyTwinkleOn[i] = !standbyTwinkleOn[i];
+          ledFrameDirty = true;
         }
         uint8_t onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
         while (onCount < STANDBY_ON_MIN) {
           standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+    ledFrameDirty = true;
           onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
         }
         while (onCount > STANDBY_ON_MAX) {
           standbyTwinkleOn[random(0, PIXEL_COUNT)] = false;
+          ledFrameDirty = true;
           onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
         }
 
@@ -429,11 +470,19 @@ static void ledsService() {
           const int16_t shift = (int16_t)random(-(int)STANDBY_HUE_SHIFT_MAX, (int)STANDBY_HUE_SHIFT_MAX + 1);
           standbyHue[i] = (uint16_t)(standbyHue[i] + shift);
           standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
+          ledFrameDirty = true;
         }
       }
-      standbyApplyOutputs();
+      if (now >= twinkleNextMs || ledFrameDirty) {
+        standbyApplyOutputs();
+      }
       break;
     }
+  }
+
+  if (ledFrameDirty) {
+    pixelsShow();
+    ledFrameDirty = false;
   }
 }
 
@@ -476,6 +525,17 @@ static uint8_t oledTextSizeFromScale() {
 
 static void oledMsg2(const char* line1, const char* line2) {
   if (!oledReady) return;
+
+  if (oledMsgValid && strcmp(line1, oledLastLine1) == 0 && strcmp(line2, oledLastLine2) == 0) {
+    return;
+  }
+
+  strncpy(oledLastLine1, line1, sizeof(oledLastLine1) - 1);
+  oledLastLine1[sizeof(oledLastLine1) - 1] = '\0';
+  strncpy(oledLastLine2, line2, sizeof(oledLastLine2) - 1);
+  oledLastLine2[sizeof(oledLastLine2) - 1] = '\0';
+  oledMsgValid = true;
+
   const uint8_t textScale = oledTextSizeFromScale();
   const int lineHeight = (int)textScale * 8;
   const int gap = 4;
@@ -493,6 +553,11 @@ static void oledMsg2(const char* line1, const char* line2) {
 
 static void oledTimingLive(uint32_t dtMs) {
   if (!oledReady) return;
+  const uint32_t now = millis();
+  if ((now - lastOledTimingMs) < OLED_TIMING_REFRESH_MS) return;
+  lastOledTimingMs = now;
+  oledMsgValid = false;
+
   const uint8_t baseScale = oledTextSizeFromScale();
   const uint8_t titleScale = (baseScale > 1) ? 1 : baseScale;
   uint8_t timeScale = (display.height() >= 64) ? 2 : baseScale;
@@ -520,6 +585,11 @@ static void oledTimingLive(uint32_t dtMs) {
 
 static void oledDebugWeights() {
   if (!oledReady) return;
+  const uint32_t now = millis();
+  if ((now - lastOledDebugMs) < OLED_DEBUG_REFRESH_MS) return;
+  lastOledDebugMs = now;
+  oledMsgValid = false;
+
   const uint8_t textScale = 1;
   display.clearDisplay();
   display.setTextSize(textScale);
@@ -550,6 +620,7 @@ static void oledDebugWeights() {
 
 static void oledDebugPattern(uint32_t now) {
   if (!oledReady) return;
+  oledMsgValid = false;
   display.clearDisplay();
 
   // Rahmen + Kreuz zur Geometriepruefung
@@ -781,6 +852,7 @@ static void setState(State s) {
     Serial.println(stateToStr(s));
   }
   state = s;
+  oledMsgValid = false;
   lastActionMs = millis();
 }
 
@@ -816,7 +888,7 @@ void loop() {
       oledDebugLedsCleared = true;
     }
     oledDebugPattern(now);
-    delay(30);
+    delay(20);
     return;
   }
   oledDebugLedsCleared = false;
@@ -826,7 +898,8 @@ void loop() {
   uint32_t raw1 = 0, raw2 = 0;
   const bool haveRead = readScalesOnce(raw1, raw2);
 
-  if (haveRead) {
+  if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
+    lastSerialBaseMs = now;
     serialPrintAll(raw1, raw2);
   }
 
@@ -931,7 +1004,8 @@ void loop() {
         dropSinceMs = 0;
       }
 
-      if (MASTER_DEBUG_LOG && haveRead) {
+      if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialReadyMs >= SERIAL_STATE_REFRESH_MS)) {
+        lastSerialReadyMs = now;
         Serial.print("[READY] w=");
         Serial.print(w, 2);
         Serial.print(" ref=");
@@ -977,7 +1051,8 @@ void loop() {
           }
         }
 
-        if (MASTER_DEBUG_LOG) {
+        if (MASTER_DEBUG_LOG && (now - lastSerialTimingMs >= SERIAL_STATE_REFRESH_MS)) {
+          lastSerialTimingMs = now;
           Serial.print("[TIMING] w=");
           Serial.print(w, 2);
           Serial.print(" min=");
