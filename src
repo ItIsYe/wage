@@ -26,6 +26,7 @@ static constexpr bool MASTER_DEBUG_LOG = false;
 // Performance-Takte für UI/Logging (funktional unverändert)
 static constexpr uint32_t OLED_TIMING_REFRESH_MS = 100;
 static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
+static constexpr uint32_t OLED_PATTERN_REFRESH_MS = 50;
 static constexpr uint32_t SERIAL_BASE_REFRESH_MS = 150;
 static constexpr uint32_t SERIAL_STATE_REFRESH_MS = 150;
 
@@ -231,6 +232,8 @@ static char oledLastLine1[32] = {0};
 static char oledLastLine2[32] = {0};
 static uint32_t lastOledTimingMs = 0;
 static uint32_t lastOledDebugMs = 0;
+static uint32_t lastOledPatternMs = 0;
+static int32_t lastTimingTenths = -1;
 
 // Serial-Rate-Limiter
 static uint32_t lastSerialBaseMs = 0;
@@ -241,6 +244,10 @@ static uint8_t currentBrightnessByte = 0;
 static bool brightnessInitialized = false;
 static uint16_t standbyHue[PIXEL_COUNT] = {};
 static uint8_t standbyValue[PIXEL_COUNT] = {};
+static uint32_t colorGreen = 0;
+static uint32_t colorBlue = 0;
+static uint32_t colorRed = 0;
+static uint32_t colorCyan = 0;
 
 /* =========================================================
    FORWARD DECLARATIONS
@@ -320,6 +327,10 @@ static void standbyApplyOutputs() {
 static void ledsInit() {
   ledStrip.begin();
   setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
+  colorGreen = ledStrip.Color(0, 90, 0);
+  colorBlue = ledStrip.Color(0, 0, 100);
+  colorRed = ledStrip.Color(100, 0, 0);
+  colorCyan = ledStrip.Color(0, 90, 90);
   pixelsClear();
   pixelsShow();
   ledFrameDirty = false;
@@ -361,9 +372,6 @@ static void ledsService() {
   applyBrightnessForLedMode();
 
   const uint32_t now = millis();
-  const uint32_t green = ledStrip.Color(0, 90, 0);
-  const uint32_t blue  = ledStrip.Color(0, 0, 100);
-  const uint32_t red   = ledStrip.Color(100, 0, 0);
 
   switch (ledMode) {
     case LedMode::ALL_OFF:
@@ -380,13 +388,13 @@ static void ledsService() {
       }
       if (ledFrameDirty) {
         pixelsClear();
-        if (ledFlip) pixelsFill(red);
+        if (ledFlip) pixelsFill(colorRed);
       }
       break;
 
     case LedMode::RED_SOLID:
       if (ledFrameDirty) {
-        pixelsFill(red);
+        pixelsFill(colorRed);
       }
       break;
 
@@ -398,8 +406,8 @@ static void ledsService() {
       }
       if (ledFrameDirty) {
         pixelsClear();
-        if (ledFlip) pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), green);
-        else pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), blue);
+        if (ledFlip) pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), colorGreen);
+        else pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), colorBlue);
       }
       break;
 
@@ -411,13 +419,13 @@ static void ledsService() {
       }
       if (ledFrameDirty) {
         pixelsClear();
-        if (ledFlip) pixelsFill(green);
+        if (ledFlip) pixelsFill(colorGreen);
       }
       break;
 
     case LedMode::GLASS_GREEN_SOLID:
       if (ledFrameDirty) {
-        pixelsFill(green);
+        pixelsFill(colorGreen);
       }
       break;
 
@@ -429,14 +437,14 @@ static void ledsService() {
       }
       if (ledFrameDirty) {
         pixelsClear();
-        ledStrip.setPixelColor(ledSpinIdx, blue);
+        ledStrip.setPixelColor(ledSpinIdx, colorBlue);
       }
       break;
 
     case LedMode::RESULT_FLASH_GB_ONCE:
       if (now - ledTickMs < 200) {
         if (ledFrameDirty) {
-          pixelsFill(ledStrip.Color(0, 90, 90));
+          pixelsFill(colorCyan);
         }
       } else {
         ledsSetMode(LedMode::GLASS_GREEN_SOLID);
@@ -556,6 +564,9 @@ static void oledTimingLive(uint32_t dtMs) {
   const uint32_t now = millis();
   if ((now - lastOledTimingMs) < OLED_TIMING_REFRESH_MS) return;
   lastOledTimingMs = now;
+  const int32_t dtTenths = (int32_t)(dtMs / 100);
+  if (dtTenths == lastTimingTenths) return;
+  lastTimingTenths = dtTenths;
   oledMsgValid = false;
 
   const uint8_t baseScale = oledTextSizeFromScale();
@@ -620,6 +631,8 @@ static void oledDebugWeights() {
 
 static void oledDebugPattern(uint32_t now) {
   if (!oledReady) return;
+  if ((now - lastOledPatternMs) < OLED_PATTERN_REFRESH_MS) return;
+  lastOledPatternMs = now;
   oledMsgValid = false;
   display.clearDisplay();
 
@@ -852,6 +865,7 @@ static void setState(State s) {
     Serial.println(stateToStr(s));
   }
   state = s;
+  if (s != State::TIMING) lastTimingTenths = -1;
   oledMsgValid = false;
   lastActionMs = millis();
 }
@@ -896,7 +910,11 @@ void loop() {
   ledsService();
 
   uint32_t raw1 = 0, raw2 = 0;
-  const bool haveRead = readScalesOnce(raw1, raw2);
+  const bool needScaleRead = (state != State::BOOT_MSG && state != State::BOOT_TARE && state != State::SHOW_RESULT);
+  const bool haveRead = needScaleRead && readScalesOnce(raw1, raw2);
+  const bool haveStableRead = haveRead && isStable;
+  const float absFilt = haveRead ? fabsf(w_filt) : 0.0f;
+  const bool objectMissingStable = haveStableRead && (w_filt < OBJECT_PRESENT_G * 0.7f);
 
   if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
     lastSerialBaseMs = now;
@@ -954,7 +972,7 @@ void loop() {
     }
 
     case State::GLASS_DETECTED: {
-      if (haveRead && isStable && w_filt < OBJECT_PRESENT_G * 0.7f) {
+      if (objectMissingStable) {
         objectPresent = false;
         oledMsg2("Objekt weg", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
@@ -982,7 +1000,7 @@ void loop() {
       const float w = w_filt;
       const float drop = readyReferenceWeight - w;
 
-      if (haveRead && isStable && w < OBJECT_PRESENT_G * 0.7f) {
+      if (objectMissingStable) {
         objectPresent = false;
         oledMsg2("Objekt weg", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
@@ -1081,7 +1099,7 @@ void loop() {
     case State::WAIT_EMPTY_AFTER_RESULT: {
       // Bitte freihalten / kein Glas aufstellen = alle rot dauerhaft.
       ledsSetMode(LedMode::RED_SOLID);
-      const bool emptyAndStable = haveRead && isStable && fabsf(w_filt) < EMPTY_THRESHOLD_G;
+      const bool emptyAndStable = haveStableRead && absFilt < EMPTY_THRESHOLD_G;
       if (!emptyAndStable) {
         oledMsg2("Bitte leeren", "Glas entfernen");
       } else {
@@ -1094,9 +1112,9 @@ void loop() {
     case State::CHECK_RETARE: {
       // Nullung = alle rot dauerhaft.
       ledsSetMode(LedMode::RED_SOLID);
-      if (!(haveRead && isStable)) break;
+      if (!haveStableRead) break;
 
-      if (fabsf(w_filt) > RETARE_TOL_G) {
+      if (absFilt > RETARE_TOL_G) {
         Serial.print("[RETARE] empty+stable offset=");
         Serial.print(w_filt, 2);
         Serial.println("g -> tare");
@@ -1112,7 +1130,7 @@ void loop() {
     }
 
     case State::STANDBY: {
-      if (haveRead && fabsf(w_filt) > STANDBY_WAKE_THRESHOLD_G) {
+      if (haveRead && absFilt > STANDBY_WAKE_THRESHOLD_G) {
         oledMsg2("Aktiv", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
@@ -1122,7 +1140,7 @@ void loop() {
 
     case State::ERROR_RECOVER: {
       if (now >= recoverUntilMs) {
-        if (haveRead && isStable && fabsf(w_filt) < 2.0f) {
+        if (haveStableRead && absFilt < 2.0f) {
           Serial.println("[RECOVER] Tare (empty & stable).");
           oledMsg2("Recovery", "Nullung...");
           tareBoth();
