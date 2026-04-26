@@ -239,7 +239,9 @@ static int32_t lastTimingTenths = -1;
 static uint32_t lastSerialBaseMs = 0;
 static uint32_t lastSerialReadyMs = 0;
 static uint32_t lastSerialTimingMs = 0;
+static uint32_t lastSerialRecoverMs = 0;
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
+static uint8_t standbyOnCount = 0;
 static uint8_t currentBrightnessByte = 0;
 static bool brightnessInitialized = false;
 static uint16_t standbyHue[PIXEL_COUNT] = {};
@@ -293,14 +295,6 @@ static inline void applyBrightnessForLedMode() {
   setStripBrightnessPercent(percent);
 }
 
-static uint8_t countOn(const bool* flags, uint8_t count) {
-  uint8_t on = 0;
-  for (uint8_t i = 0; i < count; ++i) {
-    if (flags[i]) ++on;
-  }
-  return on;
-}
-
 static inline void pixelsFill(uint32_t color) {
   for (uint16_t i = 0; i < PIXEL_COUNT; ++i) ledStrip.setPixelColor(i, color);
 }
@@ -345,6 +339,7 @@ static void ledsSetMode(LedMode m) {
   ledSpinIdx = 0;
   ledFrameDirty = true;
   twinkleNextMs = millis() + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
+  standbyOnCount = 0;
   for (uint8_t i=0;i<PIXEL_COUNT;i++) {
     standbyTwinkleOn[i] = false;
     standbyHue[i] = (uint16_t)random(0, 65536);
@@ -352,7 +347,11 @@ static void ledsSetMode(LedMode m) {
   }
   const uint8_t initialOn = (uint8_t)random(STANDBY_ON_MIN, STANDBY_ON_MAX + 1);
   for (uint8_t i = 0; i < initialOn; ++i) {
-    standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
+    const uint8_t idx = (uint8_t)random(0, PIXEL_COUNT);
+    if (!standbyTwinkleOn[idx]) {
+      standbyTwinkleOn[idx] = true;
+      ++standbyOnCount;
+    }
     ledFrameDirty = true;
   }
 }
@@ -457,20 +456,31 @@ static void ledsService() {
 
         // Nur kleine Aenderungen pro Tick.
         if (random(0, 100) < 45) {
-          uint8_t i = random(0, PIXEL_COUNT);
-          standbyTwinkleOn[i] = !standbyTwinkleOn[i];
+          const uint8_t i = (uint8_t)random(0, PIXEL_COUNT);
+          if (standbyTwinkleOn[i]) {
+            standbyTwinkleOn[i] = false;
+            if (standbyOnCount > 0) --standbyOnCount;
+          } else {
+            standbyTwinkleOn[i] = true;
+            if (standbyOnCount < PIXEL_COUNT) ++standbyOnCount;
+          }
           ledFrameDirty = true;
         }
-        uint8_t onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
-        while (onCount < STANDBY_ON_MIN) {
-          standbyTwinkleOn[random(0, PIXEL_COUNT)] = true;
-    ledFrameDirty = true;
-          onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
+        while (standbyOnCount < STANDBY_ON_MIN) {
+          const uint8_t idx = (uint8_t)random(0, PIXEL_COUNT);
+          if (!standbyTwinkleOn[idx]) {
+            standbyTwinkleOn[idx] = true;
+            ++standbyOnCount;
+            ledFrameDirty = true;
+          }
         }
-        while (onCount > STANDBY_ON_MAX) {
-          standbyTwinkleOn[random(0, PIXEL_COUNT)] = false;
-          ledFrameDirty = true;
-          onCount = countOn(standbyTwinkleOn, PIXEL_COUNT);
+        while (standbyOnCount > STANDBY_ON_MAX) {
+          const uint8_t idx = (uint8_t)random(0, PIXEL_COUNT);
+          if (standbyTwinkleOn[idx]) {
+            standbyTwinkleOn[idx] = false;
+            --standbyOnCount;
+            ledFrameDirty = true;
+          }
         }
 
         for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
@@ -654,7 +664,7 @@ static void oledDebugPattern(uint32_t now) {
   display.display();
 }
 
-static void serialPrintAll(uint32_t raw1, uint32_t raw2) {
+static void serialPrintAll(long raw1, long raw2) {
   Serial.print("RAW1:");
   Serial.print(raw1);
   Serial.print(" g1:");
@@ -735,20 +745,21 @@ static float sanitizeNegativeWeight(float val) {
   return val;
 }
 
-static bool readScalesOnce(uint32_t& raw1, uint32_t& raw2) {
+static inline float unitsFromRaw(long raw, HX711& s, bool invert) {
+  const float scale = s.get_scale();
+  if (scale == 0.0f) return 0.0f;
+  const float value = ((float)raw - (float)s.get_offset()) / scale;
+  return applyInvert(value, invert);
+}
+
+static bool readScalesOnce(long& raw1, long& raw2) {
   if (!scale1.is_ready() || !scale2.is_ready()) return false;
 
-  long r1 = scale1.read_average(3);
-  long r2 = scale2.read_average(3);
+  raw1 = scale1.read_average(3);
+  raw2 = scale2.read_average(3);
 
-  raw1 = (uint32_t)r1;
-  raw2 = (uint32_t)r2;
-
-  float g1 = scale1.get_units(1);
-  float g2 = scale2.get_units(1);
-
-  w_raw1 = applyInvert(g1, INVERT1);
-  w_raw2 = applyInvert(g2, INVERT2);
+  w_raw1 = unitsFromRaw(raw1, scale1, INVERT1);
+  w_raw2 = unitsFromRaw(raw2, scale2, INVERT2);
   w_avg  = (w_raw1 + w_raw2) * 0.5f;
 
   updateFilter(w_avg);
@@ -909,7 +920,7 @@ void loop() {
 
   ledsService();
 
-  uint32_t raw1 = 0, raw2 = 0;
+  long raw1 = 0, raw2 = 0;
   const bool needScaleRead = (state != State::BOOT_MSG && state != State::BOOT_TARE && state != State::SHOW_RESULT);
   const bool haveRead = needScaleRead && readScalesOnce(raw1, raw2);
   const bool haveStableRead = haveRead && isStable;
@@ -1141,7 +1152,10 @@ void loop() {
     case State::ERROR_RECOVER: {
       if (now >= recoverUntilMs) {
         if (haveStableRead && absFilt < 2.0f) {
-          Serial.println("[RECOVER] Tare (empty & stable).");
+          if (!MASTER_DEBUG_LOG || (now - lastSerialRecoverMs >= SERIAL_STATE_REFRESH_MS)) {
+            lastSerialRecoverMs = now;
+            Serial.println("[RECOVER] Tare (empty & stable).");
+          }
           oledMsg2("Recovery", "Nullung...");
           tareBoth();
           err = ErrCode::OK;
@@ -1150,7 +1164,10 @@ void loop() {
           ledsSetMode(LedMode::OK_ALT_GB);
           setState(State::IDLE_WAIT_GLASS);
         } else {
-          Serial.println("[RECOVER] Waiting for empty/stable before tare...");
+          if (!MASTER_DEBUG_LOG || (now - lastSerialRecoverMs >= SERIAL_STATE_REFRESH_MS)) {
+            lastSerialRecoverMs = now;
+            Serial.println("[RECOVER] Waiting for empty/stable before tare...");
+          }
           oledMsg2("Fehler", "Bitte leeren!");
           recoverUntilMs = now + 700;
         }
