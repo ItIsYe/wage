@@ -29,6 +29,7 @@ static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
 static constexpr uint32_t OLED_PATTERN_REFRESH_MS = 50;
 static constexpr uint32_t SERIAL_BASE_REFRESH_MS = 150;
 static constexpr uint32_t SERIAL_STATE_REFRESH_MS = 150;
+static constexpr uint32_t SCALE_READ_INTERVAL_MS = 20;
 
 // Pixel-Konfiguration (oben zentral konfigurierbar)
 static constexpr uint16_t PIXEL_COUNT = 25;
@@ -241,6 +242,13 @@ static uint32_t lastSerialBaseMs = 0;
 static uint32_t lastSerialReadyMs = 0;
 static uint32_t lastSerialTimingMs = 0;
 static uint32_t lastSerialRecoverMs = 0;
+static uint32_t lastScaleReadMs = 0;
+static bool haveRead = false;
+static bool haveStableRead = false;
+static float absFilt = 0.0f;
+static bool objectMissingStable = false;
+static long raw1 = 0, raw2 = 0;
+
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
 static uint8_t standbyOnCount = 0;
 static uint8_t currentBrightnessByte = 0;
@@ -263,6 +271,9 @@ static const char* stateToStr(State s);
 static void initOledScale();
 static bool shouldCheckNegativeError(State s);
 static void oledDebugPattern(uint32_t now);
+static void scaleService(uint32_t now);
+static void ledService(uint32_t now);
+static void oledService(uint32_t now);
 
 /* =========================================================
    HELPERS
@@ -360,7 +371,7 @@ static void ledsSetMode(LedMode m) {
   }
 }
 
-static void ledsService() {
+static void ledService(uint32_t now) {
   if (PIXEL_DEBUG_ALL_ON) {
     static bool allOnApplied = false;
     setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
@@ -373,8 +384,6 @@ static void ledsService() {
   }
 
   applyBrightnessForLedMode();
-
-  const uint32_t now = millis();
 
   switch (ledMode) {
     case LedMode::ALL_OFF:
@@ -891,6 +900,34 @@ static void setState(State s) {
   lastActionMs = millis();
 }
 
+static void scaleService(uint32_t now) {
+  haveRead = false;
+  haveStableRead = false;
+  objectMissingStable = false;
+  absFilt = fabsf(w_filt);
+
+  const bool needScaleRead = (state != State::BOOT_MSG && state != State::BOOT_TARE && state != State::SHOW_RESULT);
+  if (!needScaleRead) return;
+  if ((now - lastScaleReadMs) < SCALE_READ_INTERVAL_MS) return;
+  lastScaleReadMs = now;
+
+  haveRead = readScalesOnce(raw1, raw2);
+  haveStableRead = haveRead && isStable;
+  absFilt = haveRead ? fabsf(w_filt) : absFilt;
+  objectMissingStable = haveStableRead && (w_filt < OBJECT_PRESENT_G * 0.7f);
+
+  if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
+    lastSerialBaseMs = now;
+    serialPrintAll(raw1, raw2);
+  }
+}
+
+static void oledService(uint32_t now) {
+  if (state == State::TIMING) {
+    oledTimingLive(now - tStartMs);
+  }
+}
+
 /* =========================================================
    SETUP / LOOP
    ========================================================= */
@@ -928,19 +965,9 @@ void loop() {
   }
   oledDebugLedsCleared = false;
 
-  ledsService();
+  ledService(now);
 
-  long raw1 = 0, raw2 = 0;
-  const bool needScaleRead = (state != State::BOOT_MSG && state != State::BOOT_TARE && state != State::SHOW_RESULT);
-  const bool haveRead = needScaleRead && readScalesOnce(raw1, raw2);
-  const bool haveStableRead = haveRead && isStable;
-  const float absFilt = haveRead ? fabsf(w_filt) : 0.0f;
-  const bool objectMissingStable = haveStableRead && (w_filt < OBJECT_PRESENT_G * 0.7f);
-
-  if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
-    lastSerialBaseMs = now;
-    serialPrintAll(raw1, raw2);
-  }
+  scaleService(now);
 
   if (haveRead && shouldCheckNegativeError(state) && w_filt < NEGATIVE_ERROR_G) {
     setError(ErrCode::NEGATIVE);
@@ -1060,8 +1087,6 @@ void loop() {
     }
 
     case State::TIMING: {
-      oledTimingLive(now - tStartMs);
-
       if (haveRead) {
         const float w = w_filt;
 
@@ -1185,6 +1210,8 @@ void loop() {
       break;
     }
   }
+
+  oledService(now);
 
   if (DEBUG_MODE) {
     oledDebugWeights();
