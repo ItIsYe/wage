@@ -22,14 +22,17 @@ static constexpr bool DEBUG_MODE = false;
 static constexpr bool OLED_DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = false;
+static constexpr bool PERFORMANCE_DEBUG = false;
 
 // Performance-Takte für UI/Logging (funktional unverändert)
-static constexpr uint32_t OLED_TIMING_REFRESH_MS = 100;
+static constexpr uint32_t OLED_TIMING_REFRESH_MS = 200;
 static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
 static constexpr uint32_t OLED_PATTERN_REFRESH_MS = 50;
 static constexpr uint32_t SERIAL_BASE_REFRESH_MS = 150;
 static constexpr uint32_t SERIAL_STATE_REFRESH_MS = 150;
-static constexpr uint32_t SCALE_READ_INTERVAL_MS = 20;
+static constexpr uint32_t SCALE_READ_INTERVAL_MS = 40;
+static constexpr uint8_t SCALE_READ_SAMPLES = 1;
+static constexpr uint32_t OLED_I2C_CLOCK_HZ = 400000;
 
 // Pixel-Konfiguration (oben zentral konfigurierbar)
 static constexpr uint16_t PIXEL_COUNT = 25;
@@ -260,6 +263,13 @@ static uint32_t colorBlue = 0;
 static uint32_t colorRed = 0;
 static uint32_t colorCyan = 0;
 
+static uint32_t perfLastLogMs = 0;
+static uint32_t perfMaxScaleUs = 0;
+static uint32_t perfMaxLedUs = 0;
+static uint32_t perfMaxOledUs = 0;
+static uint32_t perfMaxStateUs = 0;
+static uint32_t perfMaxLoopUs = 0;
+
 /* =========================================================
    FORWARD DECLARATIONS
    ========================================================= */
@@ -274,6 +284,7 @@ static void oledDebugPattern(uint32_t now);
 static void scaleService(uint32_t now);
 static void ledService(uint32_t now);
 static void oledService(uint32_t now);
+static void stateMachineService(uint32_t now);
 
 /* =========================================================
    HELPERS
@@ -520,6 +531,7 @@ static void ledService(uint32_t now) {
 static void oledInit() {
   oledReady = false;
   Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(OLED_I2C_CLOCK_HZ);
   if (!display.begin(OLED_ADDR, true)) return;
   oledReady = true;
   display.setRotation(OLED_ROTATION);
@@ -773,8 +785,8 @@ static inline float unitsFromRaw(long raw, HX711& s, bool invert) {
 static bool readScalesOnce(long& raw1, long& raw2) {
   if (!scale1.is_ready() || !scale2.is_ready()) return false;
 
-  raw1 = scale1.read_average(3);
-  raw2 = scale2.read_average(3);
+  raw1 = scale1.read_average(SCALE_READ_SAMPLES);
+  raw2 = scale2.read_average(SCALE_READ_SAMPLES);
 
   w_raw1 = unitsFromRaw(raw1, scale1, INVERT1);
   w_raw2 = unitsFromRaw(raw2, scale2, INVERT2);
@@ -950,25 +962,7 @@ void setup() {
   setState(State::BOOT_MSG);
 }
 
-void loop() {
-  const uint32_t now = millis();
-
-  if (OLED_DEBUG_MODE) {
-    if (!oledDebugLedsCleared) {
-      pixelsClear();
-      pixelsShow();
-      oledDebugLedsCleared = true;
-    }
-    oledDebugPattern(now);
-    delay(20);
-    return;
-  }
-  oledDebugLedsCleared = false;
-
-  ledService(now);
-
-  scaleService(now);
-
+static void stateMachineService(uint32_t now) {
   if (haveRead && shouldCheckNegativeError(state) && w_filt < NEGATIVE_ERROR_G) {
     setError(ErrCode::NEGATIVE);
   }
@@ -1211,9 +1205,73 @@ void loop() {
     }
   }
 
-  oledService(now);
+}
 
-  if (DEBUG_MODE) {
-    oledDebugWeights();
+void loop() {
+  const uint32_t now = millis();
+  const uint32_t loopStartUs = PERFORMANCE_DEBUG ? micros() : 0;
+
+  if (OLED_DEBUG_MODE) {
+    if (!oledDebugLedsCleared) {
+      pixelsClear();
+      pixelsShow();
+      oledDebugLedsCleared = true;
+    }
+    oledDebugPattern(now);
+    delay(20);
+    return;
   }
+  oledDebugLedsCleared = false;
+
+  const uint32_t ledStartUs = PERFORMANCE_DEBUG ? micros() : 0;
+  ledService(now);
+  const uint32_t ledDurUs = PERFORMANCE_DEBUG ? (micros() - ledStartUs) : 0;
+
+  const uint32_t scaleStartUs = PERFORMANCE_DEBUG ? micros() : 0;
+  scaleService(now);
+  const uint32_t scaleDurUs = PERFORMANCE_DEBUG ? (micros() - scaleStartUs) : 0;
+
+  const uint32_t stateStartUs = PERFORMANCE_DEBUG ? micros() : 0;
+  stateMachineService(now);
+  const uint32_t stateDurUs = PERFORMANCE_DEBUG ? (micros() - stateStartUs) : 0;
+
+  const uint32_t oledStartUs = PERFORMANCE_DEBUG ? micros() : 0;
+  oledService(now);
+  const uint32_t oledDurUs = PERFORMANCE_DEBUG ? (micros() - oledStartUs) : 0;
+
+  if (PERFORMANCE_DEBUG) {
+    const uint32_t loopDurUs = micros() - loopStartUs;
+    perfMaxLedUs = max(perfMaxLedUs, ledDurUs);
+    perfMaxScaleUs = max(perfMaxScaleUs, scaleDurUs);
+    perfMaxStateUs = max(perfMaxStateUs, stateDurUs);
+    perfMaxOledUs = max(perfMaxOledUs, oledDurUs);
+    perfMaxLoopUs = max(perfMaxLoopUs, loopDurUs);
+
+    if (now - perfLastLogMs >= 1000) {
+      perfLastLogMs = now;
+      Serial.print("[PERF] scale=");
+      Serial.print(scaleDurUs);
+      Serial.print("us led=");
+      Serial.print(ledDurUs);
+      Serial.print("us oled=");
+      Serial.print(oledDurUs);
+      Serial.print("us state=");
+      Serial.print(stateDurUs);
+      Serial.print("us loop=");
+      Serial.print(loopDurUs);
+      Serial.print("us max(scale/led/oled/state/loop)=");
+      Serial.print(perfMaxScaleUs);
+      Serial.print('/');
+      Serial.print(perfMaxLedUs);
+      Serial.print('/');
+      Serial.print(perfMaxOledUs);
+      Serial.print('/');
+      Serial.print(perfMaxStateUs);
+      Serial.print('/');
+      Serial.println(perfMaxLoopUs);
+      perfMaxScaleUs = perfMaxLedUs = perfMaxOledUs = perfMaxStateUs = perfMaxLoopUs = 0;
+    }
+  }
+
+  if (DEBUG_MODE) oledDebugWeights();
 }
