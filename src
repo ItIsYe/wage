@@ -4,6 +4,9 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <Adafruit_NeoPixel.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <Preferences.h>
 #include <string.h>
 
 /* =========================================================
@@ -12,38 +15,47 @@
 
 // OLED-Textskalierung (gut sichtbar, zentrale Stelle)
 // OLED-Scale: Hier den Wert direkt setzen (Komma oder Punkt, z. B. "1,9" / "1.9")
+static constexpr bool WEB_CONFIG_ENABLED = true;
+static constexpr bool WIFI_STA_ENABLED = true;
+static const char* WIFI_SSID = "YOUR_WIFI_SSID";
+static const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 12000;
+static const char* CONFIG_AP_SSID = "Waage-Config";
+static const char* CONFIG_AP_PASSWORD = "waagecfg1";
+static constexpr uint16_t WEB_SERVER_PORT = 80;
+
 static const char* OLED_SCALE_CONFIG = "1,5";
 // Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
 static float oledScale = 1.5f;
 
 // OLED-Debug-Modus: Roh-/Filterwerte in jedem Zustand
-static constexpr bool DEBUG_MODE = false;
+static bool DEBUG_MODE = false;
 // OLED-Debug-Modus (Override): nur OLED-Testbild aktiv
-static constexpr bool OLED_DEBUG_MODE = false;
+static bool OLED_DEBUG_MODE = false;
 // Master-Serial-Logging bleibt aktiv
 static constexpr bool MASTER_DEBUG_LOG = false;
 static constexpr bool PERFORMANCE_DEBUG = false;
 
 // Performance-Takte für UI/Logging (funktional unverändert)
-static constexpr uint32_t OLED_TIMING_REFRESH_MS = 200;
+static constexpr uint32_t DEFAULT_OLED_TIMING_REFRESH_MS = 200;
 static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
 static constexpr uint32_t OLED_PATTERN_REFRESH_MS = 50;
 static constexpr uint32_t SERIAL_BASE_REFRESH_MS = 150;
 static constexpr uint32_t SERIAL_STATE_REFRESH_MS = 150;
-static constexpr uint32_t SCALE_READ_INTERVAL_MS = 40;
-static constexpr uint8_t SCALE_READ_SAMPLES = 1;
-static constexpr uint32_t OLED_I2C_CLOCK_HZ = 400000;
+static constexpr uint32_t DEFAULT_SCALE_READ_INTERVAL_MS = 40;
+static constexpr uint8_t DEFAULT_SCALE_READ_SAMPLES = 1;
+static constexpr uint32_t DEFAULT_OLED_I2C_CLOCK_HZ = 400000;
 
 // Pixel-Konfiguration (oben zentral konfigurierbar)
 static constexpr uint16_t PIXEL_COUNT = 25;
 // Display-Rotation
-static constexpr uint8_t OLED_ROTATION = 0;
+static constexpr uint8_t DEFAULT_OLED_ROTATION = 0;
 // LED-/Pixel-Debug-Modus: true = alle Pixel dauerhaft an
-static constexpr bool PIXEL_DEBUG_ALL_ON = false;
+static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
 // Standard-Helligkeit in % (0..100), intern auf 0..255 umgerechnet
-static constexpr uint8_t PIXEL_BRIGHTNESS_PERCENT = 50;
+static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
 // Standby-Helligkeit in % (0..100), nur fuer Standby-Pattern
-static constexpr uint8_t STANDBY_BRIGHTNESS_PERCENT = 90;
+static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90;
 
 // Kalibrierung (g)
 static float CAL1 = -235.15f;
@@ -54,11 +66,11 @@ static constexpr bool INVERT1 = true;
 static constexpr bool INVERT2 = true;
 
 // Objekterkennung (g)
-static constexpr float OBJECT_PRESENT_G = 100.0f;
+static constexpr float DEFAULT_OBJECT_PRESENT_G = 100.0f;
 
 // Prozentlogik relativ zum Referenzgewicht (% vom Referenzgewicht)
-static constexpr float START_DROP_PERCENT = 5.0f; // Start: Drop >= x%
-static constexpr float STOP_RISE_PERCENT  = 5.0f; // Stop: Rise >= x%
+static constexpr float DEFAULT_START_DROP_PERCENT = 5.0f; // Start: Drop >= x%
+static constexpr float DEFAULT_STOP_RISE_PERCENT  = 5.0f; // Stop: Rise >= x%
 static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Mindestschwelle (g)
 static constexpr uint32_t DROP_HOLD_MS = 150;          // Drop-Haltezeit (ms)
 static constexpr uint32_t STOP_HOLD_MS = 220;          // Stop-Haltezeit (ms)
@@ -66,14 +78,14 @@ static constexpr float STOP_RESET_HYST_G = 0.8f;       // Kandidat-Reset-Hystere
 static constexpr float START_RESET_HYST_G = 1.2f;       // Start-Reset-Hysterese (g)
 static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
 static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
-static constexpr float EMPTY_THRESHOLD_G = 10.0f;       // "leer" (g)
-static constexpr float RETARE_TOL_G = 0.6f;            // Re-Tare bei Offset > x g
+static constexpr float DEFAULT_EMPTY_THRESHOLD_G = 10.0f;       // "leer" (g)
+static constexpr float DEFAULT_RETARE_TOL_G = 0.6f;            // Re-Tare bei Offset > x g
 
 // Anzeige / Wartezeiten
 static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
 static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
-static constexpr float STANDBY_WAKE_THRESHOLD_G = 3.0f;  // Aufwachen aus Standby ab x g
+static constexpr float DEFAULT_STANDBY_WAKE_THRESHOLD_G = 3.0f;  // Aufwachen aus Standby ab x g
 static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
 static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
 static constexpr uint8_t STANDBY_HUE_SHIFT_MAX = 20;      // Hue-Drift pro Tick
@@ -168,6 +180,37 @@ enum class State : uint8_t {
 
 static State state = State::BOOT_MSG;
 static ErrCode err = ErrCode::OK;
+
+static const char* FIRMWARE_VERSION = "v1-webcfg";
+
+struct RuntimeConfig {
+  float startDropPercent;
+  float stopRisePercent;
+  float objectPresentG;
+  float emptyThresholdG;
+  float retareTolG;
+  float standbyWakeThresholdG;
+  uint32_t oledTimingRefreshMs;
+  uint32_t scaleReadIntervalMs;
+  uint8_t scaleReadSamples;
+  uint32_t oledI2cClockHz;
+  uint8_t oledRotation;
+  float oledScaleValue;
+  bool debugMode;
+  bool oledDebugMode;
+  uint8_t pixelBrightnessPercent;
+  uint8_t standbyBrightnessPercent;
+  bool pixelDebugAllOn;
+  char deviceId[32];
+};
+
+static RuntimeConfig activeConfig;
+static RuntimeConfig pendingConfig;
+static bool pendingConfigValid = false;
+static bool wifiApMode = false;
+static String networkInfo;
+static WebServer server(WEB_SERVER_PORT);
+static Preferences prefs;
 
 /* =========================================================
    RUNTIME VARIABLES
@@ -285,6 +328,8 @@ static void scaleService(uint32_t now);
 static void ledService(uint32_t now);
 static void oledService(uint32_t now);
 static void stateMachineService(uint32_t now);
+static void webService(uint32_t now);
+static void applyPendingConfigIfAllowed();
 
 /* =========================================================
    HELPERS
@@ -313,8 +358,8 @@ static inline void setStripBrightnessPercent(uint8_t percent) {
 
 static inline void applyBrightnessForLedMode() {
   const uint8_t percent = (ledMode == LedMode::STANDBY_TWINKLE)
-    ? STANDBY_BRIGHTNESS_PERCENT
-    : PIXEL_BRIGHTNESS_PERCENT;
+    ? activeConfig.standbyBrightnessPercent
+    : activeConfig.pixelBrightnessPercent;
   setStripBrightnessPercent(percent);
 }
 
@@ -343,7 +388,7 @@ static void standbyApplyOutputs() {
 
 static void ledsInit() {
   ledStrip.begin();
-  setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
+  setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
   colorGreen = ledStrip.Color(0, 90, 0);
   colorBlue = ledStrip.Color(0, 0, 100);
   colorRed = ledStrip.Color(100, 0, 0);
@@ -383,9 +428,9 @@ static void ledsSetMode(LedMode m) {
 }
 
 static void ledService(uint32_t now) {
-  if (PIXEL_DEBUG_ALL_ON) {
+  if (activeConfig.pixelDebugAllOn) {
     static bool allOnApplied = false;
-    setStripBrightnessPercent(PIXEL_BRIGHTNESS_PERCENT);
+    setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
     if (!allOnApplied) {
       pixelsFill(ledStrip.Color(80, 80, 80));
       pixelsShow();
@@ -531,10 +576,10 @@ static void ledService(uint32_t now) {
 static void oledInit() {
   oledReady = false;
   Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(OLED_I2C_CLOCK_HZ);
+  Wire.setClock(activeConfig.oledI2cClockHz);
   if (!display.begin(OLED_ADDR, true)) return;
   oledReady = true;
-  display.setRotation(OLED_ROTATION);
+  display.setRotation(activeConfig.oledRotation);
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
   display.display();
@@ -548,6 +593,7 @@ static void initOledScale() {
   if (parsed <= 0.0f) parsed = 1.0f;
 
   oledScale = parsed;
+  activeConfig.oledScaleValue = parsed;
 
   if (MASTER_DEBUG_LOG) {
     Serial.print("[OLED] scale config=");
@@ -597,7 +643,7 @@ static void oledMsg2(const char* line1, const char* line2) {
 static void oledTimingLive(uint32_t dtMs) {
   if (!oledReady) return;
   const uint32_t now = millis();
-  if ((now - lastOledTimingMs) < OLED_TIMING_REFRESH_MS) return;
+  if ((now - lastOledTimingMs) < activeConfig.oledTimingRefreshMs) return;
   lastOledTimingMs = now;
   const int32_t dtTenths = (int32_t)(dtMs / 100);
   if (dtTenths == lastTimingTenths) return;
@@ -785,8 +831,8 @@ static inline float unitsFromRaw(long raw, HX711& s, bool invert) {
 static bool readScalesOnce(long& raw1, long& raw2) {
   if (!scale1.is_ready() || !scale2.is_ready()) return false;
 
-  raw1 = scale1.read_average(SCALE_READ_SAMPLES);
-  raw2 = scale2.read_average(SCALE_READ_SAMPLES);
+  raw1 = scale1.read_average(activeConfig.scaleReadSamples);
+  raw2 = scale2.read_average(activeConfig.scaleReadSamples);
 
   w_raw1 = unitsFromRaw(raw1, scale1, INVERT1);
   w_raw2 = unitsFromRaw(raw2, scale2, INVERT2);
@@ -815,7 +861,7 @@ static void tareBoth() {
 }
 
 static bool isObjectPresentStable(float weight, bool stable) {
-  return stable && (weight >= OBJECT_PRESENT_G);
+  return stable && (weight >= activeConfig.objectPresentG);
 }
 
 static float percentOfReference(float referenceWeight, float percent) {
@@ -823,14 +869,14 @@ static float percentOfReference(float referenceWeight, float percent) {
 }
 
 static void refreshTimingThresholds() {
-  readyReferenceWeight = max(readyReferenceWeight, OBJECT_PRESENT_G);
+  readyReferenceWeight = max(readyReferenceWeight, activeConfig.objectPresentG);
   startDropThresholdG = max(
     MIN_DYNAMIC_THRESHOLD_G,
-    percentOfReference(readyReferenceWeight, START_DROP_PERCENT)
+    percentOfReference(readyReferenceWeight, activeConfig.startDropPercent)
   );
   stopRiseThresholdG = max(
     MIN_DYNAMIC_THRESHOLD_G,
-    percentOfReference(readyReferenceWeight, STOP_RISE_PERCENT)
+    percentOfReference(readyReferenceWeight, activeConfig.stopRisePercent)
   );
 
   if (MASTER_DEBUG_LOG) {
@@ -920,13 +966,13 @@ static void scaleService(uint32_t now) {
 
   const bool needScaleRead = (state != State::BOOT_MSG && state != State::BOOT_TARE && state != State::SHOW_RESULT);
   if (!needScaleRead) return;
-  if ((now - lastScaleReadMs) < SCALE_READ_INTERVAL_MS) return;
+  if ((now - lastScaleReadMs) < activeConfig.scaleReadIntervalMs) return;
   lastScaleReadMs = now;
 
   haveRead = readScalesOnce(raw1, raw2);
   haveStableRead = haveRead && isStable;
   absFilt = haveRead ? fabsf(w_filt) : absFilt;
-  objectMissingStable = haveStableRead && (w_filt < OBJECT_PRESENT_G * 0.7f);
+  objectMissingStable = haveStableRead && (w_filt < activeConfig.objectPresentG * 0.7f);
 
   if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
     lastSerialBaseMs = now;
@@ -944,9 +990,52 @@ static void oledService(uint32_t now) {
    SETUP / LOOP
    ========================================================= */
 
+static void loadDefaults(){ memset(&activeConfig,0,sizeof(activeConfig));
+  activeConfig.startDropPercent=DEFAULT_START_DROP_PERCENT; activeConfig.stopRisePercent=DEFAULT_STOP_RISE_PERCENT;
+  activeConfig.objectPresentG=DEFAULT_OBJECT_PRESENT_G; activeConfig.emptyThresholdG=DEFAULT_EMPTY_THRESHOLD_G;
+  activeConfig.retareTolG=DEFAULT_RETARE_TOL_G; activeConfig.standbyWakeThresholdG=DEFAULT_STANDBY_WAKE_THRESHOLD_G;
+  activeConfig.oledTimingRefreshMs=DEFAULT_OLED_TIMING_REFRESH_MS; activeConfig.scaleReadIntervalMs=DEFAULT_SCALE_READ_INTERVAL_MS;
+  activeConfig.scaleReadSamples=DEFAULT_SCALE_READ_SAMPLES; activeConfig.oledI2cClockHz=DEFAULT_OLED_I2C_CLOCK_HZ;
+  activeConfig.oledRotation=DEFAULT_OLED_ROTATION; activeConfig.oledScaleValue=1.5f; activeConfig.debugMode=false; activeConfig.oledDebugMode=false;
+  activeConfig.pixelBrightnessPercent=DEFAULT_PIXEL_BRIGHTNESS_PERCENT; activeConfig.standbyBrightnessPercent=DEFAULT_STANDBY_BRIGHTNESS_PERCENT;
+  activeConfig.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON; strncpy(activeConfig.deviceId,"waage-01",sizeof(activeConfig.deviceId)-1);}
+
+
+static void saveConfigToPrefs(const RuntimeConfig& c){
+  prefs.begin("cfg", false);
+  prefs.putFloat("startDrop", c.startDropPercent); prefs.putFloat("stopRise", c.stopRisePercent);
+  prefs.putFloat("obj", c.objectPresentG); prefs.putFloat("empty", c.emptyThresholdG); prefs.putFloat("retare", c.retareTolG);
+  prefs.putFloat("wake", c.standbyWakeThresholdG); prefs.putUInt("oledRef", c.oledTimingRefreshMs); prefs.putUInt("scaleInt", c.scaleReadIntervalMs);
+  prefs.putUChar("samples", c.scaleReadSamples); prefs.putUInt("i2c", c.oledI2cClockHz); prefs.putUChar("rot", c.oledRotation);
+  prefs.putFloat("oledScale", c.oledScaleValue); prefs.putBool("dbg", c.debugMode); prefs.putBool("odbg", c.oledDebugMode);
+  prefs.putUChar("pixB", c.pixelBrightnessPercent); prefs.putUChar("stbyB", c.standbyBrightnessPercent); prefs.putBool("pixDbg", c.pixelDebugAllOn);
+  prefs.putString("dev", c.deviceId); prefs.end();
+}
+
+static void loadConfigFromPrefs(){
+  prefs.begin("cfg", true);
+  activeConfig.startDropPercent=prefs.getFloat("startDrop", activeConfig.startDropPercent);
+  activeConfig.stopRisePercent=prefs.getFloat("stopRise", activeConfig.stopRisePercent);
+  activeConfig.objectPresentG=prefs.getFloat("obj", activeConfig.objectPresentG);
+  activeConfig.emptyThresholdG=prefs.getFloat("empty", activeConfig.emptyThresholdG);
+  activeConfig.retareTolG=prefs.getFloat("retare", activeConfig.retareTolG);
+  activeConfig.standbyWakeThresholdG=prefs.getFloat("wake", activeConfig.standbyWakeThresholdG);
+  activeConfig.oledTimingRefreshMs=prefs.getUInt("oledRef", activeConfig.oledTimingRefreshMs);
+  activeConfig.scaleReadIntervalMs=prefs.getUInt("scaleInt", activeConfig.scaleReadIntervalMs);
+  activeConfig.scaleReadSamples=prefs.getUChar("samples", activeConfig.scaleReadSamples);
+  activeConfig.oledI2cClockHz=prefs.getUInt("i2c", activeConfig.oledI2cClockHz); activeConfig.oledRotation=prefs.getUChar("rot", activeConfig.oledRotation);
+  activeConfig.oledScaleValue=prefs.getFloat("oledScale", activeConfig.oledScaleValue);
+  activeConfig.debugMode=prefs.getBool("dbg", activeConfig.debugMode); activeConfig.oledDebugMode=prefs.getBool("odbg", activeConfig.oledDebugMode);
+  activeConfig.pixelBrightnessPercent=prefs.getUChar("pixB", activeConfig.pixelBrightnessPercent); activeConfig.standbyBrightnessPercent=prefs.getUChar("stbyB", activeConfig.standbyBrightnessPercent); activeConfig.pixelDebugAllOn=prefs.getBool("pixDbg", activeConfig.pixelDebugAllOn);
+  String dev=prefs.getString("dev", activeConfig.deviceId); strncpy(activeConfig.deviceId, dev.c_str(), sizeof(activeConfig.deviceId)-1);
+  prefs.end();
+  oledScale=activeConfig.oledScaleValue;
+}
 void setup() {
   Serial.begin(115200);
+  loadDefaults();
   initOledScale();
+  loadConfigFromPrefs();
   randomSeed(esp_random());
 
   ledsInit();
@@ -960,6 +1049,14 @@ void setup() {
   ledsSetMode(LedMode::RED_SOLID);
   oledMsg2("Start...", "Initialisierung");
   setState(State::BOOT_MSG);
+  if (WEB_CONFIG_ENABLED) {
+    if (WIFI_STA_ENABLED) { WiFi.mode(WIFI_STA); WiFi.begin(WIFI_SSID, WIFI_PASSWORD); uint32_t ws=millis(); while (WiFi.status()!=WL_CONNECTED && millis()-ws<WIFI_CONNECT_TIMEOUT_MS) { delay(50); } }
+    if (WiFi.status()==WL_CONNECTED) { wifiApMode=false; networkInfo=WiFi.localIP().toString(); }
+    else { WiFi.mode(WIFI_AP); WiFi.softAP(CONFIG_AP_SSID, CONFIG_AP_PASSWORD); wifiApMode=true; networkInfo=WiFi.softAPIP().toString(); }
+    server.on("/", HTTP_GET, [](){ String h="<html><body><h2>Waage Config</h2><p>IP:"+networkInfo+"</p><p>State:"+String(stateToStr(state))+"</p><p>Pending:"+String(pendingConfigValid?"ja":"nein")+"</p><form method='POST' action='/save'><input name='deviceId' value='"+String(activeConfig.deviceId)+"'><input name='startDrop' value='"+String(activeConfig.startDropPercent,2)+"'><button type='submit'>Speichern</button></form></body></html>"; server.send(200,"text/html",h); });
+    server.on("/save", HTTP_POST, [](){ RuntimeConfig n=activeConfig; if (server.hasArg("deviceId")) { strncpy(n.deviceId, server.arg("deviceId").c_str(), sizeof(n.deviceId)-1);} if (server.hasArg("startDrop")) n.startDropPercent=server.arg("startDrop").toFloat(); pendingConfig=n; pendingConfigValid=true; saveConfigToPrefs(pendingConfig); server.sendHeader("Location","/"); server.send(303); });
+    server.begin();
+  }
 }
 
 static void stateMachineService(uint32_t now) {
@@ -1139,7 +1236,7 @@ static void stateMachineService(uint32_t now) {
     case State::WAIT_EMPTY_AFTER_RESULT: {
       // Bitte freihalten / kein Glas aufstellen = alle rot dauerhaft.
       ledsSetMode(LedMode::RED_SOLID);
-      const bool emptyAndStable = haveStableRead && absFilt < EMPTY_THRESHOLD_G;
+      const bool emptyAndStable = haveStableRead && absFilt < activeConfig.emptyThresholdG;
       if (!emptyAndStable) {
         oledMsg2("Bitte leeren", "Glas entfernen");
       } else {
@@ -1154,7 +1251,7 @@ static void stateMachineService(uint32_t now) {
       ledsSetMode(LedMode::RED_SOLID);
       if (!haveStableRead) break;
 
-      if (absFilt > RETARE_TOL_G) {
+      if (absFilt > activeConfig.retareTolG) {
         Serial.print("[RETARE] empty+stable offset=");
         Serial.print(w_filt, 2);
         Serial.println("g -> tare");
@@ -1170,7 +1267,7 @@ static void stateMachineService(uint32_t now) {
     }
 
     case State::STANDBY: {
-      if (haveRead && absFilt > STANDBY_WAKE_THRESHOLD_G) {
+      if (haveRead && absFilt > activeConfig.standbyWakeThresholdG) {
         oledMsg2("Aktiv", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
@@ -1207,11 +1304,15 @@ static void stateMachineService(uint32_t now) {
 
 }
 
+
+static void webService(uint32_t now){(void)now; if (WEB_CONFIG_ENABLED) server.handleClient();}
+static void applyPendingConfigIfAllowed(){ if (pendingConfigValid && state==State::IDLE_WAIT_GLASS){ activeConfig=pendingConfig; oledScale=activeConfig.oledScaleValue; Wire.setClock(activeConfig.oledI2cClockHz); display.setRotation(activeConfig.oledRotation); pendingConfigValid=false; }}
+
 void loop() {
   const uint32_t now = millis();
   const uint32_t loopStartUs = PERFORMANCE_DEBUG ? micros() : 0;
 
-  if (OLED_DEBUG_MODE) {
+  if (OLED_activeConfig.debugMode) {
     if (!oledDebugLedsCleared) {
       pixelsClear();
       pixelsShow();
@@ -1237,6 +1338,8 @@ void loop() {
 
   const uint32_t oledStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   oledService(now);
+  applyPendingConfigIfAllowed();
+  webService(now);
   const uint32_t oledDurUs = PERFORMANCE_DEBUG ? (micros() - oledStartUs) : 0;
 
   if (PERFORMANCE_DEBUG) {
@@ -1273,5 +1376,5 @@ void loop() {
     }
   }
 
-  if (DEBUG_MODE) oledDebugWeights();
+  if (activeConfig.debugMode) oledDebugWeights();
 }
