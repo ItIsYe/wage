@@ -95,9 +95,9 @@ static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
 static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
 static constexpr float DEFAULT_STANDBY_WAKE_THRESHOLD_G = 3.0f;  // Aufwachen aus Standby ab x g
-static constexpr uint32_t STANDBY_TWINKLE_MIN_MS = 350;  // Update-Takt min (ms)
-static constexpr uint32_t STANDBY_TWINKLE_MAX_MS = 1100; // Update-Takt max (ms)
-static constexpr uint8_t STANDBY_HUE_SHIFT_MAX = 20;      // Hue-Drift pro Tick
+static constexpr uint32_t STANDBY_FRAME_MS = 120;        // fester Frame-Takt (ms)
+static constexpr uint32_t STANDBY_CHANGE_MIN_MS = 500;   // Change-Takt min (ms)
+static constexpr uint32_t STANDBY_CHANGE_MAX_MS = 1200;  // Change-Takt max (ms)
 static constexpr uint8_t STANDBY_SATURATION = 180;        // sanft, aber farbig
 static constexpr uint8_t STANDBY_VALUE_MIN = 52;          // sichtbarere Grundhelligkeit
 static constexpr uint8_t STANDBY_VALUE_MAX = 112;         // sichtbarere Max-Helligkeit
@@ -281,6 +281,7 @@ static LedMode ledMode = LedMode::ALL_OFF;
 static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
+static uint32_t standbyFrameNextMs = 0;
 static uint8_t ledSpinIdx = 0;
 static bool oledDebugLedsCleared = false;
 static bool ledFrameDirty = true;
@@ -424,7 +425,8 @@ static void ledsSetMode(LedMode m) {
   ledSpinIdx = 0;
   ledFrameDirty = true;
   if (m == LedMode::STANDBY_TWINKLE) {
-    twinkleNextMs = now + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
+    standbyFrameNextMs = now + STANDBY_FRAME_MS;
+    twinkleNextMs = now + random(STANDBY_CHANGE_MIN_MS, STANDBY_CHANGE_MAX_MS);
     standbyOnCount = 0;
     for (uint8_t i = 0; i < PIXEL_COUNT; i++) {
       standbyTwinkleOn[i] = false;
@@ -537,46 +539,63 @@ static void ledService(uint32_t now) {
 
     case LedMode::STANDBY_TWINKLE: {
       if (now >= twinkleNextMs) {
-        twinkleNextMs = now + random(STANDBY_TWINKLE_MIN_MS, STANDBY_TWINKLE_MAX_MS);
+        twinkleNextMs = now + random(STANDBY_CHANGE_MIN_MS, STANDBY_CHANGE_MAX_MS);
 
-        // Nur kleine Aenderungen pro Tick.
-        if (random(0, 100) < 45) {
-          const uint8_t i = (uint8_t)random(0, PIXEL_COUNT);
-          if (standbyTwinkleOn[i]) {
-            standbyTwinkleOn[i] = false;
-            if (standbyOnCount > 0) --standbyOnCount;
-          } else {
-            standbyTwinkleOn[i] = true;
-            if (standbyOnCount < PIXEL_COUNT) ++standbyOnCount;
+        const bool needMore = standbyOnCount < STANDBY_ON_MIN;
+        const bool needLess = standbyOnCount > STANDBY_ON_MAX;
+        const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
+        if (needMore || needLess || shouldToggle) {
+          for (uint8_t tries = 0; tries < PIXEL_COUNT; ++tries) {
+            const uint8_t i = (uint8_t)random(0, PIXEL_COUNT);
+            if (needMore) {
+              if (!standbyTwinkleOn[i]) {
+                standbyTwinkleOn[i] = true;
+                ++standbyOnCount;
+                standbyHue[i] = (uint16_t)random(0, 65536);
+                standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
+                ledFrameDirty = true;
+                break;
+              }
+            } else if (needLess) {
+              if (standbyTwinkleOn[i]) {
+                standbyTwinkleOn[i] = false;
+                --standbyOnCount;
+                ledFrameDirty = true;
+                break;
+              }
+            } else if (standbyTwinkleOn[i]) {
+              standbyTwinkleOn[i] = false;
+              --standbyOnCount;
+              ledFrameDirty = true;
+              break;
+            } else {
+              standbyTwinkleOn[i] = true;
+              ++standbyOnCount;
+              standbyHue[i] = (uint16_t)random(0, 65536);
+              standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
+              ledFrameDirty = true;
+              break;
+            }
           }
-          ledFrameDirty = true;
-        }
-        while (standbyOnCount < STANDBY_ON_MIN) {
-          const uint8_t idx = (uint8_t)random(0, PIXEL_COUNT);
-          if (!standbyTwinkleOn[idx]) {
-            standbyTwinkleOn[idx] = true;
-            ++standbyOnCount;
-            ledFrameDirty = true;
-          }
-        }
-        while (standbyOnCount > STANDBY_ON_MAX) {
-          const uint8_t idx = (uint8_t)random(0, PIXEL_COUNT);
-          if (standbyTwinkleOn[idx]) {
-            standbyTwinkleOn[idx] = false;
-            --standbyOnCount;
-            ledFrameDirty = true;
-          }
-        }
-
-        for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
-          if (!standbyTwinkleOn[i]) continue;
-          const int16_t shift = (int16_t)random(-(int)STANDBY_HUE_SHIFT_MAX, (int)STANDBY_HUE_SHIFT_MAX + 1);
-          standbyHue[i] = (uint16_t)(standbyHue[i] + shift);
-          standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
-          ledFrameDirty = true;
         }
       }
-      if (now >= twinkleNextMs || ledFrameDirty) {
+
+      if (now >= standbyFrameNextMs) {
+        standbyFrameNextMs = now + STANDBY_FRAME_MS;
+        for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
+          if (!standbyTwinkleOn[i]) continue;
+          const int16_t shift = (int16_t)random(-2, 3);
+          standbyHue[i] = (uint16_t)(standbyHue[i] + shift);
+          const int16_t delta = (int16_t)random(-4, 5);
+          int16_t nextValue = (int16_t)standbyValue[i] + delta;
+          if (nextValue < STANDBY_VALUE_MIN) nextValue = STANDBY_VALUE_MIN;
+          if (nextValue > STANDBY_VALUE_MAX) nextValue = STANDBY_VALUE_MAX;
+          standbyValue[i] = (uint8_t)nextValue;
+        }
+        ledFrameDirty = true;
+      }
+
+      if (ledFrameDirty) {
         standbyApplyOutputs();
       }
       break;
