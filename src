@@ -30,8 +30,8 @@ static const IPAddress WIFI_DNS2(8, 8, 8, 8);                    // DNS-Server
 static const char* CONFIG_AP_SSID = "Waage-Config";              // Fallback-Hotspot der Waage
 static const char* CONFIG_AP_PASSWORD = "waagecfg1";             // Passwort vom Fallback-Hotspot, mindestens 8 Zeichen
 static constexpr uint16_t WEB_SERVER_PORT = 80;
-static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 50;      // Webserver-Takt im Idle/Standby
-static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 200;     // Webserver-Takt waehrend Messung/Busy-Zustaenden
+static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 100;      // Webserver-Takt im Idle/Standby
+static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 300;      // Webserver-Takt waehrend Messung/Busy-Zustaenden
 
 static const char* OLED_SCALE_CONFIG = "1,5";
 // Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
@@ -220,6 +220,8 @@ static bool wifiApMode = false;
 static String networkInfo;
 static WebServer server(WEB_SERVER_PORT);
 static Preferences prefs;
+static bool resetRequested = false;
+static String resetStatusMsg;
 
 /* =========================================================
    RUNTIME VARIABLES
@@ -321,6 +323,7 @@ static uint32_t perfMaxLedUs = 0;
 static uint32_t perfMaxOledUs = 0;
 static uint32_t perfMaxStateUs = 0;
 static uint32_t perfMaxConfigUs = 0;
+static uint32_t perfMaxResetUs = 0;
 static uint32_t perfMaxWebUs = 0;
 static uint32_t perfMaxLoopUs = 0;
 static uint32_t lastWebServiceMs = 0;
@@ -342,6 +345,7 @@ static void oledService(uint32_t now);
 static void stateMachineService(uint32_t now);
 static void webService(uint32_t now);
 static void applyPendingConfigIfAllowed();
+static void handleResetRequestIfAllowed(uint32_t now);
 
 /* =========================================================
    HELPERS
@@ -1108,9 +1112,15 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>Feste IP aktiv:</b> "); h += (WIFI_USE_STATIC_IP ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Firmware:</b> "); h += FIRMWARE_VERSION; h += F("</p>");
   h += F("<p><b>State:</b> "); h += stateToStr(state); h += F("</p>");
+  h += F("<p><b>Fehlerstatus:</b> "); h += errToStr(err); h += F("</p>");
+  h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Pending:</b> "); h += (pendingConfigValid ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Hinweis:</b> "); h += (state==State::IDLE_WAIT_GLASS ? F("Aenderungen werden sofort aktiv") : F("Aenderungen warten bis Idle")); h += F("</p></div>");
   if (errorMsg.length()) { h += F("<div class='err'><b>Fehler:</b> "); h += htmlEscape(errorMsg); h += F("</div>"); }
+  if (resetRequested) { h += F("<div class='err'><b>Reset:</b> Reset wartet auf sicheren Zustand</div>"); }
+  if (state == State::TIMING) { h += F("<div class='err'><b>Info:</b> Reset wird erst nach der Messung ausgefuehrt</div>"); }
+  if (resetStatusMsg.length()) { h += F("<div class='err'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</div>"); }
+  h += F("<form method='POST' action='/reset-error'><button type='submit'>Fehlerreset / Neu nullen</button></form>");
   h += F("<form method='POST' action='/save'>");
   h += F("<fieldset><legend>System</legend><label>Device-ID</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>1 bis 31 Zeichen</small>");
   h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION; h += F("' readonly>");
@@ -1228,6 +1238,18 @@ void setup() {
       }
       pendingConfig = n;
       pendingConfigValid = true;
+      server.sendHeader("Location","/");
+      server.send(303);
+    });
+    server.on("/reset-error", HTTP_POST, [](){
+      resetRequested = true;
+      resetStatusMsg = "Reset angefordert. Wird sicher ausgefuehrt.";
+      server.sendHeader("Location","/");
+      server.send(303);
+    });
+    server.on("/reset", HTTP_POST, [](){
+      resetRequested = true;
+      resetStatusMsg = "Reset angefordert. Wird sicher ausgefuehrt.";
       server.sendHeader("Location","/");
       server.send(303);
     });
@@ -1503,6 +1525,32 @@ static void applyPendingConfigIfAllowed(){
   pendingConfigValid = false;
 }
 
+static void handleResetRequestIfAllowed(uint32_t now){
+  (void)now;
+  if (!resetRequested) return;
+  if (state == State::TIMING) {
+    resetStatusMsg = "Reset wartet bis Messung beendet ist.";
+    return;
+  }
+
+  err = ErrCode::OK;
+  objectPresent = false;
+  dropSinceMs = 0;
+  stopCandidateSinceMs = 0;
+  minDuringTiming = 1e9f;
+  readyReferenceWeight = 0.0f;
+  startDropThresholdG = 0.0f;
+  stopRiseThresholdG = 0.0f;
+  stableSince = 0;
+  isStable = false;
+  resetRequested = false;
+  resetStatusMsg = "Reset ausgefuehrt. Nullung laeuft.";
+
+  oledMsg2("Nullung...", "Bitte nichts auflegen");
+  ledsSetMode(LedMode::RED_SOLID);
+  setState(State::BOOT_TARE);
+}
+
 void loop() {
   const uint32_t now = millis();
   const uint32_t loopStartUs = PERFORMANCE_DEBUG ? micros() : 0;
@@ -1539,6 +1587,10 @@ void loop() {
   applyPendingConfigIfAllowed();
   const uint32_t configDurUs = PERFORMANCE_DEBUG ? (micros() - configStartUs) : 0;
 
+  const uint32_t resetStartUs = PERFORMANCE_DEBUG ? micros() : 0;
+  handleResetRequestIfAllowed(now);
+  const uint32_t resetDurUs = PERFORMANCE_DEBUG ? (micros() - resetStartUs) : 0;
+
   const uint32_t webStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   webService(now);
   const uint32_t webDurUs = PERFORMANCE_DEBUG ? (micros() - webStartUs) : 0;
@@ -1550,6 +1602,7 @@ void loop() {
     perfMaxStateUs = max(perfMaxStateUs, stateDurUs);
     perfMaxOledUs = max(perfMaxOledUs, oledDurUs);
     perfMaxConfigUs = max(perfMaxConfigUs, configDurUs);
+    perfMaxResetUs = max(perfMaxResetUs, resetDurUs);
     perfMaxWebUs = max(perfMaxWebUs, webDurUs);
     perfMaxLoopUs = max(perfMaxLoopUs, loopDurUs);
 
@@ -1565,11 +1618,13 @@ void loop() {
       Serial.print(oledDurUs);
       Serial.print("us cfg=");
       Serial.print(configDurUs);
+      Serial.print("us reset=");
+      Serial.print(resetDurUs);
       Serial.print("us web=");
       Serial.print(webDurUs);
       Serial.print("us loop=");
       Serial.print(loopDurUs);
-      Serial.print("us max(scale/led/state/oled/cfg/web/loop)=");
+      Serial.print("us max(scale/led/state/oled/cfg/reset/web/loop)=");
       Serial.print(perfMaxScaleUs);
       Serial.print('/');
       Serial.print(perfMaxLedUs);
@@ -1580,10 +1635,12 @@ void loop() {
       Serial.print('/');
       Serial.print(perfMaxConfigUs);
       Serial.print('/');
+      Serial.print(perfMaxResetUs);
+      Serial.print('/');
       Serial.print(perfMaxWebUs);
       Serial.print('/');
       Serial.println(perfMaxLoopUs);
-      perfMaxScaleUs = perfMaxLedUs = perfMaxStateUs = perfMaxOledUs = perfMaxConfigUs = perfMaxWebUs = perfMaxLoopUs = 0;
+      perfMaxScaleUs = perfMaxLedUs = perfMaxStateUs = perfMaxOledUs = perfMaxConfigUs = perfMaxResetUs = perfMaxWebUs = perfMaxLoopUs = 0;
     }
   }
 
