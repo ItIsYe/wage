@@ -652,6 +652,16 @@ static void oledMsg2(const char* line1, const char* line2) {
   display.display();
 }
 
+static void showNetworkStatus(const char* line1, const String& ip) {
+  Serial.print("[NET] ");
+  Serial.print(line1);
+  Serial.print(" IP: ");
+  Serial.println(ip);
+  if (!oledReady) return;
+  oledMsg2(line1, ip.c_str());
+  delay(1200);
+}
+
 static void oledTimingLive(uint32_t dtMs) {
   if (!oledReady) return;
   const uint32_t now = millis();
@@ -1165,11 +1175,16 @@ void setup() {
     if (WIFI_STA_ENABLED && WiFi.status() == WL_CONNECTED) {
       wifiApMode = false;
       networkInfo = WiFi.localIP().toString();
+      showNetworkStatus("WLAN verbunden", networkInfo);
     } else {
       WiFi.mode(WIFI_AP);
-      WiFi.softAP(CONFIG_AP_SSID, CONFIG_AP_PASSWORD);
+      const bool apStarted = WiFi.softAP(CONFIG_AP_SSID, CONFIG_AP_PASSWORD);
       wifiApMode = true;
       networkInfo = WiFi.softAPIP().toString();
+      if (!apStarted) {
+        Serial.println("[NET] Config AP Start fehlgeschlagen");
+      }
+      showNetworkStatus("Config AP", networkInfo);
     }
     WiFi.setSleep(false);
     server.on("/", HTTP_GET, [](){ server.send(200, "text/html", renderConfigPage(activeConfig)); });
