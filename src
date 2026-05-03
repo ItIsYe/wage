@@ -17,7 +17,7 @@
 // OLED-Scale: Hier den Wert direkt setzen (Komma oder Punkt, z. B. "1,9" / "1.9")
 // WEBINTERFACE / WLAN
 static constexpr bool WEB_CONFIG_ENABLED = true;
-static constexpr bool WIFI_STA_ENABLED = true;
+static constexpr bool WIFI_STA_ENABLED = false;
 static const char* WIFI_SSID = "YOUR_WIFI_SSID";                 // Name vom Router/WLAN
 static const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";         // Passwort vom Router/WLAN
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 12000;
@@ -30,8 +30,8 @@ static const IPAddress WIFI_DNS2(8, 8, 8, 8);                    // DNS-Server
 static const char* CONFIG_AP_SSID = "Waage-Config";              // Fallback-Hotspot der Waage
 static const char* CONFIG_AP_PASSWORD = "waagecfg1";             // Passwort vom Fallback-Hotspot, mindestens 8 Zeichen
 static constexpr uint16_t WEB_SERVER_PORT = 80;
-static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 100;      // Webserver-Takt im Idle/Standby
-static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 300;      // Webserver-Takt waehrend Messung/Busy-Zustaenden
+static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 200;      // Webserver-Takt im Idle/Standby
+static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000;      // Webserver-Takt waehrend Messung/Busy-Zustaenden
 
 static const char* OLED_SCALE_CONFIG = "1,5";
 // Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
@@ -1101,6 +1101,10 @@ static bool parseBoolArg(const char* key, bool& out) {
   return true;
 }
 
+static bool isIdleOrStandbyState() {
+  return (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
+}
+
 static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = "") {
   String h;
   h.reserve(9000);
@@ -1152,6 +1156,23 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<button type='submit'>Speichern</button></form></body></html>");
   return h;
 }
+
+static String renderBusyPage(const String& hint = "") {
+  String h;
+  h.reserve(1200);
+  h += F("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>");
+  h += F("<title>Waage aktiv</title><style>body{font-family:Arial,sans-serif;max-width:560px;margin:12px auto;padding:0 10px;}button{padding:10px 14px;margin-top:10px;}p{margin:8px 0;}.hint{background:#fff3cd;border:1px solid #d6b656;padding:8px;color:#6b5200;}</style></head><body>");
+  h += F("<h2>Waage aktiv</h2>");
+  h += F("<p><b>State:</b> "); h += stateToStr(state); h += F("</p>");
+  h += F("<p>Config im Idle bearbeiten</p>");
+  if (hint.length()) { h += F("<p class='hint'>"); h += htmlEscape(hint); h += F("</p>"); }
+  if (resetStatusMsg.length()) { h += F("<p class='hint'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</p>"); }
+  h += F("<form method='GET' action='/'><button type='submit'>Neu laden</button></form>");
+  h += F("<form method='POST' action='/reset'><button type='submit'>Reset anfordern</button></form>");
+  h += F("</body></html>");
+  return h;
+}
+
 void setup() {
   Serial.begin(115200);
   loadDefaults();
@@ -1171,34 +1192,37 @@ void setup() {
   oledMsg2("Start...", "Initialisierung");
   setState(State::BOOT_MSG);
   if (WEB_CONFIG_ENABLED) {
-    if (WIFI_STA_ENABLED) {
-      WiFi.mode(WIFI_STA);
-      if (WIFI_USE_STATIC_IP) {
-        WiFi.config(WIFI_LOCAL_IP, WIFI_GATEWAY, WIFI_SUBNET, WIFI_DNS1, WIFI_DNS2);
-      }
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-      uint32_t ws = millis();
-      while (WiFi.status() != WL_CONNECTED && millis() - ws < WIFI_CONNECT_TIMEOUT_MS) {
-        delay(50);
-      }
+    (void)WIFI_STA_ENABLED;
+    (void)WIFI_USE_STATIC_IP;
+    (void)WIFI_SSID;
+    (void)WIFI_PASSWORD;
+    (void)WIFI_CONNECT_TIMEOUT_MS;
+    (void)WIFI_LOCAL_IP;
+    (void)WIFI_GATEWAY;
+    (void)WIFI_SUBNET;
+    (void)WIFI_DNS1;
+    (void)WIFI_DNS2;
+    WiFi.mode(WIFI_AP);
+    const bool apStarted = WiFi.softAP(CONFIG_AP_SSID, CONFIG_AP_PASSWORD);
+    wifiApMode = true;
+    networkInfo = WiFi.softAPIP().toString();
+    if (!apStarted) {
+      Serial.println("[NET] Config AP Start fehlgeschlagen");
     }
-    if (WIFI_STA_ENABLED && WiFi.status() == WL_CONNECTED) {
-      wifiApMode = false;
-      networkInfo = WiFi.localIP().toString();
-      showNetworkStatus("WLAN verbunden", networkInfo);
-    } else {
-      WiFi.mode(WIFI_AP);
-      const bool apStarted = WiFi.softAP(CONFIG_AP_SSID, CONFIG_AP_PASSWORD);
-      wifiApMode = true;
-      networkInfo = WiFi.softAPIP().toString();
-      if (!apStarted) {
-        Serial.println("[NET] Config AP Start fehlgeschlagen");
-      }
-      showNetworkStatus("Config AP", networkInfo);
-    }
+    showNetworkStatus("Config AP", networkInfo);
     WiFi.setSleep(false);
-    server.on("/", HTTP_GET, [](){ server.send(200, "text/html", renderConfigPage(activeConfig)); });
+    server.on("/", HTTP_GET, [](){
+      if (isIdleOrStandbyState()) {
+        server.send(200, "text/html", renderConfigPage(activeConfig));
+      } else {
+        server.send(200, "text/html", renderBusyPage());
+      }
+    });
     server.on("/save", HTTP_POST, [](){
+      if (!isIdleOrStandbyState()) {
+        server.send(409, "text/html", renderBusyPage("Speichern nur im Idle moeglich."));
+        return;
+      }
       RuntimeConfig n = activeConfig;
       String errMsg;
       String dev = server.arg("deviceId");
@@ -1505,7 +1529,7 @@ static void stateMachineService(uint32_t now) {
 
 static void webService(uint32_t now){
   if (!WEB_CONFIG_ENABLED) return;
-  const bool isIdleState = (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
+  const bool isIdleState = isIdleOrStandbyState();
   const uint32_t interval = isIdleState ? WEB_SERVICE_INTERVAL_IDLE_MS : WEB_SERVICE_INTERVAL_BUSY_MS;
   if (now - lastWebServiceMs < interval) return;
   lastWebServiceMs = now;
@@ -1528,8 +1552,14 @@ static void applyPendingConfigIfAllowed(){
 static void handleResetRequestIfAllowed(uint32_t now){
   (void)now;
   if (!resetRequested) return;
-  if (state == State::TIMING) {
-    resetStatusMsg = "Reset wartet bis Messung beendet ist.";
+  const bool canResetNow = (
+    state == State::IDLE_WAIT_GLASS ||
+    state == State::STANDBY ||
+    state == State::WAIT_EMPTY_AFTER_RESULT ||
+    state == State::ERROR_RECOVER
+  );
+  if (!canResetNow) {
+    resetStatusMsg = "Reset wartet auf sicheren Zustand.";
     return;
   }
 
