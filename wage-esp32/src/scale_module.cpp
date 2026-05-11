@@ -27,6 +27,7 @@ static uint32_t stableSince = 0;
 bool isStable = false;
 
 static uint32_t lastScaleReadMs = 0;
+static uint32_t negativeCheckSuppressUntilMs = 0;
 bool haveRead = false;
 bool haveStableRead = false;
 float absFilt = 0.0f;
@@ -135,6 +136,15 @@ void tareBoth() {
   stabWindowStart = 0;
   stableSince = 0;
   isStable = false;
+  haveRead = false;
+  haveStableRead = false;
+  absFilt = 0.0f;
+  objectMissingStable = false;
+  negativeCheckSuppressUntilMs = millis() + STABLE_WINDOW_MS;
+}
+
+bool isNegativeCheckSuppressed(uint32_t now) {
+  return now < negativeCheckSuppressUntilMs;
 }
 
 bool isObjectPresentStable(float weight, bool stable) {

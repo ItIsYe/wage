@@ -114,7 +114,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<fieldset><legend>OLED</legend>");
   h += F("<label>oledRotation</label><input type='number' min='0' max='3' name='oledRotation' value='"); h += String(c.oledRotation); h += F("'>");
   h += F("<label>oledScaleValue</label><input type='number' step='0.1' min='0.1' name='oledScaleValue' value='"); h += String(c.oledScaleValue,2); h += F("'>");
-  h += F("<label><input type='checkbox' name='debugMode' "); if (c.debugMode) h += F("checked"); h += F("> debugMode</label>");
+  h += F("<label><input type='checkbox' name='debugMode' "); if (c.debugMode) h += F("checked"); h += F("> Gewichts-Debug auf OLED anzeigen</label>");
   h += F("<label><input type='checkbox' name='oledDebugMode' "); if (c.oledDebugMode) h += F("checked"); h += F("> oledDebugMode</label></fieldset>");
   h += F("<fieldset><legend>Pixel</legend>");
   h += F("<label>pixelBrightnessPercent (%)</label><input type='number' min='0' max='100' name='pixelBrightnessPercent' value='"); h += String(c.pixelBrightnessPercent); h += F("'>");
