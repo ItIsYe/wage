@@ -41,6 +41,25 @@ const char* errToStr(ErrCode e) {
   return "UNKNOWN";
 }
 
+static float percentOfReference(float referenceWeight, float percent) {
+  return referenceWeight * (percent / 100.0f);
+}
+
+static void refreshTimingThresholds() {
+  readyReferenceWeight = max(readyReferenceWeight, activeConfig.objectPresentG);
+  startDropThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, percentOfReference(readyReferenceWeight, activeConfig.startDropPercent));
+  stopRiseThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, percentOfReference(readyReferenceWeight, activeConfig.stopRisePercent));
+
+  if (MASTER_DEBUG_LOG) {
+    Serial.print("[THR] ref=");
+    Serial.print(readyReferenceWeight, 2);
+    Serial.print(" startDrop=");
+    Serial.print(startDropThresholdG, 2);
+    Serial.print(" stopRise=");
+    Serial.println(stopRiseThresholdG, 2);
+  }
+}
+
 /* =========================================================
    STATE MACHINE
    ========================================================= */
@@ -165,6 +184,25 @@ static void finalizeTiming(uint32_t now) {
   ledsSetMode(LedMode::RESULT_FLASH_GB_ONCE);
   showUntilMs = now + SHOW_RESULT_MS;
   setState(State::SHOW_RESULT);
+}
+
+static float percentOfReference(float referenceWeight, float percent) {
+  return referenceWeight * (percent / 100.0f);
+}
+
+static void refreshTimingThresholds() {
+  readyReferenceWeight = max(readyReferenceWeight, activeConfig.objectPresentG);
+  startDropThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, percentOfReference(readyReferenceWeight, activeConfig.startDropPercent));
+  stopRiseThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, percentOfReference(readyReferenceWeight, activeConfig.stopRisePercent));
+
+  if (MASTER_DEBUG_LOG) {
+    Serial.print("[THR] ref=");
+    Serial.print(readyReferenceWeight, 2);
+    Serial.print(" startDrop=");
+    Serial.print(startDropThresholdG, 2);
+    Serial.print(" stopRise=");
+    Serial.println(stopRiseThresholdG, 2);
+  }
 }
 
 /* =========================================================
@@ -503,9 +541,7 @@ static void applyPendingConfigIfAllowed(){
   oledScale = activeConfig.oledScaleValue;
   Wire.setClock(activeConfig.oledI2cClockHz);
   display.setRotation(activeConfig.oledRotation);
-  applyBrightnessForLedMode();
-  DEBUG_MODE = activeConfig.debugMode;
-  OLED_DEBUG_MODE = activeConfig.oledDebugMode;
+  ledApplyBrightnessForCurrentMode();
   webConfigSaveToPrefs(activeConfig);
   webClearPendingConfig();
 }
@@ -547,8 +583,8 @@ void loop() {
 
   if (activeConfig.oledDebugMode) {
     if (!oledDebugLedsCleared) {
-      pixelsClear();
-      pixelsShow();
+      ledClear();
+      ledShow();
       oledDebugLedsCleared = true;
     }
     oledDebugPattern(now);

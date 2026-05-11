@@ -45,7 +45,7 @@ static inline void setStripBrightnessPercent(uint8_t percent) {
   brightnessInitialized = true;
 }
 
-static inline void applyBrightnessForLedMode() {
+static inline void applyBrightnessForLedModeInternal() {
   const uint8_t percent = (ledMode == LedMode::STANDBY_TWINKLE)
     ? activeConfig.standbyBrightnessPercent
     : activeConfig.pixelBrightnessPercent;
@@ -130,7 +130,7 @@ void ledService(uint32_t now) {
   }
   allOnApplied = false;
 
-  applyBrightnessForLedMode();
+  applyBrightnessForLedModeInternal();
 
   switch (ledMode) {
     case LedMode::ALL_OFF:
@@ -205,4 +205,16 @@ void ledService(uint32_t now) {
   }
 
   if (ledFrameDirty) { pixelsShow(); ledFrameDirty = false; }
+}
+
+void ledApplyBrightnessForCurrentMode() {
+  applyBrightnessForLedModeInternal();
+}
+
+void ledClear() {
+  pixelsClear();
+}
+
+void ledShow() {
+  pixelsShow();
 }
