@@ -25,6 +25,15 @@ static bool resetRequested = false;
 static String resetStatusMsg;
 static uint32_t lastWebServiceMs = 0;
 
+static void disableDebugModesNow() {
+  activeConfig.oledDebugMode = false;
+  activeConfig.debugMode = false;
+  activeConfig.pixelDebugAllOn = false;
+  pendingConfig = activeConfig;
+  pendingConfigValid = false;
+  webConfigSaveToPrefs(activeConfig);
+}
+
 static String htmlEscape(const String& in) {
   String out;
   out.reserve(in.length() + 16);
@@ -92,6 +101,8 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   if (state == State::TIMING) { h += F("<div class='err'><b>Info:</b> Reset wird erst nach der Messung ausgefuehrt</div>"); }
   if (resetStatusMsg.length()) { h += F("<div class='err'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</div>"); }
   h += F("<form method='POST' action='/reset-error'><button type='submit'>Fehlerreset / Neu nullen</button></form>");
+  h += F("<form method='POST' action='/debug/off'><button type='submit'>Debug deaktivieren</button></form>");
+  h += F("<p><a href='/debug/off'>Debug via Link deaktivieren</a></p>");
   h += F("<form method='POST' action='/save'>");
   h += F("<fieldset><legend>System</legend><label>Device-ID</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>1 bis 31 Zeichen</small>");
   h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION; h += F("' readonly>");
@@ -136,6 +147,8 @@ static String renderBusyPage(const String& hint = "") {
   if (resetStatusMsg.length()) { h += F("<p class='hint'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</p>"); }
   h += F("<form method='GET' action='/'><button type='submit'>Neu laden</button></form>");
   h += F("<form method='POST' action='/reset'><button type='submit'>Reset anfordern</button></form>");
+  h += F("<form method='POST' action='/debug/off'><button type='submit'>Debug deaktivieren</button></form>");
+  h += F("<p><a href='/debug/off'>Debug via Link deaktivieren</a></p>");
   h += F("</body></html>");
   return h;
 }
@@ -261,6 +274,12 @@ void webConfigSetup() {
     server.sendHeader("Location","/");
     server.send(303);
   });
+  auto disableDebugModesHandler = [](){
+    disableDebugModesNow();
+    server.send(200, "text/plain; charset=utf-8", "Debug deaktiviert");
+  };
+  server.on("/debug/off", HTTP_GET, disableDebugModesHandler);
+  server.on("/debug/off", HTTP_POST, disableDebugModesHandler);
   server.begin();
 }
 

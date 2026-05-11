@@ -602,17 +602,14 @@ void loop() {
   const uint32_t now = millis();
   const uint32_t loopStartUs = PERFORMANCE_DEBUG ? micros() : 0;
 
-  if (activeConfig.oledDebugMode) {
-    if (!oledDebugLedsCleared) {
-      ledClear();
-      ledShow();
-      oledDebugLedsCleared = true;
-    }
-    oledDebugPattern(now);
-    delay(20);
-    return;
+  const bool oledDebugActive = activeConfig.oledDebugMode;
+  if (oledDebugActive && !oledDebugLedsCleared) {
+    ledClear();
+    ledShow();
+    oledDebugLedsCleared = true;
+  } else if (!oledDebugActive) {
+    oledDebugLedsCleared = false;
   }
-  oledDebugLedsCleared = false;
 
   const uint32_t ledStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   ledService(now);
@@ -631,7 +628,11 @@ void loop() {
   const uint32_t stateDurUs = PERFORMANCE_DEBUG ? (micros() - stateStartUs) : 0;
 
   const uint32_t oledStartUs = PERFORMANCE_DEBUG ? micros() : 0;
-  oledService(now);
+  if (oledDebugActive) {
+    oledDebugPattern(now);
+  } else {
+    oledService(now);
+  }
   const uint32_t oledDurUs = PERFORMANCE_DEBUG ? (micros() - oledStartUs) : 0;
 
   const uint32_t configStartUs = PERFORMANCE_DEBUG ? micros() : 0;
@@ -645,6 +646,8 @@ void loop() {
   const uint32_t webStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   webService(now);
   const uint32_t webDurUs = PERFORMANCE_DEBUG ? (micros() - webStartUs) : 0;
+
+  if (oledDebugActive) delay(20);
 
   if (PERFORMANCE_DEBUG) {
     const uint32_t loopDurUs = micros() - loopStartUs;
