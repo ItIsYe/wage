@@ -113,6 +113,9 @@ static void oledService(uint32_t now);
 static void stateMachineService(uint32_t now);
 static void applyPendingConfigIfAllowed();
 static void handleResetRequestIfAllowed(uint32_t now);
+static void showStatus(const char* line1, const char* line2);
+static void resetNegativeDetection();
+static void resetRuntimeAfterTare();
 
 /* =========================================================
    HELPERS
@@ -160,7 +163,7 @@ static void finalizeTiming(uint32_t now) {
   (void)enqueueRunDataForExternalSend(runData); // TODO(interface): Rueckgabe spaeter fuer Queue/Retry nutzen.
   char buf[24];
   snprintf(buf, sizeof(buf), "Zeit: %.1fs", dt / 1000.0f);
-  oledMsg2("Fertig", buf);
+  showStatus("Fertig", buf);
 
   ledsSetMode(LedMode::RESULT_FLASH_GB_ONCE);
   showUntilMs = now + SHOW_RESULT_MS;
@@ -186,6 +189,29 @@ static void refreshTimingThresholds() {
   }
 }
 
+static void showStatus(const char* line1, const char* line2) {
+  if (activeConfig.debugMode) return;
+  oledMsg2(line1, line2);
+}
+
+static uint32_t negativeSinceMs = 0;
+
+static void resetNegativeDetection() {
+  negativeSinceMs = 0;
+}
+
+static void resetRuntimeAfterTare() {
+  err = ErrCode::OK;
+  objectPresent = false;
+  dropSinceMs = 0;
+  stopCandidateSinceMs = 0;
+  minDuringTiming = 1e9f;
+  readyReferenceWeight = 0.0f;
+  startDropThresholdG = 0.0f;
+  stopRiseThresholdG = 0.0f;
+  resetNegativeDetection();
+}
+
 /* =========================================================
    STATE MACHINE
    ========================================================= */
@@ -195,7 +221,7 @@ static void setError(ErrCode e) {
   ledsSetMode(LedMode::ERROR_BLINK_RED);
   char line2[32];
   snprintf(line2, sizeof(line2), "ERR: %s", errToStr(e));
-  oledMsg2("Fehler!", line2);
+  showStatus("Fehler!", line2);
   state = State::ERROR_RECOVER;
   recoverUntilMs = millis() + RECOVER_WAIT_MS;
 }
@@ -222,8 +248,6 @@ static bool shouldCheckNegativeError(State s) {
   switch (s) {
     case State::IDLE_WAIT_GLASS:
     case State::WAIT_EMPTY_AFTER_RESULT:
-    case State::CHECK_RETARE:
-    case State::ERROR_RECOVER:
       return true;
     default:
       return false;
@@ -243,6 +267,7 @@ static void setState(State s) {
 
 static void oledService(uint32_t now) {
   if (state == State::TIMING) {
+    if (activeConfig.debugMode) return;
     oledTimingLive(now - tStartMs);
   }
 }
@@ -270,14 +295,23 @@ void setup() {
 }
 
 static void stateMachineService(uint32_t now) {
-  if (haveRead && shouldCheckNegativeError(state) && !isNegativeCheckSuppressed(now) && w_filt < NEGATIVE_ERROR_G) {
-    if (MASTER_DEBUG_LOG) {
-      Serial.print("[NEGATIVE] state=");
-      Serial.print(stateToStr(state));
-      Serial.print(" w_filt=");
-      Serial.println(w_filt, 2);
+  if (haveStableRead && shouldCheckNegativeError(state) && !isNegativeCheckSuppressed(now)) {
+    if (w_filt < NEGATIVE_ERROR_G) {
+      if (negativeSinceMs == 0) negativeSinceMs = now;
+      if ((now - negativeSinceMs) >= 400) {
+        if (MASTER_DEBUG_LOG) {
+          Serial.print("[NEGATIVE] state=");
+          Serial.print(stateToStr(state));
+          Serial.print(" w_filt=");
+          Serial.println(w_filt, 2);
+        }
+        setError(ErrCode::NEGATIVE);
+      }
+    } else if (w_filt > (NEGATIVE_ERROR_G + 0.5f)) {
+      resetNegativeDetection();
     }
-    setError(ErrCode::NEGATIVE);
+  } else {
+    resetNegativeDetection();
   }
 
   const bool standbyDue = (now - lastActionMs) > STANDBY_AFTER_MS;
@@ -285,7 +319,7 @@ static void stateMachineService(uint32_t now) {
   switch (state) {
     case State::BOOT_MSG: {
       if (now - lastActionMs >= BOOT_MSG_MS) {
-        oledMsg2("Nullung...", "Bitte nichts auflegen");
+        showStatus("Nullung...", "Bitte nichts auflegen");
         // Nullung = alle rot dauerhaft.
         ledsSetMode(LedMode::RED_SOLID);
         setState(State::BOOT_TARE);
@@ -295,10 +329,9 @@ static void stateMachineService(uint32_t now) {
 
     case State::BOOT_TARE: {
       tareBoth();
-      err = ErrCode::OK;
-      objectPresent = false;
+      resetRuntimeAfterTare();
 
-      oledMsg2("Nullung OK", "Warte auf Glas");
+      showStatus("Nullung OK", "Warte auf Glas");
       ledsSetMode(LedMode::OK_ALT_GB);
       setState(State::IDLE_WAIT_GLASS);
       break;
@@ -306,20 +339,20 @@ static void stateMachineService(uint32_t now) {
 
     case State::IDLE_WAIT_GLASS: {
       if (standbyDue) {
-        oledMsg2("Standby", "Bewegung = Aktiv");
+        showStatus("Standby", "Bewegung = Aktiv");
         ledsSetMode(LedMode::STANDBY_TWINKLE);
         setState(State::STANDBY);
         break;
       }
 
       ledsSetMode(LedMode::OK_ALT_GB);
-      oledMsg2("Warte auf Glas", "...");
+      showStatus("Warte auf Glas", "...");
 
       if (haveRead && isObjectPresentStable(w_filt, isStable)) {
         objectPresent = true;
         readyReferenceWeight = w_filt;
         detectAtMs = now;
-        oledMsg2("Glas erkannt", "");
+        showStatus("Glas erkannt", "");
         ledsSetMode(LedMode::GLASS_GREEN_SOLID);
         setState(State::GLASS_DETECTED);
       }
@@ -329,7 +362,7 @@ static void stateMachineService(uint32_t now) {
     case State::GLASS_DETECTED: {
       if (objectMissingStable) {
         objectPresent = false;
-        oledMsg2("Objekt weg", "Warte auf Glas");
+        showStatus("Objekt weg", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
         break;
@@ -342,7 +375,7 @@ static void stateMachineService(uint32_t now) {
       if (haveRead && (now - detectAtMs >= READY_AFTER_DETECT_MS)) {
         readyReferenceWeight = max(readyReferenceWeight, w_filt);
         refreshTimingThresholds();
-        oledMsg2("Bereit fuer", "Zeitmessung");
+        showStatus("Bereit fuer", "Zeitmessung");
         dropSinceMs = 0;
         stopCandidateSinceMs = 0;
         ledsSetMode(LedMode::READY_GREEN_BLINK);
@@ -357,7 +390,7 @@ static void stateMachineService(uint32_t now) {
 
       if (objectMissingStable) {
         objectPresent = false;
-        oledMsg2("Objekt weg", "Warte auf Glas");
+        showStatus("Objekt weg", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
         break;
@@ -443,7 +476,7 @@ static void stateMachineService(uint32_t now) {
 
     case State::SHOW_RESULT: {
       if (now >= showUntilMs) {
-        oledMsg2("Bitte leeren", "Glas entfernen");
+        showStatus("Bitte leeren", "Glas entfernen");
         setState(State::WAIT_EMPTY_AFTER_RESULT);
       }
       break;
@@ -454,13 +487,13 @@ static void stateMachineService(uint32_t now) {
       ledsSetMode(LedMode::RED_SOLID);
       const bool emptyAndStable = haveStableRead && absFilt < activeConfig.emptyThresholdG;
       if (!emptyAndStable) {
-        oledMsg2("Bitte leeren", "Glas entfernen");
+        showStatus("Bitte leeren", "Glas entfernen");
       } else {
         if (MASTER_DEBUG_LOG) {
           Serial.print("[RETARE] WAIT_EMPTY -> CHECK_RETARE absFilt=");
           Serial.println(absFilt, 2);
         }
-        oledMsg2("Pruefe Nullpunkt", "...");
+        showStatus("Pruefe Nullpunkt", "...");
         setState(State::CHECK_RETARE);
       }
       break;
@@ -478,27 +511,21 @@ static void stateMachineService(uint32_t now) {
           Serial.print(" absFilt=");
           Serial.println(absFilt, 2);
         }
-        oledMsg2("Nullung...", "Offset korr.");
+        showStatus("Nullung...", "Offset korr.");
         tareBoth();
         if (MASTER_DEBUG_LOG) Serial.println("[RETARE] after tare reset scale state");
       }
 
-      oledMsg2("Warte auf Glas", "...");
+      showStatus("Warte auf Glas", "...");
       ledsSetMode(LedMode::OK_ALT_GB);
-      objectPresent = false;
-      readyReferenceWeight = 0.0f;
-      dropSinceMs = 0;
-      stopCandidateSinceMs = 0;
-      minDuringTiming = 1e9f;
-      startDropThresholdG = 0.0f;
-      stopRiseThresholdG = 0.0f;
+      resetRuntimeAfterTare();
       setState(State::IDLE_WAIT_GLASS);
       break;
     }
 
     case State::STANDBY: {
       if (haveRead && absFilt > activeConfig.standbyWakeThresholdG) {
-        oledMsg2("Aktiv", "Warte auf Glas");
+        showStatus("Aktiv", "Warte auf Glas");
         ledsSetMode(LedMode::OK_ALT_GB);
         setState(State::IDLE_WAIT_GLASS);
       }
@@ -512,11 +539,10 @@ static void stateMachineService(uint32_t now) {
             lastSerialRecoverMs = now;
             Serial.println("[RECOVER] Tare (empty & stable).");
           }
-          oledMsg2("Recovery", "Nullung...");
+          showStatus("Recovery", "Nullung...");
           tareBoth();
-          err = ErrCode::OK;
-          objectPresent = false;
-          oledMsg2("OK", "Warte auf Glas");
+          resetRuntimeAfterTare();
+          showStatus("OK", "Warte auf Glas");
           ledsSetMode(LedMode::OK_ALT_GB);
           setState(State::IDLE_WAIT_GLASS);
         } else {
@@ -524,7 +550,7 @@ static void stateMachineService(uint32_t now) {
             lastSerialRecoverMs = now;
             Serial.println("[RECOVER] Waiting for empty/stable before tare...");
           }
-          oledMsg2("Fehler", "Bitte leeren!");
+          showStatus("Fehler", "Bitte leeren!");
           recoverUntilMs = now + 700;
         }
       }
@@ -562,18 +588,12 @@ static void handleResetRequestIfAllowed(uint32_t now){
   }
 
   err = ErrCode::OK;
-  objectPresent = false;
-  dropSinceMs = 0;
-  stopCandidateSinceMs = 0;
-  minDuringTiming = 1e9f;
-  readyReferenceWeight = 0.0f;
-  startDropThresholdG = 0.0f;
-  stopRiseThresholdG = 0.0f;
+  resetRuntimeAfterTare();
   isStable = false;
   webClearResetRequested();
   webSetResetStatusMsg("Reset ausgefuehrt. Nullung laeuft.");
 
-  oledMsg2("Nullung...", "Bitte nichts auflegen");
+  showStatus("Nullung...", "Bitte nichts auflegen");
   ledsSetMode(LedMode::RED_SOLID);
   setState(State::BOOT_TARE);
 }
