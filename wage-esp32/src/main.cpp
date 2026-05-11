@@ -11,6 +11,7 @@
 
 #include "config.h"
 #include "types.h"
+#include "display_module.h"
 
 /* =========================================================
    SCALE / CALIBRATION
@@ -25,7 +26,6 @@ HX711 scale2;
 
 Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
 Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
-static bool oledReady = false;
 
 static LedRingContext primaryLedRing{&ledStrip, PIXEL_COUNT};
 
@@ -44,7 +44,7 @@ static bool enqueueRunDataForExternalSend(const RunDataSnapshot&) {
    ERROR CODES
    ========================================================= */
 
-static const char* errToStr(ErrCode e) {
+const char* errToStr(ErrCode e) {
   switch (e) {
     case ErrCode::OK: return "OK";
     case ErrCode::NEGATIVE: return "NEGATIVE";
@@ -57,12 +57,12 @@ static const char* errToStr(ErrCode e) {
    STATE MACHINE
    ========================================================= */
 
-static State state = State::BOOT_MSG;
-static ErrCode err = ErrCode::OK;
+State state = State::BOOT_MSG;
+ErrCode err = ErrCode::OK;
 
 static const char* FIRMWARE_VERSION = "v1-webcfg";
 
-static RuntimeConfig activeConfig;
+RuntimeConfig activeConfig;
 static RuntimeConfig pendingConfig;
 static bool pendingConfigValid = false;
 static bool wifiApMode = false;
@@ -82,18 +82,19 @@ static uint8_t maIdx = 0;
 static bool maFilled = false;
 static float maSum = 0.0f;
 
-static float w_raw1 = 0.0f, w_raw2 = 0.0f;   // in g (after calibration)
-static float w_avg  = 0.0f;                  // raw mean (2 cells)
-static float w_filt = 0.0f;                  // filtered mean
+float w_raw1 = 0.0f, w_raw2 = 0.0f;   // in g (after calibration)
+float w_avg  = 0.0f;                  // raw mean (2 cells)
+float w_filt = 0.0f;                  // filtered mean
+float oledScale = 1.5f;
 
 // stability window
 static float stabMin = 1e9f, stabMax = -1e9f;
 static uint32_t stabWindowStart = 0;
 static uint32_t stableSince = 0;
-static bool isStable = false;
+bool isStable = false;
 
 // object tracking
-static bool objectPresent = false;
+bool objectPresent = false;
 static float readyReferenceWeight = 0.0f;
 static float startDropThresholdG = 0.0f;
 static float stopRiseThresholdG = 0.0f;
@@ -124,14 +125,6 @@ static bool oledDebugLedsCleared = false;
 static bool ledFrameDirty = true;
 
 // OLED-Cache gegen redundante Full-Refreshes
-static bool oledMsgValid = false;
-static char oledLastLine1[32] = {0};
-static char oledLastLine2[32] = {0};
-static uint32_t lastOledTimingMs = 0;
-static uint32_t lastOledDebugMs = 0;
-static uint32_t lastOledPatternMs = 0;
-static int32_t lastTimingTenths = -1;
-
 // Serial-Rate-Limiter
 static uint32_t lastSerialBaseMs = 0;
 static uint32_t lastSerialReadyMs = 0;
@@ -174,9 +167,7 @@ static void finalizeTiming(uint32_t now);
 static float percentOfReference(float referenceWeight, float percent);
 static void refreshTimingThresholds();
 static const char* stateToStr(State s);
-static void initOledScale();
 static bool shouldCheckNegativeError(State s);
-static void oledDebugPattern(uint32_t now);
 static void scaleService(uint32_t now);
 static void ledService(uint32_t now);
 static void oledService(uint32_t now);
@@ -445,182 +436,6 @@ static void ledService(uint32_t now) {
   }
 }
 
-static void oledInit() {
-  oledReady = false;
-  Wire.begin(I2C_SDA, I2C_SCL);
-  Wire.setClock(activeConfig.oledI2cClockHz);
-  if (!display.begin(OLED_ADDR, true)) return;
-  oledReady = true;
-  display.setRotation(activeConfig.oledRotation);
-  display.clearDisplay();
-  display.setTextColor(SH110X_WHITE);
-  display.display();
-}
-
-static void initOledScale() {
-  String normalized = OLED_SCALE_CONFIG;
-  normalized.replace(',', '.');        // "1,9" -> "1.9"
-
-  float parsed = normalized.toFloat(); // ungültig -> 0.0f
-  if (parsed <= 0.0f) parsed = 1.0f;
-
-  oledScale = parsed;
-  activeConfig.oledScaleValue = parsed;
-
-  if (MASTER_DEBUG_LOG) {
-    Serial.print("[OLED] scale config=");
-    Serial.print(OLED_SCALE_CONFIG);
-    Serial.print(" normalized=");
-    Serial.print(normalized);
-    Serial.print(" parsed=");
-    Serial.println(oledScale, 2);
-  }
-}
-
-static uint8_t oledTextSizeFromScale() {
-  int textSize = (int)lroundf(oledScale);
-  if (textSize < 1) textSize = 1;
-  if (textSize > 8) textSize = 8;
-  return (uint8_t)textSize;
-}
-
-static void oledMsg2(const char* line1, const char* line2) {
-  if (!oledReady) return;
-
-  if (oledMsgValid && strcmp(line1, oledLastLine1) == 0 && strcmp(line2, oledLastLine2) == 0) {
-    return;
-  }
-
-  strncpy(oledLastLine1, line1, sizeof(oledLastLine1) - 1);
-  oledLastLine1[sizeof(oledLastLine1) - 1] = '\0';
-  strncpy(oledLastLine2, line2, sizeof(oledLastLine2) - 1);
-  oledLastLine2[sizeof(oledLastLine2) - 1] = '\0';
-  oledMsgValid = true;
-
-  const uint8_t textScale = oledTextSizeFromScale();
-  const int lineHeight = (int)textScale * 8;
-  const int gap = 4;
-  int line2Y = lineHeight + gap;
-  const int maxY = display.height() - lineHeight;
-  if (line2Y > maxY) line2Y = maxY;
-  display.clearDisplay();
-  display.setTextSize(textScale);
-  display.setCursor(0,0);
-  display.println(line1);
-  display.setCursor(0, line2Y);
-  display.println(line2);
-  display.display();
-}
-
-static void showNetworkStatus(const char* line1, const String& ip) {
-  Serial.print("[NET] ");
-  Serial.print(line1);
-  Serial.print(" IP: ");
-  Serial.println(ip);
-  if (!oledReady) return;
-  oledMsg2(line1, ip.c_str());
-  delay(1200);
-}
-
-static void oledTimingLive(uint32_t dtMs) {
-  if (!oledReady) return;
-  const uint32_t now = millis();
-  if ((now - lastOledTimingMs) < activeConfig.oledTimingRefreshMs) return;
-  lastOledTimingMs = now;
-  const int32_t dtTenths = (int32_t)(dtMs / 100);
-  if (dtTenths == lastTimingTenths) return;
-  lastTimingTenths = dtTenths;
-  oledMsgValid = false;
-
-  const uint8_t baseScale = oledTextSizeFromScale();
-  const uint8_t titleScale = (baseScale > 1) ? 1 : baseScale;
-  uint8_t timeScale = (display.height() >= 64) ? 2 : baseScale;
-  if (timeScale < 1) timeScale = 1;
-  if (timeScale > 4) timeScale = 4;
-
-  const int titleLineHeight = (int)titleScale * 8;
-  const int timeLineHeight = (int)timeScale * 8;
-  const int timeY = display.height() - timeLineHeight - 2;
-  display.clearDisplay();
-  display.setTextSize(titleScale);
-  display.setCursor(0,0);
-  display.println("Zeitmessung");
-  display.println("laeuft...");
-  if (titleLineHeight * 2 < timeY - 2) {
-    display.setCursor(0, titleLineHeight * 2 + 2);
-    display.println("Live:");
-  }
-  display.setTextSize(timeScale);
-  display.setCursor(0, timeY);
-  const uint32_t seconds = dtMs / 1000u;
-  const uint32_t tenths = (dtMs % 1000u) / 100u;
-  display.print(seconds);
-  display.print('.');
-  display.print(tenths);
-  display.print('s');
-  display.display();
-}
-
-static void oledDebugWeights() {
-  if (!oledReady) return;
-  const uint32_t now = millis();
-  if ((now - lastOledDebugMs) < OLED_DEBUG_REFRESH_MS) return;
-  lastOledDebugMs = now;
-  oledMsgValid = false;
-
-  const uint8_t textScale = 1;
-  display.clearDisplay();
-  display.setTextSize(textScale);
-  display.setCursor(0,0);
-
-  display.print("DBG R1:");
-  display.print(w_raw1, 1);
-  display.print(" R2:");
-  display.println(w_raw2, 1);
-
-  display.print("AVG:");
-  display.print(w_avg, 1);
-  display.print(" FILT:");
-  display.println(w_filt, 1);
-
-  display.print("STB:");
-  display.print(isStable ? "Y" : "N");
-  display.print(" S:");
-  display.print((int)state);
-  display.setCursor(0, 24);
-  display.print("OBJ:");
-  display.print(objectPresent ? "Y" : "N");
-  display.print(" E:");
-  display.println(errToStr(err));
-
-  display.display();
-}
-
-static void oledDebugPattern(uint32_t now) {
-  if (!oledReady) return;
-  if ((now - lastOledPatternMs) < OLED_PATTERN_REFRESH_MS) return;
-  lastOledPatternMs = now;
-  oledMsgValid = false;
-  display.clearDisplay();
-
-  // Rahmen + Kreuz zur Geometriepruefung
-  display.drawRect(0, 0, display.width(), display.height(), SH110X_WHITE);
-  display.drawLine(0, display.height() / 2, display.width() - 1, display.height() / 2, SH110X_WHITE);
-  display.drawLine(display.width() / 2, 0, display.width() / 2, display.height() - 1, SH110X_WHITE);
-
-  // Schachbrett fuer tote Pixel/Zeilen/Spalten
-  for (int16_t y = 2; y < display.height() - 2; ++y) {
-    for (int16_t x = 2; x < display.width() - 2; ++x) {
-      if (((x + y) & 0x03) == 0) display.drawPixel(x, y, SH110X_WHITE);
-    }
-  }
-
-  // Wanderlinie macht Timing-/Ghosting-Probleme sichtbar
-  const int16_t sweepX = (int16_t)(now / 20u) % display.width();
-  display.drawLine(sweepX, 0, sweepX, display.height() - 1, SH110X_WHITE);
-  display.display();
-}
-
 static void serialPrintAll(long raw1, long raw2) {
   Serial.print("RAW1:");
   Serial.print(raw1);
@@ -850,8 +665,6 @@ static void setState(State s) {
     Serial.println(stateToStr(s));
   }
   state = s;
-  if (s != State::TIMING) lastTimingTenths = -1;
-  oledMsgValid = false;
   lastActionMs = millis();
 }
 
@@ -1056,8 +869,8 @@ void setup() {
 
   scale1.begin(HX1_DOUT, HX1_SCK);
   scale2.begin(HX2_DOUT, HX2_SCK);
-  scale1.set_scale(CAL1);
-  scale2.set_scale(CAL2);
+  scale1.set_scale(DEFAULT_CAL1);
+  scale2.set_scale(DEFAULT_CAL2);
 
   ledsSetMode(LedMode::RED_SOLID);
   oledMsg2("Start...", "Initialisierung");
