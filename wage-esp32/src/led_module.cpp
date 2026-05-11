@@ -118,8 +118,8 @@ void ledsSetMode(LedMode m) {
 }
 
 void ledService(uint32_t now) {
+  static bool allOnApplied = false;
   if (activeConfig.pixelDebugAllOn) {
-    static bool allOnApplied = false;
     setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
     if (!allOnApplied) {
       pixelsFill(primaryLedRing.strip->Color(80, 80, 80));
@@ -128,6 +128,7 @@ void ledService(uint32_t now) {
     }
     return;
   }
+  allOnApplied = false;
 
   applyBrightnessForLedMode();
 
