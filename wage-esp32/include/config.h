@@ -4,6 +4,9 @@
 #include <IPAddress.h>
 
 // WEBINTERFACE / WLAN
+static constexpr bool MASTER_DEBUG_LOG = false;
+static constexpr bool PERFORMANCE_DEBUG = false;
+
 static constexpr bool WEB_CONFIG_ENABLED = true;
 static constexpr bool WIFI_STA_ENABLED = false;
 static const char* WIFI_SSID = "YOUR_WIFI_SSID";
