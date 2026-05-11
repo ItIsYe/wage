@@ -9,131 +9,8 @@
 #include <Preferences.h>
 #include <string.h>
 
-/* =========================================================
-   CONFIG (hier einstellen)
-   ========================================================= */
-
-// OLED-Textskalierung (gut sichtbar, zentrale Stelle)
-// OLED-Scale: Hier den Wert direkt setzen (Komma oder Punkt, z. B. "1,9" / "1.9")
-// WEBINTERFACE / WLAN
-static constexpr bool WEB_CONFIG_ENABLED = true;
-static constexpr bool WIFI_STA_ENABLED = false;
-static const char* WIFI_SSID = "YOUR_WIFI_SSID";                 // Name vom Router/WLAN
-static const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";         // Passwort vom Router/WLAN
-static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 12000;
-static constexpr bool WIFI_USE_STATIC_IP = true;                  // true nutzt feste IP
-static const IPAddress WIFI_LOCAL_IP(192, 168, 178, 60);         // feste IP der Waage
-static const IPAddress WIFI_GATEWAY(192, 168, 178, 1);           // Router-IP
-static const IPAddress WIFI_SUBNET(255, 255, 255, 0);            // Subnetzmaske
-static const IPAddress WIFI_DNS1(192, 168, 178, 1);              // DNS-Server
-static const IPAddress WIFI_DNS2(8, 8, 8, 8);                    // DNS-Server
-static const char* CONFIG_AP_SSID = "Waage-Config";              // Fallback-Hotspot der Waage
-static const char* CONFIG_AP_PASSWORD = "waagecfg1";             // Passwort vom Fallback-Hotspot, mindestens 8 Zeichen
-static constexpr uint16_t WEB_SERVER_PORT = 80;
-static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 200;      // Webserver-Takt im Idle/Standby
-static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000;      // Webserver-Takt waehrend Messung/Busy-Zustaenden
-
-static const char* OLED_SCALE_CONFIG = "1,5";
-// Wird beim Start aus OLED_SCALE_CONFIG berechnet und für setTextSize genutzt.
-static float oledScale = 1.5f;
-
-// OLED-Debug-Modus: Roh-/Filterwerte in jedem Zustand
-static bool DEBUG_MODE = false;
-// OLED-Debug-Modus (Override): nur OLED-Testbild aktiv
-static bool OLED_DEBUG_MODE = false;
-// Master-Serial-Logging bleibt aktiv
-static constexpr bool MASTER_DEBUG_LOG = false;
-static constexpr bool PERFORMANCE_DEBUG = false;
-
-// Performance-Takte für UI/Logging (funktional unverändert)
-static constexpr uint32_t DEFAULT_OLED_TIMING_REFRESH_MS = 200;
-static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
-static constexpr uint32_t OLED_PATTERN_REFRESH_MS = 50;
-static constexpr uint32_t SERIAL_BASE_REFRESH_MS = 150;
-static constexpr uint32_t SERIAL_STATE_REFRESH_MS = 150;
-static constexpr uint32_t DEFAULT_SCALE_READ_INTERVAL_MS = 40;
-static constexpr uint8_t DEFAULT_SCALE_READ_SAMPLES = 1;
-static constexpr uint32_t DEFAULT_OLED_I2C_CLOCK_HZ = 400000;
-
-// Pixel-Konfiguration (oben zentral konfigurierbar)
-static constexpr uint16_t PIXEL_COUNT = 25;
-// Display-Rotation
-static constexpr uint8_t DEFAULT_OLED_ROTATION = 0;
-// LED-/Pixel-Debug-Modus: true = alle Pixel dauerhaft an
-static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
-// Standard-Helligkeit in % (0..100), intern auf 0..255 umgerechnet
-static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
-// Standby-Helligkeit in % (0..100), nur fuer Standby-Pattern
-static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90;
-
-// Kalibrierung (g)
-static float CAL1 = -235.15f;
-static float CAL2 = -235.15f;
-
-// Invertieren, falls Last in falsche Richtung zählt
-static constexpr bool INVERT1 = true;
-static constexpr bool INVERT2 = true;
-
-// Objekterkennung (g)
-static constexpr float DEFAULT_OBJECT_PRESENT_G = 100.0f;
-
-// Prozentlogik relativ zum Referenzgewicht (% vom Referenzgewicht)
-static constexpr float DEFAULT_START_DROP_PERCENT = 5.0f; // Start: Drop >= x%
-static constexpr float DEFAULT_STOP_RISE_PERCENT  = 5.0f; // Stop: Rise >= x%
-static constexpr float MIN_DYNAMIC_THRESHOLD_G = 2.0f; // Mindestschwelle (g)
-static constexpr uint32_t DROP_HOLD_MS = 150;          // Drop-Haltezeit (ms)
-static constexpr uint32_t STOP_HOLD_MS = 220;          // Stop-Haltezeit (ms)
-static constexpr float STOP_RESET_HYST_G = 0.8f;       // Kandidat-Reset-Hysterese (g)
-static constexpr float START_RESET_HYST_G = 1.2f;       // Start-Reset-Hysterese (g)
-static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;// Verzögerung bis "Bereit" (ms)
-static constexpr uint32_t SHOW_RESULT_MS        = 6000;// Ergebnisanzeige (ms)
-static constexpr float DEFAULT_EMPTY_THRESHOLD_G = 10.0f;       // "leer" (g)
-static constexpr float DEFAULT_RETARE_TOL_G = 0.6f;            // Re-Tare bei Offset > x g
-
-// Anzeige / Wartezeiten
-static constexpr uint32_t BOOT_MSG_MS      = 1200; // Boottext (ms)
-static constexpr uint16_t TARE_SAMPLES     = 25;   // Tare-Samples
-static constexpr uint32_t STANDBY_AFTER_MS = 25000;// Idle bis Standby (ms)
-static constexpr float DEFAULT_STANDBY_WAKE_THRESHOLD_G = 3.0f;  // Aufwachen aus Standby ab x g
-static constexpr uint32_t STANDBY_FRAME_MS = 120;        // fester Frame-Takt (ms)
-static constexpr uint32_t STANDBY_CHANGE_MIN_MS = 500;   // Change-Takt min (ms)
-static constexpr uint32_t STANDBY_CHANGE_MAX_MS = 1200;  // Change-Takt max (ms)
-static constexpr uint8_t STANDBY_SATURATION = 180;        // sanft, aber farbig
-static constexpr uint8_t STANDBY_VALUE_MIN = 52;          // sichtbarere Grundhelligkeit
-static constexpr uint8_t STANDBY_VALUE_MAX = 112;         // sichtbarere Max-Helligkeit
-static constexpr uint8_t STANDBY_ON_MIN = 2;              // mind. aktive Pixel
-static constexpr uint8_t STANDBY_ON_MAX = 9;              // max. aktive Pixel
-
-// Filter / Stabilität
-static constexpr uint8_t  MA_N = 10;              // MA-Fenster
-static constexpr float    STABLE_BAND_G    = 2.0f;// max Bandbreite (g)
-static constexpr uint32_t STABLE_WINDOW_MS = 800; // Stabilitätsfenster (ms)
-static constexpr uint32_t STABLE_HOLD_MS   = 800; // Stabil halten (ms)
-
-// Fehler / Recovery
-static constexpr float NEGATIVE_CLAMP_G   = -3.0f;  // kleine Negativwerte -> 0 g
-static constexpr float NEGATIVE_ERROR_G   = -15.0f; // harter Fehler ab x g
-static constexpr uint32_t RECOVER_WAIT_MS = 1200;   // Recovery-Wartezeit (ms)
-
-/* =========================================================
-   HARDWARE CONFIG
-   ========================================================= */
-
-// HX711 Pins
-static constexpr uint8_t HX1_DOUT = 32;
-static constexpr uint8_t HX1_SCK  = 33;
-static constexpr uint8_t HX2_DOUT = 25;
-static constexpr uint8_t HX2_SCK  = 26;
-
-// I2C + OLED
-static constexpr uint8_t I2C_SDA  = 21;
-static constexpr uint8_t I2C_SCL  = 22;
-static constexpr uint8_t OLED_ADDR = 0x3C;
-static constexpr int SCREEN_W = 128;
-static constexpr int SCREEN_H = 64;
-
-// RGB-Pixelstreifen
-static constexpr uint8_t LED_STRIP_PIN = 5;
+#include "config.h"
+#include "types.h"
 
 /* =========================================================
    SCALE / CALIBRATION
@@ -150,27 +27,11 @@ Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
 Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 static bool oledReady = false;
 
-// LED-Instanzkontext (Vorbereitung fuer spaeteren zweiten Ring; aktuell weiter nur ein Ring aktiv)
-struct LedRingContext {
-  Adafruit_NeoPixel* strip;
-  uint16_t pixelCount;
-};
-
 static LedRingContext primaryLedRing{&ledStrip, PIXEL_COUNT};
 
 /* =========================================================
    EXTERNAL INTERFACE PREP (STUBS ONLY)
    ========================================================= */
-
-struct RunDataSnapshot {
-  uint32_t finishedAtMs;
-  uint32_t durationMs;
-  float referenceWeightG;
-  float minWeightG;
-  float startDropThresholdG;
-  float stopRiseThresholdG;
-  char deviceId[32];
-};
 
 // TODO(interface): spaeter Queue/Retry + Pi/HTTP Transport anbinden.
 static bool enqueueRunDataForExternalSend(const RunDataSnapshot&) {
@@ -182,12 +43,6 @@ static bool enqueueRunDataForExternalSend(const RunDataSnapshot&) {
 /* =========================================================
    ERROR CODES
    ========================================================= */
-
-enum class ErrCode : uint8_t {
-  OK = 0,
-  NEGATIVE,
-  UNSTABLE
-};
 
 static const char* errToStr(ErrCode e) {
   switch (e) {
@@ -202,45 +57,10 @@ static const char* errToStr(ErrCode e) {
    STATE MACHINE
    ========================================================= */
 
-enum class State : uint8_t {
-  BOOT_MSG = 0,
-  BOOT_TARE,
-  IDLE_WAIT_GLASS,
-  GLASS_DETECTED,
-  READY_FOR_TIMING,
-  TIMING,
-  SHOW_RESULT,
-  WAIT_EMPTY_AFTER_RESULT,
-  CHECK_RETARE,
-  STANDBY,
-  ERROR_RECOVER
-};
-
 static State state = State::BOOT_MSG;
 static ErrCode err = ErrCode::OK;
 
 static const char* FIRMWARE_VERSION = "v1-webcfg";
-
-struct RuntimeConfig {
-  float startDropPercent;
-  float stopRisePercent;
-  float objectPresentG;
-  float emptyThresholdG;
-  float retareTolG;
-  float standbyWakeThresholdG;
-  uint32_t oledTimingRefreshMs;
-  uint32_t scaleReadIntervalMs;
-  uint8_t scaleReadSamples;
-  uint32_t oledI2cClockHz;
-  uint8_t oledRotation;
-  float oledScaleValue;
-  bool debugMode;
-  bool oledDebugMode;
-  uint8_t pixelBrightnessPercent;
-  uint8_t standbyBrightnessPercent;
-  bool pixelDebugAllOn;
-  char deviceId[32];
-};
 
 static RuntimeConfig activeConfig;
 static RuntimeConfig pendingConfig;
@@ -294,18 +114,6 @@ static uint32_t lastActionMs = 0;
 static uint32_t recoverUntilMs = 0;
 
 // LED engine
-enum class LedMode : uint8_t {
-  ALL_OFF=0,
-  ERROR_BLINK_RED,
-  RED_SOLID,
-  OK_ALT_GB,
-  READY_GREEN_BLINK,
-  GLASS_GREEN_SOLID,
-  TIMING_BLUE_SPINNER,
-  RESULT_FLASH_GB_ONCE,
-  STANDBY_TWINKLE
-};
-
 static LedMode ledMode = LedMode::ALL_OFF;
 static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
