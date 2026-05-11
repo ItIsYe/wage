@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <HX711.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
@@ -12,13 +11,7 @@
 #include "types.h"
 #include "display_module.h"
 #include "led_module.h"
-
-/* =========================================================
-   SCALE / CALIBRATION
-   ========================================================= */
-
-HX711 scale1;
-HX711 scale2;
+#include "scale_module.h"
 
 /* =========================================================
    DISPLAY
@@ -74,22 +67,9 @@ static String resetStatusMsg;
    ========================================================= */
 
 // moving average buffer
-static float maBuf[MA_N];
-static uint8_t maIdx = 0;
-static bool maFilled = false;
-static float maSum = 0.0f;
-
-float w_raw1 = 0.0f, w_raw2 = 0.0f;   // in g (after calibration)
-float w_avg  = 0.0f;                  // raw mean (2 cells)
-float w_filt = 0.0f;                  // filtered mean
 float oledScale = 1.5f;
 
 // stability window
-static float stabMin = 1e9f, stabMax = -1e9f;
-static uint32_t stabWindowStart = 0;
-static uint32_t stableSince = 0;
-bool isStable = false;
-
 // object tracking
 bool objectPresent = false;
 static float readyReferenceWeight = 0.0f;
@@ -120,13 +100,6 @@ static uint32_t lastSerialBaseMs = 0;
 static uint32_t lastSerialReadyMs = 0;
 static uint32_t lastSerialTimingMs = 0;
 static uint32_t lastSerialRecoverMs = 0;
-static uint32_t lastScaleReadMs = 0;
-static bool haveRead = false;
-static bool haveStableRead = false;
-static float absFilt = 0.0f;
-static bool objectMissingStable = false;
-static long raw1 = 0, raw2 = 0;
-
 
 static uint32_t perfLastLogMs = 0;
 static uint32_t perfMaxScaleUs = 0;
@@ -148,7 +121,6 @@ static float percentOfReference(float referenceWeight, float percent);
 static void refreshTimingThresholds();
 static const char* stateToStr(State s);
 static bool shouldCheckNegativeError(State s);
-static void scaleService(uint32_t now);
 static void oledService(uint32_t now);
 static void stateMachineService(uint32_t now);
 static void webService(uint32_t now);
@@ -180,134 +152,6 @@ static void serialPrintAll(long raw1, long raw2) {
   Serial.print(objectPresent ? 1 : 0);
   Serial.print("  ERR:");
   Serial.println(errToStr(err));
-}
-
-/* =========================================================
-   SCALE READ + FILTER + STABILITY
-   ========================================================= */
-
-static float applyInvert(float g, bool inv) {
-  return inv ? -g : g;
-}
-
-static void updateFilter(float newVal) {
-  const uint8_t nBefore = maFilled ? MA_N : maIdx;
-  maSum -= maBuf[maIdx];
-  maBuf[maIdx] = newVal;
-  maSum += newVal;
-  maIdx = (maIdx + 1) % MA_N;
-  if (maIdx == 0) maFilled = true;
-
-  const uint8_t n = maFilled ? MA_N : (uint8_t)(nBefore + 1);
-  w_filt = (n > 0) ? (maSum / (float)n) : newVal;
-}
-
-static void updateStability(float val) {
-  const uint32_t now = millis();
-  if (stabWindowStart == 0) {
-    stabWindowStart = now;
-    stabMin = val;
-    stabMax = val;
-    isStable = false;
-    stableSince = 0;
-    return;
-  }
-
-  stabMin = min(stabMin, val);
-  stabMax = max(stabMax, val);
-
-  if (now - stabWindowStart >= STABLE_WINDOW_MS) {
-    const float band = stabMax - stabMin;
-    const bool windowStable = (band <= STABLE_BAND_G);
-
-    if (windowStable) {
-      if (!isStable) {
-        if (stableSince == 0) stableSince = now;
-        if (now - stableSince >= STABLE_HOLD_MS) isStable = true;
-      }
-    } else {
-      isStable = false;
-      stableSince = 0;
-    }
-
-    stabWindowStart = now;
-    stabMin = val;
-    stabMax = val;
-  }
-}
-
-static float sanitizeNegativeWeight(float val) {
-  if (val < 0.0f && val >= NEGATIVE_CLAMP_G) return 0.0f;
-  return val;
-}
-
-static inline float unitsFromRaw(long raw, HX711& s, bool invert) {
-  const float scale = s.get_scale();
-  if (scale == 0.0f) return 0.0f;
-  const float value = ((float)raw - (float)s.get_offset()) / scale;
-  return applyInvert(value, invert);
-}
-
-static bool readScalesOnce(long& raw1, long& raw2) {
-  if (!scale1.is_ready() || !scale2.is_ready()) return false;
-
-  raw1 = scale1.read_average(activeConfig.scaleReadSamples);
-  raw2 = scale2.read_average(activeConfig.scaleReadSamples);
-
-  w_raw1 = unitsFromRaw(raw1, scale1, INVERT1);
-  w_raw2 = unitsFromRaw(raw2, scale2, INVERT2);
-  w_avg  = (w_raw1 + w_raw2) * 0.5f;
-
-  updateFilter(w_avg);
-  updateStability(w_filt);
-  w_filt = sanitizeNegativeWeight(w_filt);
-
-  return true;
-}
-
-static void tareBoth() {
-  scale1.tare(TARE_SAMPLES);
-  scale2.tare(TARE_SAMPLES);
-
-  for (uint8_t i=0;i<MA_N;i++) maBuf[i] = 0.0f;
-  maIdx = 0;
-  maFilled = false;
-  maSum = 0.0f;
-  w_raw1 = w_raw2 = w_avg = w_filt = 0.0f;
-
-  stabWindowStart = 0;
-  stableSince = 0;
-  isStable = false;
-}
-
-static bool isObjectPresentStable(float weight, bool stable) {
-  return stable && (weight >= activeConfig.objectPresentG);
-}
-
-static float percentOfReference(float referenceWeight, float percent) {
-  return referenceWeight * (percent * 0.01f);
-}
-
-static void refreshTimingThresholds() {
-  readyReferenceWeight = max(readyReferenceWeight, activeConfig.objectPresentG);
-  startDropThresholdG = max(
-    MIN_DYNAMIC_THRESHOLD_G,
-    percentOfReference(readyReferenceWeight, activeConfig.startDropPercent)
-  );
-  stopRiseThresholdG = max(
-    MIN_DYNAMIC_THRESHOLD_G,
-    percentOfReference(readyReferenceWeight, activeConfig.stopRisePercent)
-  );
-
-  if (MASTER_DEBUG_LOG) {
-    Serial.print("[THRESH] ref=");
-    Serial.print(readyReferenceWeight, 2);
-    Serial.print("g startDrop=");
-    Serial.print(startDropThresholdG, 2);
-    Serial.print("g stopRise=");
-    Serial.print(stopRiseThresholdG, 2);
-    Serial.println("g (% vom ref)");
-  }
 }
 
 static RunDataSnapshot buildRunDataSnapshot(uint32_t now, uint32_t durationMs) {
@@ -389,28 +233,6 @@ static void setState(State s) {
   }
   state = s;
   lastActionMs = millis();
-}
-
-static void scaleService(uint32_t now) {
-  haveRead = false;
-  haveStableRead = false;
-  objectMissingStable = false;
-  absFilt = fabsf(w_filt);
-
-  const bool needScaleRead = (state != State::BOOT_MSG && state != State::BOOT_TARE && state != State::SHOW_RESULT);
-  if (!needScaleRead) return;
-  if ((now - lastScaleReadMs) < activeConfig.scaleReadIntervalMs) return;
-  lastScaleReadMs = now;
-
-  haveRead = readScalesOnce(raw1, raw2);
-  haveStableRead = haveRead && isStable;
-  absFilt = haveRead ? fabsf(w_filt) : absFilt;
-  objectMissingStable = haveStableRead && (w_filt < activeConfig.objectPresentG * 0.7f);
-
-  if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
-    lastSerialBaseMs = now;
-    serialPrintAll(raw1, raw2);
-  }
 }
 
 static void oledService(uint32_t now) {
@@ -590,10 +412,7 @@ void setup() {
   ledsInit();
   oledInit();
 
-  scale1.begin(HX1_DOUT, HX1_SCK);
-  scale2.begin(HX2_DOUT, HX2_SCK);
-  scale1.set_scale(DEFAULT_CAL1);
-  scale2.set_scale(DEFAULT_CAL2);
+  scaleInit();
 
   ledsSetMode(LedMode::RED_SOLID);
   oledMsg2("Start...", "Initialisierung");
@@ -978,7 +797,6 @@ static void handleResetRequestIfAllowed(uint32_t now){
   readyReferenceWeight = 0.0f;
   startDropThresholdG = 0.0f;
   stopRiseThresholdG = 0.0f;
-  stableSince = 0;
   isStable = false;
   resetRequested = false;
   resetStatusMsg = "Reset ausgefuehrt. Nullung laeuft.";
@@ -1010,6 +828,10 @@ void loop() {
 
   const uint32_t scaleStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   scaleService(now);
+  if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
+    lastSerialBaseMs = now;
+    serialPrintAll(raw1, raw2);
+  }
   const uint32_t scaleDurUs = PERFORMANCE_DEBUG ? (micros() - scaleStartUs) : 0;
 
   const uint32_t stateStartUs = PERFORMANCE_DEBUG ? micros() : 0;
