@@ -270,7 +270,13 @@ void setup() {
 }
 
 static void stateMachineService(uint32_t now) {
-  if (haveRead && shouldCheckNegativeError(state) && w_filt < NEGATIVE_ERROR_G) {
+  if (haveRead && shouldCheckNegativeError(state) && !isNegativeCheckSuppressed(now) && w_filt < NEGATIVE_ERROR_G) {
+    if (MASTER_DEBUG_LOG) {
+      Serial.print("[NEGATIVE] state=");
+      Serial.print(stateToStr(state));
+      Serial.print(" w_filt=");
+      Serial.println(w_filt, 2);
+    }
     setError(ErrCode::NEGATIVE);
   }
 
@@ -450,6 +456,10 @@ static void stateMachineService(uint32_t now) {
       if (!emptyAndStable) {
         oledMsg2("Bitte leeren", "Glas entfernen");
       } else {
+        if (MASTER_DEBUG_LOG) {
+          Serial.print("[RETARE] WAIT_EMPTY -> CHECK_RETARE absFilt=");
+          Serial.println(absFilt, 2);
+        }
         oledMsg2("Pruefe Nullpunkt", "...");
         setState(State::CHECK_RETARE);
       }
@@ -462,16 +472,26 @@ static void stateMachineService(uint32_t now) {
       if (!haveStableRead) break;
 
       if (absFilt > activeConfig.retareTolG) {
-        Serial.print("[RETARE] empty+stable offset=");
-        Serial.print(w_filt, 2);
-        Serial.println("g -> tare");
+        if (MASTER_DEBUG_LOG) {
+          Serial.print("[RETARE] before tare w_filt=");
+          Serial.print(w_filt, 2);
+          Serial.print(" absFilt=");
+          Serial.println(absFilt, 2);
+        }
         oledMsg2("Nullung...", "Offset korr.");
         tareBoth();
+        if (MASTER_DEBUG_LOG) Serial.println("[RETARE] after tare reset scale state");
       }
 
       oledMsg2("Warte auf Glas", "...");
       ledsSetMode(LedMode::OK_ALT_GB);
       objectPresent = false;
+      readyReferenceWeight = 0.0f;
+      dropSinceMs = 0;
+      stopCandidateSinceMs = 0;
+      minDuringTiming = 1e9f;
+      startDropThresholdG = 0.0f;
+      stopRiseThresholdG = 0.0f;
       setState(State::IDLE_WAIT_GLASS);
       break;
     }

@@ -19,5 +19,6 @@ extern long raw2;
 void scaleInit();
 bool readScalesOnce(long& outRaw1, long& outRaw2);
 void tareBoth();
+bool isNegativeCheckSuppressed(uint32_t now);
 bool isObjectPresentStable(float weight, bool stable);
 void scaleService(uint32_t now);
