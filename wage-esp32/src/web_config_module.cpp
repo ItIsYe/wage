@@ -40,8 +40,8 @@ static String htmlEscape(const String& in) {
   return out;
 }
 
-static bool isIdleOrStandbyState() {
-  return (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
+static bool isConfigApplyAllowedState() {
+  return (state == State::IDLE_WAIT_GLASS);
 }
 
 static bool parseFloatArg(const char* key, float& out) {
@@ -202,11 +202,11 @@ void webConfigSetup() {
   WiFi.setSleep(false);
 
   server.on("/", HTTP_GET, [](){
-    if (isIdleOrStandbyState()) server.send(200, "text/html", renderConfigPage(activeConfig));
+    if (isConfigApplyAllowedState()) server.send(200, "text/html", renderConfigPage(activeConfig));
     else server.send(200, "text/html", renderBusyPage());
   });
   server.on("/save", HTTP_POST, [](){
-    if (!isIdleOrStandbyState()) {
+    if (!isConfigApplyAllowedState()) {
       server.send(409, "text/html", renderBusyPage("Speichern nur im Idle moeglich."));
       return;
     }
@@ -266,7 +266,7 @@ void webConfigSetup() {
 
 void webService(uint32_t now){
   if (!WEB_CONFIG_ENABLED) return;
-  const bool isIdleState = isIdleOrStandbyState();
+  const bool isIdleState = (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
   const uint32_t interval = isIdleState ? WEB_SERVICE_INTERVAL_IDLE_MS : WEB_SERVICE_INTERVAL_BUSY_MS;
   if (now - lastWebServiceMs < interval) return;
   lastWebServiceMs = now;
