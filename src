@@ -150,6 +150,35 @@ Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
 Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 static bool oledReady = false;
 
+// LED-Instanzkontext (Vorbereitung fuer spaeteren zweiten Ring; aktuell weiter nur ein Ring aktiv)
+struct LedRingContext {
+  Adafruit_NeoPixel* strip;
+  uint16_t pixelCount;
+};
+
+static LedRingContext primaryLedRing{&ledStrip, PIXEL_COUNT};
+
+/* =========================================================
+   EXTERNAL INTERFACE PREP (STUBS ONLY)
+   ========================================================= */
+
+struct RunDataSnapshot {
+  uint32_t finishedAtMs;
+  uint32_t durationMs;
+  float referenceWeightG;
+  float minWeightG;
+  float startDropThresholdG;
+  float stopRiseThresholdG;
+  char deviceId[32];
+};
+
+// TODO(interface): spaeter Queue/Retry + Pi/HTTP Transport anbinden.
+static bool enqueueRunDataForExternalSend(const RunDataSnapshot&) {
+  // Stub: bewusst ohne Seiteneffekte. Nur Strukturvorbereitung fuer spaetere Erweiterungen.
+  return false;
+}
+
+
 /* =========================================================
    ERROR CODES
    ========================================================= */
@@ -358,17 +387,17 @@ static inline uint8_t brightnessPercentToByte(uint8_t percent) {
 }
 
 static inline void pixelsClear() {
-  ledStrip.clear();
+  primaryLedRing.strip->clear();
 }
 
 static inline void pixelsShow() {
-  ledStrip.show();
+  primaryLedRing.strip->show();
 }
 
 static inline void setStripBrightnessPercent(uint8_t percent) {
   const uint8_t target = brightnessPercentToByte(percent);
   if (brightnessInitialized && currentBrightnessByte == target) return;
-  ledStrip.setBrightness(target);
+  primaryLedRing.strip->setBrightness(target);
   currentBrightnessByte = target;
   brightnessInitialized = true;
 }
@@ -381,12 +410,12 @@ static inline void applyBrightnessForLedMode() {
 }
 
 static inline void pixelsFill(uint32_t color) {
-  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) ledStrip.setPixelColor(i, color);
+  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) primaryLedRing.strip->setPixelColor(i, color);
 }
 
 static inline void pixelsSet(const uint8_t* indices, uint8_t count, uint32_t color) {
   for (uint8_t i = 0; i < count; ++i) {
-    if (indices[i] < PIXEL_COUNT) ledStrip.setPixelColor(indices[i], color);
+    if (indices[i] < PIXEL_COUNT) primaryLedRing.strip->setPixelColor(indices[i], color);
   }
 }
 
@@ -397,19 +426,19 @@ static void standbyApplyOutputs() {
   pixelsClear();
   for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
     if (standbyTwinkleOn[i]) {
-      const uint32_t raw = ledStrip.ColorHSV(standbyHue[i], STANDBY_SATURATION, standbyValue[i]);
-      ledStrip.setPixelColor(i, ledStrip.gamma32(raw));
+      const uint32_t raw = primaryLedRing.strip->ColorHSV(standbyHue[i], STANDBY_SATURATION, standbyValue[i]);
+      primaryLedRing.strip->setPixelColor(i, primaryLedRing.strip->gamma32(raw));
     }
   }
 }
 
 static void ledsInit() {
-  ledStrip.begin();
+  primaryLedRing.strip->begin();
   setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
-  colorGreen = ledStrip.Color(0, 90, 0);
-  colorBlue = ledStrip.Color(0, 0, 100);
-  colorRed = ledStrip.Color(100, 0, 0);
-  colorCyan = ledStrip.Color(0, 90, 90);
+  colorGreen = primaryLedRing.strip->Color(0, 90, 0);
+  colorBlue = primaryLedRing.strip->Color(0, 0, 100);
+  colorRed = primaryLedRing.strip->Color(100, 0, 0);
+  colorCyan = primaryLedRing.strip->Color(0, 90, 90);
   pixelsClear();
   pixelsShow();
   ledFrameDirty = false;
@@ -450,7 +479,7 @@ static void ledService(uint32_t now) {
     static bool allOnApplied = false;
     setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
     if (!allOnApplied) {
-      pixelsFill(ledStrip.Color(80, 80, 80));
+      pixelsFill(primaryLedRing.strip->Color(80, 80, 80));
       pixelsShow();
       allOnApplied = true;
     }
@@ -523,7 +552,7 @@ static void ledService(uint32_t now) {
       }
       if (ledFrameDirty) {
         pixelsClear();
-        ledStrip.setPixelColor(ledSpinIdx, colorBlue);
+        primaryLedRing.strip->setPixelColor(ledSpinIdx, colorBlue);
       }
       break;
 
@@ -935,8 +964,23 @@ static void refreshTimingThresholds() {
   }
 }
 
+static RunDataSnapshot buildRunDataSnapshot(uint32_t now, uint32_t durationMs) {
+  RunDataSnapshot snapshot{};
+  snapshot.finishedAtMs = now;
+  snapshot.durationMs = durationMs;
+  snapshot.referenceWeightG = readyReferenceWeight;
+  snapshot.minWeightG = minDuringTiming;
+  snapshot.startDropThresholdG = startDropThresholdG;
+  snapshot.stopRiseThresholdG = stopRiseThresholdG;
+  strncpy(snapshot.deviceId, activeConfig.deviceId, sizeof(snapshot.deviceId) - 1);
+  snapshot.deviceId[sizeof(snapshot.deviceId) - 1] = '\0';
+  return snapshot;
+}
+
 static void finalizeTiming(uint32_t now) {
   const uint32_t dt = now - tStartMs;
+  const RunDataSnapshot runData = buildRunDataSnapshot(now, dt);
+  (void)enqueueRunDataForExternalSend(runData); // TODO(interface): Rueckgabe spaeter fuer Queue/Retry nutzen.
   char buf[24];
   snprintf(buf, sizeof(buf), "Zeit: %.1fs", dt / 1000.0f);
   oledMsg2("Fertig", buf);
