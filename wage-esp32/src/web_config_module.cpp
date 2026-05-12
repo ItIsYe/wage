@@ -29,6 +29,7 @@ static void disableDebugModesNow() {
   activeConfig.oledDebugMode = false;
   activeConfig.debugMode = false;
   activeConfig.pixelDebugAllOn = false;
+  activeConfig.ring2DebugAllOn = false;
   pendingConfig = activeConfig;
   pendingConfigValid = false;
   webConfigSaveToPrefs(activeConfig);
@@ -131,6 +132,12 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>pixelBrightnessPercent (%)</label><input type='number' min='0' max='100' name='pixelBrightnessPercent' value='"); h += String(c.pixelBrightnessPercent); h += F("'>");
   h += F("<label>standbyBrightnessPercent (%)</label><input type='number' min='0' max='100' name='standbyBrightnessPercent' value='"); h += String(c.standbyBrightnessPercent); h += F("'>");
   h += F("<label><input type='checkbox' name='pixelDebugAllOn' "); if (c.pixelDebugAllOn) h += F("checked"); h += F("> pixelDebugAllOn</label></fieldset>");
+  h += F("<fieldset><legend>Ring 2</legend>");
+  h += F("<label><input type='checkbox' name='ring2Enabled' "); if (c.ring2Enabled) h += F("checked"); h += F("> Ring 2 aktiv</label>");
+  h += F("<label>Ring 2 Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2BrightnessPercent' value='"); h += String(c.ring2BrightnessPercent); h += F("'>");
+  h += F("<label>Ring 2 Standby-Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2StandbyBrightnessPercent' value='"); h += String(c.ring2StandbyBrightnessPercent); h += F("'>");
+  h += F("<label><input type='checkbox' name='ring2DebugAllOn' "); if (c.ring2DebugAllOn) h += F("checked"); h += F("> Ring 2 Debug alle Pixel an</label>");
+  h += F("<label>Ring 2 Pattern</label><select name='ring2PatternMode'><option value='0'"); if (c.ring2PatternMode == 0) h += F(" selected"); h += F(">Aus</option><option value='1'"); if (c.ring2PatternMode == 1) h += F(" selected"); h += F(">Solid Blau</option><option value='2'"); if (c.ring2PatternMode == 2) h += F(" selected"); h += F(">Pulse Blau</option></select></fieldset>");
   h += F("<button type='submit'>Speichern</button></form></body></html>");
   return h;
 }
@@ -161,7 +168,10 @@ void webConfigLoadDefaults(RuntimeConfig& cfg) { memset(&cfg,0,sizeof(cfg));
   cfg.scaleReadSamples=DEFAULT_SCALE_READ_SAMPLES; cfg.oledI2cClockHz=DEFAULT_OLED_I2C_CLOCK_HZ;
   cfg.oledRotation=DEFAULT_OLED_ROTATION; cfg.oledScaleValue=1.5f; cfg.debugMode=false; cfg.oledDebugMode=false;
   cfg.pixelBrightnessPercent=DEFAULT_PIXEL_BRIGHTNESS_PERCENT; cfg.standbyBrightnessPercent=DEFAULT_STANDBY_BRIGHTNESS_PERCENT;
-  cfg.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON; strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);}
+  cfg.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON;
+  cfg.ring2Enabled=DEFAULT_RING2_ENABLED; cfg.ring2BrightnessPercent=DEFAULT_RING2_BRIGHTNESS_PERCENT;
+  cfg.ring2StandbyBrightnessPercent=DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT; cfg.ring2DebugAllOn=DEFAULT_RING2_DEBUG_ALL_ON;
+  cfg.ring2PatternMode=DEFAULT_RING2_PATTERN_MODE; strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);}
 
 void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.begin("cfg", false);
@@ -171,6 +181,8 @@ void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.putUChar("samples", c.scaleReadSamples); prefs.putUInt("i2c", c.oledI2cClockHz); prefs.putUChar("rot", c.oledRotation);
   prefs.putFloat("oledScale", c.oledScaleValue); prefs.putBool("dbg", c.debugMode); prefs.putBool("odbg", c.oledDebugMode);
   prefs.putUChar("pixB", c.pixelBrightnessPercent); prefs.putUChar("stbyB", c.standbyBrightnessPercent); prefs.putBool("pixDbg", c.pixelDebugAllOn);
+  prefs.putBool("r2en", c.ring2Enabled); prefs.putUChar("r2b", c.ring2BrightnessPercent); prefs.putUChar("r2sb", c.ring2StandbyBrightnessPercent);
+  prefs.putBool("r2dbg", c.ring2DebugAllOn); prefs.putUChar("r2pat", c.ring2PatternMode);
   prefs.putString("dev", c.deviceId); prefs.end();
 }
 
@@ -189,6 +201,11 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   cfg.oledScaleValue=prefs.getFloat("oledScale", cfg.oledScaleValue);
   cfg.debugMode=prefs.getBool("dbg", cfg.debugMode); cfg.oledDebugMode=prefs.getBool("odbg", cfg.oledDebugMode);
   cfg.pixelBrightnessPercent=prefs.getUChar("pixB", cfg.pixelBrightnessPercent); cfg.standbyBrightnessPercent=prefs.getUChar("stbyB", cfg.standbyBrightnessPercent); cfg.pixelDebugAllOn=prefs.getBool("pixDbg", cfg.pixelDebugAllOn);
+  cfg.ring2Enabled=prefs.getBool("r2en", cfg.ring2Enabled); cfg.ring2BrightnessPercent=prefs.getUChar("r2b", cfg.ring2BrightnessPercent); cfg.ring2StandbyBrightnessPercent=prefs.getUChar("r2sb", cfg.ring2StandbyBrightnessPercent);
+  cfg.ring2DebugAllOn=prefs.getBool("r2dbg", cfg.ring2DebugAllOn); cfg.ring2PatternMode=prefs.getUChar("r2pat", cfg.ring2PatternMode);
+  if (cfg.ring2BrightnessPercent > 100) cfg.ring2BrightnessPercent = 100;
+  if (cfg.ring2StandbyBrightnessPercent > 100) cfg.ring2StandbyBrightnessPercent = 100;
+  if (cfg.ring2PatternMode > 2) cfg.ring2PatternMode = DEFAULT_RING2_PATTERN_MODE;
   String dev=prefs.getString("dev", cfg.deviceId); strncpy(cfg.deviceId, dev.c_str(), sizeof(cfg.deviceId)-1);
   prefs.end();
   oledScale=cfg.oledScaleValue;
@@ -246,9 +263,16 @@ void webConfigSetup() {
     parseU8Arg("pixelBrightnessPercent", n.pixelBrightnessPercent);
     parseU8Arg("standbyBrightnessPercent", n.standbyBrightnessPercent);
     parseBoolArg("pixelDebugAllOn", n.pixelDebugAllOn);
+    parseBoolArg("ring2Enabled", n.ring2Enabled);
+    parseU8Arg("ring2BrightnessPercent", n.ring2BrightnessPercent);
+    parseU8Arg("ring2StandbyBrightnessPercent", n.ring2StandbyBrightnessPercent);
+    parseBoolArg("ring2DebugAllOn", n.ring2DebugAllOn);
+    parseU8Arg("ring2PatternMode", n.ring2PatternMode);
 
     if (!errMsg.length() && (n.startDropPercent < 0 || n.startDropPercent > 100 || n.stopRisePercent < 0 || n.stopRisePercent > 100)) errMsg = "Prozentwerte muessen zwischen 0 und 100 liegen.";
     if (!errMsg.length() && (n.pixelBrightnessPercent > 100 || n.standbyBrightnessPercent > 100)) errMsg = "Helligkeit muss 0..100 sein.";
+    if (!errMsg.length() && (n.ring2BrightnessPercent > 100 || n.ring2StandbyBrightnessPercent > 100)) errMsg = "Ring-2-Helligkeit muss 0..100 sein.";
+    if (!errMsg.length() && n.ring2PatternMode > 2) errMsg = "Ring-2-Pattern muss 0..2 sein.";
     if (!errMsg.length() && (n.scaleReadSamples < 1 || n.scaleReadSamples > 5)) errMsg = "scaleReadSamples muss 1..5 sein.";
     if (!errMsg.length() && n.oledRotation > 3) errMsg = "oledRotation muss 0..3 sein.";
     if (!errMsg.length() && (n.oledTimingRefreshMs < 50 || n.oledTimingRefreshMs > 1000)) errMsg = "oledTimingRefreshMs muss 50..1000 ms sein.";
