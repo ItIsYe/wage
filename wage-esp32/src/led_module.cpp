@@ -291,10 +291,14 @@ void ledApplyBrightnessForCurrentMode() {
 
 void ledClear() {
   pixelsClear();
+#if RING2_ENABLED
   ring2Clear();
+#endif
 }
 
 void ledShow() {
   pixelsShow();
+#if RING2_ENABLED
   secondaryLedRing.strip->show();
+#endif
 }
