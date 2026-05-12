@@ -9,6 +9,10 @@ extern RuntimeConfig activeConfig;
 
 static Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 static LedRingContext primaryLedRing{&ledStrip, PIXEL_COUNT};
+#if RING2_ENABLED
+static Adafruit_NeoPixel ring2Strip(RING2_PIXEL_COUNT, RING2_PIN, NEO_GRB + NEO_KHZ800);
+static LedRingContext secondaryLedRing{&ring2Strip, RING2_PIXEL_COUNT};
+#endif
 
 static LedMode ledMode = LedMode::ALL_OFF;
 static uint32_t ledTickMs = 0;
@@ -28,6 +32,14 @@ static uint32_t colorGreen = 0;
 static uint32_t colorBlue = 0;
 static uint32_t colorRed = 0;
 static uint32_t colorCyan = 0;
+#if RING2_ENABLED
+static bool ring2FrameDirty = true;
+static uint8_t ring2BrightnessByte = 0;
+static bool ring2BrightnessInitialized = false;
+static uint32_t ring2TickMs = 0;
+static uint8_t ring2PulseValue = 10;
+static int8_t ring2PulseStep = 5;
+#endif
 
 static inline uint8_t brightnessPercentToByte(uint8_t percent) {
   if (percent >= 100) return 255;
@@ -44,6 +56,63 @@ static inline void setStripBrightnessPercent(uint8_t percent) {
   currentBrightnessByte = target;
   brightnessInitialized = true;
 }
+
+#if RING2_ENABLED
+static inline void ring2SetBrightnessPercent(uint8_t percent) {
+  const uint8_t target = brightnessPercentToByte(percent);
+  if (ring2BrightnessInitialized && ring2BrightnessByte == target) return;
+  secondaryLedRing.strip->setBrightness(target);
+  ring2BrightnessByte = target;
+  ring2BrightnessInitialized = true;
+  ring2FrameDirty = true;
+}
+
+static inline void ring2Clear() { secondaryLedRing.strip->clear(); }
+static inline void ring2Fill(uint32_t color) {
+  for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) secondaryLedRing.strip->setPixelColor(i, color);
+}
+
+static void ring2Service(uint32_t now) {
+  static bool ring2AllOnApplied = false;
+  if (!activeConfig.ring2Enabled) {
+    ring2AllOnApplied = false;
+    if (ring2FrameDirty) { ring2Clear(); secondaryLedRing.strip->show(); ring2FrameDirty = false; }
+    return;
+  }
+  if (activeConfig.ring2DebugAllOn) {
+    ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
+    if (!ring2AllOnApplied) {
+      ring2Fill(secondaryLedRing.strip->Color(80, 80, 80));
+      secondaryLedRing.strip->show();
+      ring2AllOnApplied = true;
+      ring2FrameDirty = false;
+    }
+    return;
+  }
+  ring2AllOnApplied = false;
+
+  const uint8_t mode = activeConfig.ring2PatternMode;
+  const uint8_t brightnessPercent = (mode == 2) ? activeConfig.ring2StandbyBrightnessPercent : activeConfig.ring2BrightnessPercent;
+  ring2SetBrightnessPercent(brightnessPercent);
+  if (mode == 0) {
+    if (ring2FrameDirty) ring2Clear();
+  } else if (mode == 1) {
+    if (ring2FrameDirty) ring2Fill(secondaryLedRing.strip->Color(0, 0, 64));
+  } else {
+    if (now - ring2TickMs >= 80) {
+      ring2TickMs = now;
+      const int16_t next = (int16_t)ring2PulseValue + ring2PulseStep;
+      if (next >= 120 || next <= 10) ring2PulseStep = -ring2PulseStep;
+      ring2PulseValue = (uint8_t)((int16_t)ring2PulseValue + ring2PulseStep);
+      ring2Fill(secondaryLedRing.strip->Color(0, 0, ring2PulseValue));
+      ring2FrameDirty = true;
+    }
+  }
+  if (ring2FrameDirty) { secondaryLedRing.strip->show(); ring2FrameDirty = false; }
+}
+#else
+static void ring2Service(uint32_t) {}
+#endif
 
 static inline void applyBrightnessForLedModeInternal() {
   const uint8_t percent = (ledMode == LedMode::STANDBY_TWINKLE)
@@ -85,6 +154,13 @@ void ledsInit() {
   pixelsClear();
   pixelsShow();
   ledFrameDirty = false;
+  #if RING2_ENABLED
+  secondaryLedRing.strip->begin();
+  ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
+  ring2Clear();
+  secondaryLedRing.strip->show();
+  ring2FrameDirty = false;
+  #endif
 }
 
 void ledsSetMode(LedMode m) {
@@ -126,6 +202,7 @@ void ledService(uint32_t now) {
       pixelsShow();
       allOnApplied = true;
     }
+    ring2Service(now);
     return;
   }
   allOnApplied = false;
@@ -205,6 +282,7 @@ void ledService(uint32_t now) {
   }
 
   if (ledFrameDirty) { pixelsShow(); ledFrameDirty = false; }
+  ring2Service(now);
 }
 
 void ledApplyBrightnessForCurrentMode() {
@@ -213,8 +291,10 @@ void ledApplyBrightnessForCurrentMode() {
 
 void ledClear() {
   pixelsClear();
+  ring2Clear();
 }
 
 void ledShow() {
   pixelsShow();
+  secondaryLedRing.strip->show();
 }
