@@ -69,6 +69,11 @@ def _insert_run(cur, run: RunIn):
         (run.device_id, run.firmware_version, utc_now_iso(), run.boot_id, run.queue_depth),
     )
 
+    if not duplicate:
+        cur.execute("INSERT INTO app_state(key,value) VALUES('last_run_id',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(run_id),))
+        cur.execute("INSERT INTO app_state(key,value) VALUES('last_run_received_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (received_at,))
+        cur.execute("INSERT INTO app_state(key,value) VALUES('last_event','run_received') ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+
     return {
         "accepted": True,
         "duplicate": duplicate,

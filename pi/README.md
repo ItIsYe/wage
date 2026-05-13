@@ -1,111 +1,64 @@
-# WAGE Raspberry Pi
+# WAGE Raspberry Pi (/pi)
 
-## Projektziel
-Der Raspberry Pi ist die lokale Datenzentrale für die Waage: FastAPI-Backend, SQLite-Datenbank, Webinterface, optional OLED und optional WS2812B-LEDs.
+Dieser Bereich betrifft **ausschließlich den Raspberry Pi**. Alles außerhalb von `/pi` wird ignoriert.
 
-## Klare Abgrenzung zur Waage/ESP32
-- **Waage/ESP32 ist aktiv** und sendet fertige Läufe.
-- **Pi ist passiv** und empfängt nur HTTP-Datensätze.
-- Der Pi steuert die Waage nicht und fragt keine Messwerte aktiv ab.
+## Rolle des Pi
+- Pi ist passiver Empfänger und Datenzentrale.
+- Waage/ESP32 bleibt aktiver Sender.
+- Pi steuert die Waage nicht und fragt keine Messwerte aktiv ab.
 
-## Ordnerstruktur
-- `pi/backend`: API, DB, Logik
-- `pi/frontend`: HTML/CSS/JS für Dashboard, Läufe, Personen, Status
-- `pi/oled`: OLED-Dienst (optional)
-- `pi/leds`: LED-Dienst (optional)
-- `pi/systemd`: Service-Dateien
-- `pi/scripts`: Installation, Dev-Start, Kiosk, API-Test
+## Services
+- Backend (`0.0.0.0:8000`)
+- LED-Service (separat)
+- OLED-Service (separat)
 
-## Hardwareübersicht & Pinbelegung
-- OLED (I2C, 0x3C): SDA GPIO2 (Pin 3), SCL GPIO3 (Pin 5)
-- WS2812B: DATA GPIO18 (Pin 12), externe 5V, GND gemeinsam mit Pi
-- Empfehlungen WS2812B: Level-Shifter, 330–470Ω Datenleitung, Pufferkondensator
-- Touchdisplay: Browser im Kiosk-Modus auf `http://localhost:8000`
+Alle Services starten unabhängig; OLED/LED-Fehler stoppen das Backend nicht.
 
-## Installation
+## Umgebungsvariablen
+- `WAGE_PI_LED_COUNT` (Default `8`)
+- `WAGE_PI_LED_BRIGHTNESS` (0-255, Default `32`)
+- `WAGE_PI_OLED_ADDRESS` (Default `0x3c`)
+- `WAGE_PI_URL` (für `scripts/test_api.sh`, Default `http://localhost:8000`)
+
+## LED-Statuslogik
+- Weiß: Start
+- Blau: Backend läuft, noch kein Waagenkontakt
+- Grün: Waage online
+- Gelb: Waage offline/kein aktueller Kontakt
+- Kurz blau blinkend: neuer Lauf empfangen
+- Rot: API/DB-Fehler
+- Rot blinkend: schwerer Fehler (`last_event=fatal_error`)
+- `degraded:<Fehlerklasse>` bei fehlender Library/GPIO/Hardware
+
+## OLED-Anzeige
+- Treiber: SSD1306 bevorzugt, SH1106 Fallback
+- Anzeige: Titel, URL/IP, aktive Person, Waage online/offline, letzter Kontakt
+- QR-Code (wenn `qrcode` + `pillow` verfügbar und Display geeignet), sonst Klartext-URL
+- Bei Fehlern: `degraded:<Fehlerklasse>` statt Absturz
+
+## Touchdisplay/Kiosk
+`bash scripts/kiosk_start.sh` öffnet Chromium im Kiosk-Modus. UI ist touchfreundlich mit großen Karten/Buttons/Schrift.
+
+## Testskript
+`bash scripts/test_api.sh`
+- Healthcheck
+- Person anlegen und aktiv setzen
+- Lauf senden + Duplikat senden
+- Prüft `duplicate=true`
+- Läufe + Status abrufen
+
+Optional:
 ```bash
-cd pi
-bash scripts/install.sh
-```
-Installiert Pakete, erstellt `.venv`, installiert Requirements, legt `data/` + `logs/` an und installiert systemd-Units.
-
-## Entwicklungsmodus
-```bash
-cd pi
-bash scripts/start_dev.sh
-```
-Startet: `uvicorn backend.main:app --host 0.0.0.0 --port 8000`
-
-## systemd-Installation
-```bash
-cd pi
-bash scripts/create_services.sh
-sudo systemctl enable wage-pi-backend wage-pi-oled wage-pi-leds
-sudo systemctl start wage-pi-backend wage-pi-oled wage-pi-leds
-```
-Standardpfad in Service-Dateien: `/home/pi/wage/pi` (bei Bedarf anpassen).
-
-## Kiosk-/Touchdisplay-Start
-```bash
-cd pi
-bash scripts/kiosk_start.sh
-```
-Sucht automatisch `chromium-browser` oder `chromium` und öffnet `http://localhost:8000` im Kiosk-Modus.
-
-## API-Dokumentation
-- Web: `http://<pi-ip>:8000/`
-- OpenAPI/Swagger: `http://<pi-ip>:8000/docs`
-- Health: `GET /api/v1/health`
-- Runs: `POST /api/v1/runs`, `POST /api/v1/runs/batch`, `GET /api/v1/runs`, `PUT /api/v1/runs/{id}`, `DELETE /api/v1/runs/{id}`
-- Persons: `GET/POST/PUT/DELETE /api/v1/persons`, `POST /api/v1/persons/{id}/activate`
-- Status: `GET /api/v1/status`
-
-## curl-Beispiele
-```bash
-curl -s http://localhost:8000/api/v1/health
-
-curl -s -X POST http://localhost:8000/api/v1/runs \
-  -H 'content-type: application/json' \
-  -d '{"protocol_version":"1.0","device_id":"scale-001","boot_id":"boot-abc","run_number":1,"event_id":"evt-1","time_ms":12345,"start_weight_g":87.5,"status":"ok","firmware_version":"0.1.0","queue_depth":0}'
-
-curl -s -X POST http://localhost:8000/api/v1/runs/batch \
-  -H 'content-type: application/json' \
-  -d '{"runs":[{"protocol_version":"1.0","device_id":"scale-001","boot_id":"boot-abc","run_number":2,"event_id":"evt-2","time_ms":12400,"start_weight_g":88.0,"status":"ok","firmware_version":"0.1.0","queue_depth":0}]}'
-
-curl -s -X POST http://localhost:8000/api/v1/persons \
-  -H 'content-type: application/json' \
-  -d '{"name":"Max","activate":true}'
-
-curl -s -X POST http://localhost:8000/api/v1/persons/2/activate
+WAGE_PI_URL=http://192.168.1.116:8000 bash scripts/test_api.sh
 ```
 
-## Datenbankschema
-DB-Datei: `pi/data/wage_pi.sqlite3`
-- `persons(id, name UNIQUE, created_at)`
-- `devices(device_id UNIQUE, firmware_version, last_seen_at, last_boot_id, last_queue_depth)`
-- `runs(..., UNIQUE(device_id, event_id))`
-- `app_state(key PRIMARY KEY, value)`
-
-Erststart erzeugt automatisch DB + Standardwerte (`Unbekannt` ID 1, `active_person_id=1`, LED/OLED-Status).
-
-## OLED-Hinweise
-- Optional: `luma.oled`, `Pillow`
-- Bei fehlender Hardware/Bibliothek kein Absturz; Dienst bleibt im Degraded-Modus und schreibt `app_state.oled_status`.
-
-## LED-Hinweise
-- Optional: `rpi_ws281x`
-- Bei fehlender GPIO-Rechte/Bibliothek kein Absturz; Dienst bleibt im Degraded-Modus und schreibt `app_state.led_status`.
+## systemd
+Standardpfad in Unit-Dateien: `/home/pi/wage/pi` (bei anderer Repo-Lage anpassen).
 
 ## Fehlerbehebung
-```bash
-journalctl -u wage-pi-backend -f
-journalctl -u wage-pi-oled -f
-journalctl -u wage-pi-leds -f
-```
-
-## Testplan
-```bash
-cd pi
-bash scripts/test_api.sh
-python3 -m py_compile backend/*.py oled/*.py leds/*.py
-```
+- OLED nicht erkannt: I2C aktivieren (`raspi-config`), Adresse prüfen (`i2cdetect -y 1`), `WAGE_PI_OLED_ADDRESS` setzen.
+- LED braucht Rechte: Service mit passenden GPIO-Rechten/Root starten.
+- `rpi_ws281x` fehlt: `pip install -r requirements.txt`.
+- `luma.oled` fehlt: `pip install -r requirements.txt`.
+- API läuft nicht: `journalctl -u wage-pi-backend -f`.
+- Datenbank fehlt/leer: Backend einmal starten, Datei unter `pi/data/wage_pi.sqlite3` prüfen.
