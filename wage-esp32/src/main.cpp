@@ -10,6 +10,7 @@
 #include "led_module.h"
 #include "scale_module.h"
 #include "web_config_module.h"
+#include "external_interface_module.h"
 
 /* =========================================================
    DISPLAY
@@ -18,15 +19,8 @@
 Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
 
 /* =========================================================
-   EXTERNAL INTERFACE PREP (STUBS ONLY)
+   EXTERNAL INTERFACE
    ========================================================= */
-
-// TODO(interface): spaeter Queue/Retry + Pi/HTTP Transport anbinden.
-static bool enqueueRunDataForExternalSend(const RunDataSnapshot&) {
-  // Stub: bewusst ohne Seiteneffekte. Nur Strukturvorbereitung fuer spaetere Erweiterungen.
-  return false;
-}
-
 
 /* =========================================================
    ERROR CODES
@@ -79,6 +73,9 @@ static uint32_t lastActionMs = 0;
 // recovery
 static uint32_t recoverUntilMs = 0;
 
+static uint32_t bootId = 0;
+static uint32_t runCounter = 0;
+static uint32_t lastExternalOledHintMs = 0;
 
 static bool oledDebugLedsCleared = false;
 
@@ -145,6 +142,8 @@ static void serialPrintAll(long raw1, long raw2) {
 
 static RunDataSnapshot buildRunDataSnapshot(uint32_t now, uint32_t durationMs) {
   RunDataSnapshot snapshot{};
+  snapshot.bootId = bootId;
+  snapshot.runNumber = ++runCounter;
   snapshot.finishedAtMs = now;
   snapshot.durationMs = durationMs;
   snapshot.referenceWeightG = readyReferenceWeight;
@@ -153,13 +152,15 @@ static RunDataSnapshot buildRunDataSnapshot(uint32_t now, uint32_t durationMs) {
   snapshot.stopRiseThresholdG = stopRiseThresholdG;
   strncpy(snapshot.deviceId, activeConfig.deviceId, sizeof(snapshot.deviceId) - 1);
   snapshot.deviceId[sizeof(snapshot.deviceId) - 1] = '\0';
+  snprintf(snapshot.eventId, sizeof(snapshot.eventId), "%s-%lu-%lu", snapshot.deviceId, (unsigned long)snapshot.bootId, (unsigned long)snapshot.runNumber);
   return snapshot;
 }
 
 static void finalizeTiming(uint32_t now) {
   const uint32_t dt = now - tStartMs;
   const RunDataSnapshot runData = buildRunDataSnapshot(now, dt);
-  (void)enqueueRunDataForExternalSend(runData); // TODO(interface): Rueckgabe spaeter fuer Queue/Retry nutzen.
+  const bool queued = externalInterfaceEnqueueRun(runData);
+  if (!queued && !activeConfig.debugMode) showStatus("Extern-Queue voll", "Lokaler Lauf OK");
   char buf[24];
   snprintf(buf, sizeof(buf), "Zeit: %.1fs", dt / 1000.0f);
   showStatus("Fertig", buf);
@@ -281,6 +282,8 @@ void setup() {
   initOledScale();
   webConfigLoadFromPrefs(activeConfig, oledScale);
   randomSeed(esp_random());
+  bootId = esp_random();
+  runCounter = 0;
 
   ledsInit();
   oledInit();
@@ -291,6 +294,7 @@ void setup() {
   oledMsg2("Start...", "Initialisierung");
   setState(State::BOOT_MSG);
   webConfigSetup();
+  externalInterfaceInit(activeConfig, "v1-webcfg");
 }
 
 static void stateMachineService(uint32_t now) {
@@ -569,6 +573,7 @@ static void applyPendingConfigIfAllowed(){
   display.setRotation(activeConfig.oledRotation);
   ledApplyBrightnessForCurrentMode();
   webConfigSaveToPrefs(activeConfig);
+  externalInterfaceUpdateConfig(activeConfig);
   webClearPendingConfig();
 }
 
@@ -641,6 +646,20 @@ void loop() {
   const uint32_t resetStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   handleResetRequestIfAllowed(now);
   const uint32_t resetDurUs = PERFORMANCE_DEBUG ? (micros() - resetStartUs) : 0;
+
+  const bool safeToRetry = (
+    state == State::IDLE_WAIT_GLASS ||
+    state == State::WAIT_EMPTY_AFTER_RESULT ||
+    state == State::CHECK_RETARE ||
+    state == State::STANDBY
+  );
+  externalInterfaceService(now, safeToRetry);
+  if (externalInterfaceQueueDepth() > 0 && strcmp(externalInterfaceLastStatus(), "send ok") != 0) {
+    if (!activeConfig.debugMode && (now - lastExternalOledHintMs) > 1500) {
+      showStatus("Extern senden...", "Retry aktiv");
+      lastExternalOledHintMs = now;
+    }
+  }
 
   const uint32_t webStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   webService(now);

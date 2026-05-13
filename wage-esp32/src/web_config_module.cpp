@@ -138,6 +138,14 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>Ring 2 Standby-Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2StandbyBrightnessPercent' value='"); h += String(c.ring2StandbyBrightnessPercent); h += F("'>");
   h += F("<label><input type='checkbox' name='ring2DebugAllOn' "); if (c.ring2DebugAllOn) h += F("checked"); h += F("> Ring 2 Debug alle Pixel an</label>");
   h += F("<label>Ring 2 Pattern</label><select name='ring2PatternMode'><option value='0'"); if (c.ring2PatternMode == 0) h += F(" selected"); h += F(">Aus</option><option value='1'"); if (c.ring2PatternMode == 1) h += F(" selected"); h += F(">Solid Blau</option><option value='2'"); if (c.ring2PatternMode == 2) h += F(" selected"); h += F(">Pulse Blau</option></select></fieldset>");
+
+  h += F("<fieldset><legend>Externe Schnittstelle</legend>");
+  h += F("<label><input type='checkbox' name='externalEnabled' "); if (c.externalEnabled) h += F("checked"); h += F("> Externes Senden aktiv</label>");
+  h += F("<label>External Host</label><input name='externalHost' maxlength='63' value='"); h += htmlEscape(String(c.externalHost)); h += F("'>");
+  h += F("<label>External Port</label><input type='number' min='1' max='65535' name='externalPort' value='"); h += String(c.externalPort); h += F("'>");
+  h += F("<label>External API Path</label><input name='externalApiPath' maxlength='63' value='"); h += htmlEscape(String(c.externalApiPath)); h += F("'><small>z.B. /api/v1/runs</small>");
+  h += F("<label>External API Key</label><input name='externalApiKey' maxlength='63' value='"); h += htmlEscape(String(c.externalApiKey)); h += F("'></fieldset>");
+
   h += F("<button type='submit'>Speichern</button></form></body></html>");
   return h;
 }
@@ -171,7 +179,12 @@ void webConfigLoadDefaults(RuntimeConfig& cfg) { memset(&cfg,0,sizeof(cfg));
   cfg.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON;
   cfg.ring2Enabled=DEFAULT_RING2_ENABLED; cfg.ring2BrightnessPercent=DEFAULT_RING2_BRIGHTNESS_PERCENT;
   cfg.ring2StandbyBrightnessPercent=DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT; cfg.ring2DebugAllOn=DEFAULT_RING2_DEBUG_ALL_ON;
-  cfg.ring2PatternMode=DEFAULT_RING2_PATTERN_MODE; strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);}
+  cfg.ring2PatternMode=DEFAULT_RING2_PATTERN_MODE; strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);
+  cfg.externalEnabled=EXTERNAL_INTERFACE_ENABLED_DEFAULT;
+  strncpy(cfg.externalHost, EXTERNAL_TARGET_HOST_DEFAULT, sizeof(cfg.externalHost)-1);
+  cfg.externalPort=EXTERNAL_TARGET_PORT_DEFAULT;
+  strncpy(cfg.externalApiPath, EXTERNAL_API_PATH_DEFAULT, sizeof(cfg.externalApiPath)-1);
+  strncpy(cfg.externalApiKey, EXTERNAL_API_KEY_DEFAULT, sizeof(cfg.externalApiKey)-1);}
 
 void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.begin("cfg", false);
@@ -183,7 +196,13 @@ void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.putUChar("pixB", c.pixelBrightnessPercent); prefs.putUChar("stbyB", c.standbyBrightnessPercent); prefs.putBool("pixDbg", c.pixelDebugAllOn);
   prefs.putBool("r2en", c.ring2Enabled); prefs.putUChar("r2b", c.ring2BrightnessPercent); prefs.putUChar("r2sb", c.ring2StandbyBrightnessPercent);
   prefs.putBool("r2dbg", c.ring2DebugAllOn); prefs.putUChar("r2pat", c.ring2PatternMode);
-  prefs.putString("dev", c.deviceId); prefs.end();
+  prefs.putString("dev", c.deviceId);
+  prefs.putBool("exEn", c.externalEnabled);
+  prefs.putString("exHost", c.externalHost);
+  prefs.putUInt("exPort", c.externalPort);
+  prefs.putString("exPath", c.externalApiPath);
+  prefs.putString("exKey", c.externalApiKey);
+  prefs.end();
 }
 
 void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
@@ -207,6 +226,11 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   if (cfg.ring2StandbyBrightnessPercent > 100) cfg.ring2StandbyBrightnessPercent = 100;
   if (cfg.ring2PatternMode > 2) cfg.ring2PatternMode = DEFAULT_RING2_PATTERN_MODE;
   String dev=prefs.getString("dev", cfg.deviceId); strncpy(cfg.deviceId, dev.c_str(), sizeof(cfg.deviceId)-1);
+  cfg.externalEnabled=prefs.getBool("exEn", cfg.externalEnabled);
+  String exHost=prefs.getString("exHost", cfg.externalHost); strncpy(cfg.externalHost, exHost.c_str(), sizeof(cfg.externalHost)-1);
+  cfg.externalPort=(uint16_t)prefs.getUInt("exPort", cfg.externalPort);
+  String exPath=prefs.getString("exPath", cfg.externalApiPath); strncpy(cfg.externalApiPath, exPath.c_str(), sizeof(cfg.externalApiPath)-1);
+  String exKey=prefs.getString("exKey", cfg.externalApiKey); strncpy(cfg.externalApiKey, exKey.c_str(), sizeof(cfg.externalApiKey)-1);
   prefs.end();
   oledScale=cfg.oledScaleValue;
 }
@@ -268,6 +292,11 @@ void webConfigSetup() {
     parseU8Arg("ring2StandbyBrightnessPercent", n.ring2StandbyBrightnessPercent);
     parseBoolArg("ring2DebugAllOn", n.ring2DebugAllOn);
     parseU8Arg("ring2PatternMode", n.ring2PatternMode);
+    parseBoolArg("externalEnabled", n.externalEnabled);
+    String extHost = server.arg("externalHost"); extHost.trim(); strncpy(n.externalHost, extHost.c_str(), sizeof(n.externalHost)-1); n.externalHost[sizeof(n.externalHost)-1] = '\0';
+    uint32_t extPort = n.externalPort; parseUIntArg("externalPort", extPort); n.externalPort = (uint16_t) extPort;
+    String extPath = server.arg("externalApiPath"); extPath.trim(); strncpy(n.externalApiPath, extPath.c_str(), sizeof(n.externalApiPath)-1); n.externalApiPath[sizeof(n.externalApiPath)-1] = '\0';
+    String extKey = server.arg("externalApiKey"); extKey.trim(); strncpy(n.externalApiKey, extKey.c_str(), sizeof(n.externalApiKey)-1); n.externalApiKey[sizeof(n.externalApiKey)-1] = '\0';
 
     if (!errMsg.length() && (n.startDropPercent < 0 || n.startDropPercent > 100 || n.stopRisePercent < 0 || n.stopRisePercent > 100)) errMsg = "Prozentwerte muessen zwischen 0 und 100 liegen.";
     if (!errMsg.length() && (n.pixelBrightnessPercent > 100 || n.standbyBrightnessPercent > 100)) errMsg = "Helligkeit muss 0..100 sein.";
@@ -279,6 +308,9 @@ void webConfigSetup() {
     if (!errMsg.length() && (n.scaleReadIntervalMs < 10 || n.scaleReadIntervalMs > 500)) errMsg = "scaleReadIntervalMs muss 10..500 ms sein.";
     if (!errMsg.length() && !(n.oledI2cClockHz == 100000 || n.oledI2cClockHz == 200000 || n.oledI2cClockHz == 400000)) errMsg = "oledI2cClockHz muss 100000, 200000 oder 400000 sein.";
     if (!errMsg.length() && (n.objectPresentG <= 0 || n.emptyThresholdG < 0 || n.retareTolG <= 0 || n.standbyWakeThresholdG <= 0 || n.oledScaleValue <= 0)) errMsg = "Gramm- und OLED-Skalierungswerte muessen positiv und sinnvoll sein.";
+    if (!errMsg.length() && n.externalPort == 0) errMsg = "externalPort muss 1..65535 sein.";
+    if (!errMsg.length() && n.externalEnabled && strlen(n.externalHost) == 0) errMsg = "externalHost darf bei aktivierter Schnittstelle nicht leer sein.";
+    if (!errMsg.length() && n.externalEnabled && strlen(n.externalApiPath) == 0) errMsg = "externalApiPath darf bei aktivierter Schnittstelle nicht leer sein.";
 
     if (errMsg.length()) { server.send(400, "text/html", renderConfigPage(n, errMsg)); return; }
     pendingConfig = n;
