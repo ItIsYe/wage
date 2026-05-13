@@ -112,7 +112,14 @@ def list_runs(limit: int = 50, search: str | None = None, person_id: int | None 
     if status:
         query += " AND status=?"
         params.append(status)
-    order_map = {"id_desc": "id DESC", "id_asc": "id ASC", "time_desc": "time_ms DESC", "time_asc": "time_ms ASC", "received_desc": "received_at DESC"}
+    order_map = {
+        "id_desc": "id DESC",
+        "id_asc": "id ASC",
+        "time_desc": "time_ms DESC",
+        "time_asc": "time_ms ASC",
+        "received_desc": "received_at DESC",
+        "received_asc": "received_at ASC",
+    }
     query += f" ORDER BY {order_map.get(sort, 'id DESC')} LIMIT ?"
     params.append(max(1, min(limit, 500)))
     with db_cursor() as (_, cur):

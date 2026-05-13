@@ -60,4 +60,5 @@ def status():
         "last_run_id": app.get("last_run_id"),
         "last_run_received_at": app.get("last_run_received_at"),
         "last_event": app.get("last_event"),
+        "last_device": dict(last_device) if last_device else None,
     }

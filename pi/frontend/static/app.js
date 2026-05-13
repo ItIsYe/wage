@@ -1,21 +1,149 @@
-async function api(url, opts){const r=await fetch(url,opts);const d=await r.json();if(!r.ok) throw new Error(d.detail||'API Fehler');return d;}
-const byId=(id)=>document.getElementById(id);
-const tone=(v)=>v==='ok'||v==='running'||v===true?'status-ok':(String(v).includes('degraded')||v===false?'status-warn':String(v).includes('error')?'status-err':'status-info');
-function flash(msg){const e=byId('msg'); if(e) e.textContent=msg;}
+async function api(url, opts = {}) {
+  const res = await fetch(url, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  return data;
+}
 
-async function loadDashboard(){const root=byId('dash-main');if(!root)return;const s=await api('/api/v1/status');
-const last=s.last_run||{};
-root.innerHTML=`<div class='card ${tone(s.scale_online)}'><div>Waage</div><div class='kpi'>${s.scale_online?'Online':'Offline'}</div><div>${s.last_contact_to_scale||'-'}</div></div>
-<div class='card ${tone(s.api_status)}'><div>API / DB</div><div class='kpi'>${s.api_status} / ${s.database_status}</div><div>${s.pi_url}</div></div>
-<div class='card ${tone(s.led_status)}'><div>LED</div><div class='kpi'>${s.led_status||'-'}</div><div>Last Event: ${s.last_event||'-'}</div></div>
-<div class='card ${tone(s.oled_status)}'><div>OLED</div><div class='kpi'>${s.oled_status||'-'}</div><div>Aktive Person: ${s.active_person?.name||'-'}</div></div>
-<div class='card status-info'><div>Letzter Lauf</div><div class='kpi'>#${last.id||'-'}</div><div>Zeit: ${last.time_ms||'-'} ms / Start: ${last.start_weight_g||'-'} g</div></div>`;
-byId('dash-runs').innerHTML=(s.recent_runs||[]).map(r=>`<div class='card'>#${r.id} · ${r.person_name||'-'} · ${r.start_weight_g}g · ${r.received_at}</div>`).join('')||'Keine Läufe';}
+const byId = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>'"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
+function flash(msg, ok = false) {
+  const el = byId("msg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = ok ? "msg msg-ok" : "msg msg-err";
+}
 
-async function loadStatus(){const e=byId('status');if(!e)return;const s=await api('/api/v1/status');
-e.innerHTML=`<p><b>Pi-IP:</b> ${s.pi_ip}</p><p><b>Pi-URL:</b> ${s.pi_url}</p><p><b>Aktive Person:</b> ${s.active_person?.name||'-'}</p><p><b>Letzter Kontakt:</b> ${s.last_contact_to_scale||'-'}</p><p><b>Scale online:</b> ${s.scale_online}</p><p><b>LED:</b> ${s.led_status}</p><p><b>OLED:</b> ${s.oled_status}</p><p><b>Last run id:</b> ${s.last_run_id||'-'}</p><p><b>Last run received:</b> ${s.last_run_received_at||'-'}</p>`;}
-async function loadRuns(){const t=byId('runs-table');if(!t)return;const q=byId('search')?.value||'';const st=byId('status-filter')?.value||'';const d=await api(`/api/v1/runs?search=${encodeURIComponent(q)}&status=${encodeURIComponent(st)}&limit=100`);t.innerHTML='<tr><th>ID</th><th>Lauf</th><th>Zeit</th><th>Gewicht</th><th>Person</th><th>Status</th><th>Empfangen</th></tr>'+d.runs.map(r=>`<tr><td>${r.id}</td><td>${r.run_number}</td><td>${r.time_ms}</td><td>${r.start_weight_g}</td><td>${r.person_name||'-'}</td><td>${r.status}</td><td>${r.received_at}</td></tr>`).join('');}
-async function loadPersons(){const el=byId('persons-list');if(!el)return;const d=await api('/api/v1/persons');el.innerHTML=d.persons.map(p=>`<div class='card'><div class='kpi'>${p.name}</div><button onclick='activatePerson(${p.id})'>Aktiv setzen</button></div>`).join('');}
-async function addPerson(){await api('/api/v1/persons',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:byId('new-person').value,activate:byId('activate').checked})});byId('new-person').value='';loadPersons();}
-async function activatePerson(id){await api('/api/v1/persons/'+id+'/activate',{method:'POST'});loadPersons();loadDashboard();}
-loadDashboard();loadStatus();loadRuns();loadPersons();
+function statusTone(v) {
+  const s = String(v ?? "").toLowerCase();
+  if (s === "ok" || s.includes("green") || s === "true") return "status-ok";
+  if (s.includes("error") || s.includes("red")) return "status-err";
+  if (s.includes("degraded") || s.includes("yellow") || s === "false") return "status-warn";
+  return "status-info";
+}
+
+async function loadDashboard() {
+  const root = byId("dash-main");
+  if (!root) return;
+  try {
+    const s = await api("/api/v1/status");
+    const last = s.last_run || {};
+    root.innerHTML = `
+      <div class="card ${statusTone(s.scale_online)}"><h3>Waage</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Letzter Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
+      <div class="card ${statusTone(s.api_status)}"><h3>API / Datenbank</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div><div>${esc(s.pi_url || "-")}</div></div>
+      <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status || "-")}</div><div>last_event: ${esc(s.last_event || "-")}</div></div>
+      <div class="card ${statusTone(s.oled_status)}"><h3>OLED</h3><div class="kpi">${esc(s.oled_status || "-")}</div><div>Aktive Person: ${esc(s.active_person?.name || "-")}</div></div>
+      <div class="card status-info"><h3>Letzter Lauf</h3><div class="kpi">#${esc(last.id || "-")}</div><div>Zeit: ${esc(last.time_ms || "-")} ms · Start: ${esc(last.start_weight_g || "-")} g</div></div>
+    `;
+    byId("dash-runs").innerHTML = (s.recent_runs || []).map((r) =>
+      `<div class="list-row">#${esc(r.id)} · Lauf ${esc(r.run_number)} · ${esc(r.person_name || "-")} · ${esc(r.start_weight_g)} g · ${esc(r.received_at)}</div>`
+    ).join("") || "Keine Läufe vorhanden.";
+    flash("", true);
+  } catch (e) {
+    flash(`Dashboard konnte nicht geladen werden: ${e.message}`);
+  }
+}
+
+async function loadStatus() {
+  const root = byId("status-grid");
+  if (!root) return;
+  try {
+    const s = await api("/api/v1/status");
+    byId("qr-url").textContent = s.pi_url || "-";
+    root.innerHTML = `
+      <div class="card ${statusTone(s.scale_online)}"><h3>Waagenstatus</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
+      <div class="card ${statusTone(s.api_status)}"><h3>API/DB</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div></div>
+      <div class="card"><h3>Pi</h3><div>IP: ${esc(s.pi_ip)}</div><div>URL: ${esc(s.pi_url)}</div></div>
+      <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status)}</div></div>
+      <div class="card ${statusTone(s.oled_status)}"><h3>OLED</h3><div class="kpi">${esc(s.oled_status)}</div></div>
+      <div class="card"><h3>Zustand</h3><div>last_event: ${esc(s.last_event || "-")}</div><div>last_run_id: ${esc(s.last_run_id || "-")}</div></div>
+      <div class="card"><h3>Gerätedaten</h3><pre>${esc(JSON.stringify(s.last_device || {}, null, 2))}</pre></div>
+    `;
+  } catch (e) {
+    flash(`Status konnte nicht geladen werden: ${e.message}`);
+  }
+}
+
+async function loadRuns() {
+  const table = byId("runs-body");
+  if (!table) return;
+  try {
+    const q = new URLSearchParams({
+      limit: byId("limit")?.value || "100",
+      search: byId("search")?.value || "",
+      status: byId("status-filter")?.value || "",
+      sort: byId("sort")?.value || "id_desc",
+      person_id: byId("person-filter")?.value || ""
+    });
+    const [runs, persons] = await Promise.all([api(`/api/v1/runs?${q.toString()}`), api("/api/v1/persons")]);
+    const personOptions = persons.persons.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+    table.innerHTML = runs.runs.map((r) => `
+      <tr>
+        <td>${r.id}</td><td>${r.run_number}</td><td>${r.time_ms}</td><td>${r.start_weight_g}</td>
+        <td><select id="run-person-${r.id}">${personOptions}</select></td>
+        <td>${esc(r.received_at)}</td><td>${esc(r.status)}</td>
+        <td><input id="run-note-${r.id}" value="${esc(r.note || "")}" maxlength="200"></td>
+        <td>
+          <button onclick="saveRun(${r.id})">Speichern</button>
+          <button class="btn-danger" onclick="deleteRun(${r.id})">Löschen</button>
+        </td>
+      </tr>`).join("");
+    runs.runs.forEach((r) => { const sel = byId(`run-person-${r.id}`); if (sel) sel.value = String(r.person_id || 1); });
+    flash(`${runs.count} Läufe geladen.`, true);
+  } catch (e) {
+    flash(`Läufe konnten nicht geladen werden: ${e.message}`);
+  }
+}
+
+async function saveRun(id) {
+  try {
+    await api(`/api/v1/runs/${id}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({person_id: Number(byId(`run-person-${id}`).value), note: byId(`run-note-${id}`).value})});
+    flash(`Lauf ${id} aktualisiert.`, true);
+  } catch (e) { flash(`Lauf ${id} konnte nicht gespeichert werden: ${e.message}`); }
+}
+async function deleteRun(id) {
+  if (!confirm(`Lauf ${id} wirklich löschen?`)) return;
+  try { await api(`/api/v1/runs/${id}`, {method: "DELETE"}); await loadRuns(); } catch (e) { flash(`Lauf ${id} konnte nicht gelöscht werden: ${e.message}`); }
+}
+
+async function loadPersons() {
+  const root = byId("persons-list");
+  const filter = byId("person-filter");
+  if (!root && !filter) return;
+  try {
+    const d = await api("/api/v1/persons");
+    if (filter) filter.innerHTML = `<option value="">alle Personen</option>` + d.persons.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+    if (!root) return;
+    root.innerHTML = d.persons.map((p) => `<div class="card"><div class="kpi">${esc(p.name)}</div>
+      <div class="toolbar">
+        <input id="rename-${p.id}" value="${esc(p.name)}" ${p.id===1?"disabled":""}>
+        <button onclick="activatePerson(${p.id})" ${d.active_person_id===p.id?"disabled":""}>${d.active_person_id===p.id?"Aktiv":"Aktiv setzen"}</button>
+        <button onclick="renamePerson(${p.id})" ${p.id===1?"disabled":""}>Umbenennen</button>
+        <button class="btn-danger" onclick="deletePerson(${p.id})" ${p.id===1?"disabled":""}>Löschen</button>
+      </div></div>`).join("");
+  } catch (e) { flash(`Personen konnten nicht geladen werden: ${e.message}`); }
+}
+
+async function addPerson() {
+  try {
+    await api("/api/v1/persons", {method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({name: byId("new-person").value, activate: byId("activate").checked})});
+    byId("new-person").value = "";
+    await loadPersons();
+    flash("Person angelegt.", true);
+  } catch (e) { flash(`Person konnte nicht angelegt werden: ${e.message}`); }
+}
+async function renamePerson(id) {
+  try { await api(`/api/v1/persons/${id}`, {method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name: byId(`rename-${id}`).value})}); await loadPersons(); flash("Person umbenannt.", true);} catch (e) { flash(`Umbenennen fehlgeschlagen: ${e.message}`); }
+}
+async function deletePerson(id) {
+  if (!confirm("Person wirklich löschen?")) return;
+  try { await api(`/api/v1/persons/${id}`, {method:"DELETE"}); await loadPersons(); flash("Person gelöscht.", true);} catch (e) { flash(`Löschen fehlgeschlagen: ${e.message}`); }
+}
+async function activatePerson(id) {
+  try { await api(`/api/v1/persons/${id}/activate`, {method:"POST"}); await loadPersons(); await loadDashboard(); flash("Aktive Person geändert.", true);} catch (e) { flash(`Aktivieren fehlgeschlagen: ${e.message}`); }
+}
+
+loadDashboard();
+loadStatus();
+loadPersons();
+loadRuns();
