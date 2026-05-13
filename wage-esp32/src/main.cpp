@@ -49,7 +49,6 @@ State state = State::BOOT_MSG;
 ErrCode err = ErrCode::OK;
 
 RuntimeConfig activeConfig;
-static RuntimeConfig pendingConfig;
 
 /* =========================================================
    RUNTIME VARIABLES
@@ -563,7 +562,7 @@ static void stateMachineService(uint32_t now) {
 
 static void applyPendingConfigIfAllowed(){
   if (!(webHasPendingConfig() && state == State::IDLE_WAIT_GLASS)) return;
-  pendingConfig = webGetPendingConfig();
+  const RuntimeConfig pendingConfig = webGetPendingConfig();
   activeConfig = pendingConfig;
   oledScale = activeConfig.oledScaleValue;
   Wire.setClock(activeConfig.oledI2cClockHz);
