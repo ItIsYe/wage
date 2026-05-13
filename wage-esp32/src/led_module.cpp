@@ -7,9 +7,11 @@
 
 extern RuntimeConfig activeConfig;
 
+// Ring 1 / Haupt-LED-Ring
 static Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
 static LedRingContext primaryLedRing{&ledStrip, PIXEL_COUNT};
 #if RING2_ENABLED
+// Ring 2 / Zusatz-LED-Ring
 static Adafruit_NeoPixel ring2Strip(RING2_PIXEL_COUNT, RING2_PIN, NEO_GRB + NEO_KHZ800);
 static LedRingContext secondaryLedRing{&ring2Strip, RING2_PIXEL_COUNT};
 #endif
@@ -46,6 +48,7 @@ static inline uint8_t brightnessPercentToByte(uint8_t percent) {
   return (uint8_t)((uint16_t)percent * 255u / 100u);
 }
 
+// Basis-Helfer Ring 1
 static inline void pixelsClear() { primaryLedRing.strip->clear(); }
 static inline void pixelsShow() { primaryLedRing.strip->show(); }
 
@@ -58,6 +61,7 @@ static inline void setStripBrightnessPercent(uint8_t percent) {
 }
 
 #if RING2_ENABLED
+// Basis-Helfer Ring 2
 static inline void ring2SetBrightnessPercent(uint8_t percent) {
   const uint8_t target = brightnessPercentToByte(percent);
   if (ring2BrightnessInitialized && ring2BrightnessByte == target) return;

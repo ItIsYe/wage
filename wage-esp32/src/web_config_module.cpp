@@ -102,8 +102,8 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   if (state == State::TIMING) { h += F("<div class='err'><b>Info:</b> Reset wird erst nach der Messung ausgefuehrt</div>"); }
   if (resetStatusMsg.length()) { h += F("<div class='err'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</div>"); }
   h += F("<form method='POST' action='/reset-error'><button type='submit'>Fehlerreset / Neu nullen</button></form>");
-  h += F("<form method='POST' action='/debug/off'><button type='submit'>Debug deaktivieren</button></form>");
-  h += F("<p><a href='/debug/off'>Debug via Link deaktivieren</a></p>");
+  h += F("<form method='POST' action='/debug/off'><button type='submit'>Alle Debug-Modi deaktivieren</button></form>");
+  h += F("<p><a href='/debug/off'>Alle Debug-Modi per Link deaktivieren</a></p>");
   h += F("<form method='POST' action='/save'>");
   h += F("<fieldset><legend>System</legend><label>Device-ID</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>1 bis 31 Zeichen</small>");
   h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION; h += F("' readonly>");
@@ -127,12 +127,12 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>oledRotation</label><input type='number' min='0' max='3' name='oledRotation' value='"); h += String(c.oledRotation); h += F("'>");
   h += F("<label>oledScaleValue</label><input type='number' step='0.1' min='0.1' name='oledScaleValue' value='"); h += String(c.oledScaleValue,2); h += F("'>");
   h += F("<label><input type='checkbox' name='debugMode' "); if (c.debugMode) h += F("checked"); h += F("> Gewichts-Debug auf OLED anzeigen</label>");
-  h += F("<label><input type='checkbox' name='oledDebugMode' "); if (c.oledDebugMode) h += F("checked"); h += F("> oledDebugMode</label></fieldset>");
-  h += F("<fieldset><legend>Pixel</legend>");
+  h += F("<label><input type='checkbox' name='oledDebugMode' "); if (c.oledDebugMode) h += F("checked"); h += F("> OLED-Pixel-Debug anzeigen</label></fieldset>");
+  h += F("<fieldset><legend>Ring 1 / Haupt-LED-Ring</legend>");
   h += F("<label>pixelBrightnessPercent (%)</label><input type='number' min='0' max='100' name='pixelBrightnessPercent' value='"); h += String(c.pixelBrightnessPercent); h += F("'>");
   h += F("<label>standbyBrightnessPercent (%)</label><input type='number' min='0' max='100' name='standbyBrightnessPercent' value='"); h += String(c.standbyBrightnessPercent); h += F("'>");
-  h += F("<label><input type='checkbox' name='pixelDebugAllOn' "); if (c.pixelDebugAllOn) h += F("checked"); h += F("> pixelDebugAllOn</label></fieldset>");
-  h += F("<fieldset><legend>Ring 2</legend>");
+  h += F("<label><input type='checkbox' name='pixelDebugAllOn' "); if (c.pixelDebugAllOn) h += F("checked"); h += F("> Ring 1 Debug: alle Pixel an</label></fieldset>");
+  h += F("<fieldset><legend>Ring 2 / Zusatz-LED-Ring</legend>");
   h += F("<label><input type='checkbox' name='ring2Enabled' "); if (c.ring2Enabled) h += F("checked"); h += F("> Ring 2 aktiv</label>");
   h += F("<label>Ring 2 Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2BrightnessPercent' value='"); h += String(c.ring2BrightnessPercent); h += F("'>");
   h += F("<label>Ring 2 Standby-Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2StandbyBrightnessPercent' value='"); h += String(c.ring2StandbyBrightnessPercent); h += F("'>");
@@ -154,8 +154,8 @@ static String renderBusyPage(const String& hint = "") {
   if (resetStatusMsg.length()) { h += F("<p class='hint'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</p>"); }
   h += F("<form method='GET' action='/'><button type='submit'>Neu laden</button></form>");
   h += F("<form method='POST' action='/reset'><button type='submit'>Reset anfordern</button></form>");
-  h += F("<form method='POST' action='/debug/off'><button type='submit'>Debug deaktivieren</button></form>");
-  h += F("<p><a href='/debug/off'>Debug via Link deaktivieren</a></p>");
+  h += F("<form method='POST' action='/debug/off'><button type='submit'>Alle Debug-Modi deaktivieren</button></form>");
+  h += F("<p><a href='/debug/off'>Alle Debug-Modi per Link deaktivieren</a></p>");
   h += F("</body></html>");
   return h;
 }
