@@ -1,0 +1,178 @@
+# wage-pi (nur Raspberry-Pi-Code unter `/pi`)
+
+> **Wichtig:** Dieses Verzeichnis enthält ausschließlich den Raspberry-Pi-Teil. Alles außerhalb von `/pi` wird ignoriert und nicht verändert.
+
+## Projektziel
+Der Pi ist lokale Datenzentrale und UI:
+- HTTP-Backend (FastAPI)
+- SQLite-Datenbank
+- Haupt-Webinterface (Dashboard, Läufe, Personen, Status)
+- Touchdisplay/Kiosk-Oberfläche
+- kleines OLED-Info-Display
+- WS2812B-LED-Statusanzeige
+- Betrieb als systemd-Services
+
+## Abgrenzung zur Waage
+- Der Pi ist **passiver Empfänger**.
+- Die Waage/ESP32 ist **aktiver Sender**.
+- Der Pi steuert die Waage **nicht**.
+- Der Pi fragt Messwerte **nicht aktiv** ab.
+- Der Pi empfängt fertige Läufe per HTTP (`POST /api/v1/runs`).
+
+## Ordnerstruktur
+- `backend/`: FastAPI, API-Endpoints, DB-Init
+- `frontend/`: Jinja2-Templates + statische Dateien
+- `oled/`: OLED-Service (degraded-fähig)
+- `leds/`: LED-Service (degraded-fähig)
+- `scripts/`: Installation, Dev-Start, Kiosk, API-Test
+- `systemd/`: Unit-Dateien
+- `data/`: SQLite-Datei (`wage_pi.sqlite3`)
+- `logs/`: lokale Logs
+
+## Hardwareübersicht
+- Raspberry Pi (empfohlen mit LAN/WLAN)
+- OLED I2C (SSD1306 bevorzugt, SH1106 Fallback)
+- WS2812B LED-Streifen
+- optional Touchdisplay mit Chromium Kiosk
+
+## Pinbelegung OLED
+- Bus: I2C (`/dev/i2c-1`)
+- Standardadresse: `0x3C` (env überschreibbar)
+- 3.3V, GND, SDA, SCL nach Standard-Pi-I2C-Belegung
+
+## Pinbelegung WS2812B
+- Datenpin: GPIO18
+- Stromversorgung extern und korrekt mit GND-Referenz
+- Helligkeit absichtlich niedrig voreingestellt
+
+## Touchdisplay / Kiosk
+Script:
+```bash
+bash scripts/kiosk_start.sh
+```
+Verwendet `WAGE_PI_KIOSK_URL` (Default `http://localhost:8000`).
+
+## Installation
+```bash
+cd pi
+bash scripts/install.sh
+```
+Installiert Pakete, erstellt `.venv`, installiert Python-Requirements, legt Verzeichnisse an, installiert/aktiviert systemd-Units.
+
+## Entwicklungsstart
+```bash
+cd pi
+bash scripts/start_dev.sh
+```
+Startet `uvicorn backend.main:app --host 0.0.0.0 --port 8000`.
+
+## systemd-Installation
+```bash
+cd pi
+bash scripts/create_services.sh
+sudo systemctl enable wage-pi-backend wage-pi-oled wage-pi-leds
+```
+Standard-WorkingDirectory in Units: `/home/pi/wage/pi`.
+
+## Services bedienen
+```bash
+sudo systemctl start wage-pi-backend wage-pi-oled wage-pi-leds
+sudo systemctl stop wage-pi-backend wage-pi-oled wage-pi-leds
+sudo systemctl status wage-pi-backend wage-pi-oled wage-pi-leds
+journalctl -u wage-pi-backend -f
+```
+
+## API-Dokumentation
+- Swagger UI: `GET /docs`
+- Health: `GET /api/v1/health`
+- Läufe: `POST /api/v1/runs`, `POST /api/v1/runs/batch`, `GET /api/v1/runs`, `PUT/DELETE /api/v1/runs/{id}`
+- Personen: `GET/POST/PUT/DELETE /api/v1/persons`, `POST /api/v1/persons/{id}/activate`
+- Status: `GET /api/v1/status`
+
+## curl-Beispiele
+```bash
+# health
+curl -s http://localhost:8000/api/v1/health | jq
+
+# Lauf senden
+curl -s -X POST http://localhost:8000/api/v1/runs \
+  -H 'content-type: application/json' \
+  -d '{"protocol_version":"1.0","device_id":"scale-001","boot_id":"boot-abc","run_number":1,"event_id":"unique-event-id","time_ms":12345,"start_weight_g":87.5,"status":"ok","firmware_version":"0.1.0","queue_depth":0}' | jq
+
+# Batch senden
+curl -s -X POST http://localhost:8000/api/v1/runs/batch \
+  -H 'content-type: application/json' \
+  -d '{"runs":[{"protocol_version":"1.0","device_id":"scale-001","boot_id":"boot-abc","run_number":1,"event_id":"evt-1","time_ms":123,"start_weight_g":10.0,"status":"ok","firmware_version":"0.1.0","queue_depth":0}]}' | jq
+
+# Person anlegen
+curl -s -X POST http://localhost:8000/api/v1/persons -H 'content-type: application/json' -d '{"name":"Max","activate":false}' | jq
+
+# Person aktiv setzen
+curl -s -X POST http://localhost:8000/api/v1/persons/2/activate | jq
+
+# Status abrufen
+curl -s http://localhost:8000/api/v1/status | jq
+```
+
+## Datenbankschema
+SQLite-Datei: `pi/data/wage_pi.sqlite3`
+- `persons`
+- `devices`
+- `runs` (inkl. `UNIQUE(device_id, event_id)`)
+- `app_state`
+
+## LED-Statuslogik
+- Weiß: Start
+- Blau: Backend ok, noch kein Waagenkontakt
+- Grün: Waage online
+- Gelb: Waage offline/kein aktueller Kontakt
+- Kurz blau blinkend: neuer Lauf
+- Rot: API/DB-Fehler
+- Rot blinkend: schwerer Fehler
+- `degraded:<Fehlerklasse>` bei fehlender Lib/GPIO/Hardware
+
+## OLED-Anzeige
+- Titel `wage-pi`
+- URL/IP
+- aktive Person
+- Waage online/offline + Kontaktstatus
+- API/DB-Status
+- QR-Code wenn möglich, sonst Klartext-URL
+- bei Fehlern: degraded-Status, kein Backend-Absturz
+
+## Umgebungsvariablen
+- `WAGE_PI_LED_COUNT`
+- `WAGE_PI_LED_BRIGHTNESS`
+- `WAGE_PI_OLED_ADDRESS`
+- `WAGE_PI_URL` (Testskript)
+- `WAGE_PI_KIOSK_URL`
+- `WAGE_PI_OFFLINE_THRESHOLD_SECONDS`
+
+## Testskript
+```bash
+cd pi
+bash scripts/test_api.sh
+```
+Prüft Health, Personen, Aktivierung, Laufannahme, Duplikaterkennung, Runs, Status inkl. LED/OLED-Felder.
+
+## Fehlerbehebung
+- API läuft nicht: `journalctl -u wage-pi-backend -f`
+- DB fehlt: Backend starten, `pi/data/wage_pi.sqlite3` prüfen
+- OLED nicht erkannt: I2C aktivieren, Adresse prüfen (`i2cdetect -y 1`)
+- LED benötigt Rechte: Service mit passenden GPIO-Rechten starten
+- `rpi_ws281x` fehlt: `pip install -r requirements.txt`
+- `luma.oled` fehlt: `pip install -r requirements.txt`
+- I2C nicht aktiv: per `raspi-config` aktivieren
+- Port 8000 belegt: Prozess beenden oder Port ändern
+
+## Testplan
+1. Backend starten (`start_dev.sh`)
+2. `GET /api/v1/health`
+3. Lauf senden (`POST /api/v1/runs`)
+4. denselben Lauf erneut senden (`duplicate=true`)
+5. `GET /api/v1/runs`
+6. Personen anlegen/aktivieren
+7. neuen Lauf senden und Personzuordnung prüfen
+8. `GET /api/v1/status` auf Pflichtfelder prüfen
+9. `/`, `/runs`, `/persons`, `/status`, `/docs` im Browser prüfen
+10. `scripts/test_api.sh` erfolgreich ausführen

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Personen</h1>
+<div class="toolbar">
+  <input id="new-person" placeholder="Name eingeben">
+  <label><input type="checkbox" id="activate"> direkt aktiv</label>
+  <button onclick="addPerson()">Groß: Hinzufügen</button>
+</div>
+<div id="persons-list" class="grid"></div>
+{% endblock %}
