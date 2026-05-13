@@ -75,7 +75,7 @@ static uint32_t recoverUntilMs = 0;
 
 static uint32_t bootId = 0;
 static uint32_t runCounter = 0;
-static uint32_t lastExternalOledHintMs = 0;
+static uint32_t lastShownExternalErrorEvent = 0;
 
 static bool oledDebugLedsCleared = false;
 
@@ -159,8 +159,7 @@ static RunDataSnapshot buildRunDataSnapshot(uint32_t now, uint32_t durationMs) {
 static void finalizeTiming(uint32_t now) {
   const uint32_t dt = now - tStartMs;
   const RunDataSnapshot runData = buildRunDataSnapshot(now, dt);
-  const bool queued = externalInterfaceEnqueueRun(runData);
-  if (!queued && !activeConfig.debugMode) showStatus("Extern-Queue voll", "Lokaler Lauf OK");
+  (void)externalInterfaceEnqueueRun(runData);
   char buf[24];
   snprintf(buf, sizeof(buf), "Zeit: %.1fs", dt / 1000.0f);
   showStatus("Fertig", buf);
@@ -654,11 +653,20 @@ void loop() {
     state == State::STANDBY
   );
   externalInterfaceService(now, safeToRetry);
-  if (externalInterfaceQueueDepth() > 0 && strcmp(externalInterfaceLastStatus(), "send ok") != 0) {
-    if (!activeConfig.debugMode && (now - lastExternalOledHintMs) > 1500) {
-      showStatus("Extern senden...", "Retry aktiv");
-      lastExternalOledHintMs = now;
-    }
+  const bool externalHintStateOk = (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
+  const uint32_t currentErrorEvent = externalInterfaceErrorEventCounter();
+  const bool canShowExternalHint = (
+    activeConfig.externalEnabled &&
+    !activeConfig.debugMode &&
+    !activeConfig.oledDebugMode &&
+    !activeConfig.pixelDebugAllOn &&
+    externalHintStateOk
+  );
+  if (canShowExternalHint && externalInterfaceHasSendError() && currentErrorEvent != lastShownExternalErrorEvent) {
+    char queueLine[24];
+    snprintf(queueLine, sizeof(queueLine), "Queue: %u", (unsigned)externalInterfaceQueueDepth());
+    showStatus("Sendefehler", queueLine);
+    lastShownExternalErrorEvent = currentErrorEvent;
   }
 
   const uint32_t webStartUs = PERFORMANCE_DEBUG ? micros() : 0;
