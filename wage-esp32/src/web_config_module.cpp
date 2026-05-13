@@ -6,6 +6,7 @@
 
 #include "config.h"
 #include "display_module.h"
+#include "external_interface_module.h"
 
 extern State state;
 extern ErrCode err;
@@ -140,11 +141,13 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>Ring 2 Pattern</label><select name='ring2PatternMode'><option value='0'"); if (c.ring2PatternMode == 0) h += F(" selected"); h += F(">Aus</option><option value='1'"); if (c.ring2PatternMode == 1) h += F(" selected"); h += F(">Solid Blau</option><option value='2'"); if (c.ring2PatternMode == 2) h += F(" selected"); h += F(">Pulse Blau</option></select></fieldset>");
 
   h += F("<fieldset><legend>Externe Schnittstelle</legend>");
-  h += F("<label><input type='checkbox' name='externalEnabled' "); if (c.externalEnabled) h += F("checked"); h += F("> Externes Senden aktiv</label>");
-  h += F("<label>External Host</label><input name='externalHost' maxlength='63' value='"); h += htmlEscape(String(c.externalHost)); h += F("'>");
-  h += F("<label>External Port</label><input type='number' min='1' max='65535' name='externalPort' value='"); h += String(c.externalPort); h += F("'>");
-  h += F("<label>External API Path</label><input name='externalApiPath' maxlength='63' value='"); h += htmlEscape(String(c.externalApiPath)); h += F("'><small>z.B. /api/v1/runs</small>");
-  h += F("<label>External API Key</label><input name='externalApiKey' maxlength='63' value='"); h += htmlEscape(String(c.externalApiKey)); h += F("'></fieldset>");
+  h += F("<label><input type='checkbox' name='externalEnabled' "); if (c.externalEnabled) h += F("checked"); h += F("> Externe Schnittstelle aktiv</label>");
+  h += F("<label>Ziel-Host / IP</label><input name='externalHost' maxlength='63' value='"); h += htmlEscape(String(c.externalHost)); h += F("'>");
+  h += F("<label>Port</label><input type='number' min='1' max='65535' name='externalPort' value='"); h += String(c.externalPort); h += F("'>");
+  h += F("<label>API-Pfad</label><input name='externalApiPath' maxlength='63' value='"); h += htmlEscape(String(c.externalApiPath)); h += F("'><small>z.B. /api/v1/runs</small>");
+  h += F("<label>API-Key</label><input name='externalApiKey' maxlength='63' value='"); h += htmlEscape(String(c.externalApiKey)); h += F("'>");
+  h += F("<label>Queue-Tiefe</label><input value='"); h += String(externalInterfaceQueueDepth()); h += F("' readonly>");
+  h += F("<label>Letzter Sendestatus</label><input value='"); h += htmlEscape(String(externalInterfaceLastStatus())); h += F("' readonly></fieldset>");
 
   h += F("<button type='submit'>Speichern</button></form></body></html>");
   return h;

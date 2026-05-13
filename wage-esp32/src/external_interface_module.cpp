@@ -20,6 +20,8 @@ uint32_t lastSendAttemptMs = 0;
 char lastStatus[96] = "idle";
 char firmwareVersion[32] = "unknown";
 ExternalTransportConfig transportCfg{};
+bool lastSendError = false;
+uint32_t sendErrorEventCounter = 0;
 
 bool hasValidTarget() {
   return transportCfg.enabled && transportCfg.host[0] != '\0' && transportCfg.apiPath[0] != '\0';
@@ -28,6 +30,24 @@ bool hasValidTarget() {
 void setStatus(const char* text) {
   strncpy(lastStatus, text, sizeof(lastStatus) - 1);
   lastStatus[sizeof(lastStatus) - 1] = '\0';
+}
+
+void setSendErrorState(bool hasError) {
+  if (lastSendError != hasError) {
+    lastSendError = hasError;
+    sendErrorEventCounter++;
+  }
+}
+
+bool bodySignalsAccepted(const String& body) {
+  if (body.length() == 0) return false;
+  String compact;
+  compact.reserve(body.length());
+  for (size_t i = 0; i < body.length(); ++i) {
+    const char c = body.charAt(i);
+    if (c != ' ' && c != '\n' && c != '\r' && c != '\t') compact += c;
+  }
+  return compact.indexOf("\"accepted\":true") >= 0 || compact.indexOf("\"duplicate\":true") >= 0;
 }
 
 String buildPayload(const RunDataSnapshot& run) {
@@ -68,18 +88,20 @@ bool trySendHead() {
 
   const String payload = buildPayload(run);
   const int code = http.POST((uint8_t*)payload.c_str(), payload.length());
+  String responseBody;
+  if (code > 0) responseBody = http.getString();
   http.end();
 
-  if (code >= 200 && code < 300) {
+  if ((code >= 200 && code < 300) || bodySignalsAccepted(responseBody)) {
     queueHead = (queueHead + 1) % EXTERNAL_QUEUE_MAX;
     queueCount--;
     setStatus("send ok");
+    setSendErrorState(false);
     return true;
   }
 
-  char msg[64];
-  snprintf(msg, sizeof(msg), "send fail http=%d", code);
-  setStatus(msg);
+  setStatus("send fail");
+  setSendErrorState(true);
   return false;
 }
 }  // namespace
@@ -89,12 +111,15 @@ void externalInterfaceInit(const RuntimeConfig& cfg, const char* fwVersion) {
   queueHead = 0;
   queueCount = 0;
   lastSendAttemptMs = 0;
+  lastSendError = false;
+  sendErrorEventCounter = 0;
   externalInterfaceUpdateConfig(cfg);
   if (fwVersion != nullptr) {
     strncpy(firmwareVersion, fwVersion, sizeof(firmwareVersion) - 1);
     firmwareVersion[sizeof(firmwareVersion) - 1] = '\0';
   }
   setStatus("ready");
+  setSendErrorState(false);
 }
 
 void externalInterfaceUpdateConfig(const RuntimeConfig& cfg) {
@@ -109,21 +134,33 @@ void externalInterfaceUpdateConfig(const RuntimeConfig& cfg) {
 }
 
 bool externalInterfaceEnqueueRun(const RunDataSnapshot& snapshot) {
+  bool droppedOldest = false;
   if (queueCount >= EXTERNAL_QUEUE_MAX) {
-    setStatus("queue full");
-    return false;
+    queueHead = (queueHead + 1) % EXTERNAL_QUEUE_MAX;
+    queueCount--;
+    droppedOldest = true;
   }
   const size_t pos = (queueHead + queueCount) % EXTERNAL_QUEUE_MAX;
   queueBuf[pos] = snapshot;
   queueCount++;
-  setStatus("queued");
+  setStatus(droppedOldest ? "queue full dropped oldest" : "queued");
   return true;
 }
 
 void externalInterfaceService(uint32_t now, bool safeToRetry) {
+  if (!transportCfg.enabled) {
+    if (queueCount != 0) {
+      queueHead = 0;
+      queueCount = 0;
+    }
+    setStatus("disabled");
+    setSendErrorState(false);
+    return;
+  }
   if (queueCount == 0) return;
   if (!hasValidTarget()) {
-    setStatus("disabled/no target");
+    setStatus("no target");
+    setSendErrorState(true);
     return;
   }
   if (!safeToRetry) return;
@@ -135,3 +172,5 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
 size_t externalInterfaceQueueDepth() { return queueCount; }
 
 const char* externalInterfaceLastStatus() { return lastStatus; }
+bool externalInterfaceHasSendError() { return lastSendError; }
+uint32_t externalInterfaceErrorEventCounter() { return sendErrorEventCounter; }
