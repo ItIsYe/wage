@@ -1,0 +1,13 @@
+[Unit]
+Description=WAGE Pi LED Service
+After=wage-pi-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/wage/pi
+ExecStart=/home/pi/wage/pi/.venv/bin/python leds/led_service.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=WAGE Pi OLED Service
+After=wage-pi-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/wage/pi
+ExecStart=/home/pi/wage/pi/.venv/bin/python oled/oled_service.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
