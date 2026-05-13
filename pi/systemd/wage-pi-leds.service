@@ -1,13 +1,15 @@
 [Unit]
 Description=WAGE Pi LED Service
-After=wage-pi-backend.service
+After=network-online.target wage-pi-backend.service
+Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=/home/pi/wage/pi
 ExecStart=/home/pi/wage/pi/.venv/bin/python leds/led_service.py
 Restart=always
-RestartSec=3
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target

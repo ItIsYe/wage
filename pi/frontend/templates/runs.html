@@ -1,1 +1,11 @@
-{% extends "base.html" %}{% block content %}<h1>Läufe</h1><div><input id="search" placeholder="Suche"><button onclick="loadRuns()">Suchen</button></div><table id="runs-table"></table>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<h1>Läufe</h1>
+<div class="toolbar">
+  <input id="search" placeholder="Suche">
+  <select id="status-filter"><option value="">Status alle</option><option>ok</option><option>error</option></select>
+  <select id="sort"><option value="id_desc">Neueste</option><option value="id_asc">Älteste</option><option value="time_desc">Zeit absteigend</option></select>
+  <button onclick="loadRuns()">Anzeigen</button>
+</div>
+<table id="runs-table"></table>
+{% endblock %}

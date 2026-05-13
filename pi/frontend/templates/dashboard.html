@@ -1,1 +1,9 @@
-{% extends "base.html" %}{% block content %}<h1>Dashboard</h1><pre id="dashboard"></pre>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+<div id="msg" class="msg"></div>
+<div class="grid2">
+  <div class="card" id="dash-main"></div>
+  <div class="card"><h2>Letzte Läufe</h2><div id="dash-runs"></div></div>
+</div>
+{% endblock %}
