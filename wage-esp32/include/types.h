@@ -60,6 +60,11 @@ struct RuntimeConfig {
   bool ring2DebugAllOn;
   uint8_t ring2PatternMode;
   char deviceId[32];
+  bool externalEnabled;
+  char externalHost[64];
+  uint16_t externalPort;
+  char externalApiPath[64];
+  char externalApiKey[64];
 };
 
 struct LedRingContext {
@@ -68,11 +73,14 @@ struct LedRingContext {
 };
 
 struct RunDataSnapshot {
+  char eventId[48];
+  char deviceId[32];
+  uint32_t bootId;
+  uint32_t runNumber;
   uint32_t finishedAtMs;
   uint32_t durationMs;
   float referenceWeightG;
   float minWeightG;
   float startDropThresholdG;
   float stopRiseThresholdG;
-  char deviceId[32];
 };

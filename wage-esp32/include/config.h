@@ -26,6 +26,16 @@ static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000;
 
 static const char* OLED_SCALE_CONFIG = "1,5";
 
+// Externe Schnittstelle (Pi/Empfaenger)
+static constexpr bool EXTERNAL_INTERFACE_ENABLED_DEFAULT = false;
+static const char* EXTERNAL_TARGET_HOST_DEFAULT = "";
+static constexpr uint16_t EXTERNAL_TARGET_PORT_DEFAULT = 80;
+static const char* EXTERNAL_API_PATH_DEFAULT = "/api/v1/runs";
+static const char* EXTERNAL_API_KEY_DEFAULT = "";
+static constexpr uint32_t EXTERNAL_SEND_TIMEOUT_MS = 800;
+static constexpr uint32_t EXTERNAL_RETRY_INTERVAL_MS = 5000;
+static constexpr size_t EXTERNAL_QUEUE_MAX = 50;
+
 // Performance-Takte
 static constexpr uint32_t DEFAULT_OLED_TIMING_REFRESH_MS = 200;
 static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
