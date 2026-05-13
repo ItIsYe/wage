@@ -1,1 +1,10 @@
-{% extends "base.html" %}{% block content %}<h1>Personen</h1><input id="new-person" placeholder="Name"><label><input type="checkbox" id="activate"> sofort aktiv</label><button onclick="addPerson()">Hinzufügen</button><ul id="persons-list"></ul>{% endblock %}
+{% extends "base.html" %}
+{% block content %}
+<h1>Personen</h1>
+<div class="toolbar">
+  <input id="new-person" placeholder="Name">
+  <label><input type="checkbox" id="activate"> direkt aktiv</label>
+  <button onclick="addPerson()">Hinzufügen</button>
+</div>
+<div id="persons-list"></div>
+{% endblock %}

@@ -1,4 +1,11 @@
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
-jinja2==3.1.6
-pydantic==2.11.4
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+jinja2==3.1.4
+pydantic==2.9.2
+
+# optional (OLED)
+luma.oled==3.13.0
+pillow==10.4.0
+
+# optional (LED)
+rpi-ws281x==5.0.0

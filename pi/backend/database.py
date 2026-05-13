@@ -10,8 +10,10 @@ def utc_now_iso() -> str:
 
 
 def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
@@ -49,36 +51,36 @@ def init_db() -> None:
                 person_id INTEGER,
                 person_name TEXT,
                 note TEXT DEFAULT '',
-                UNIQUE(device_id, event_id)
+                UNIQUE(device_id, event_id),
+                FOREIGN KEY(person_id) REFERENCES persons(id) ON DELETE SET NULL
             );
 
             CREATE TABLE IF NOT EXISTS app_state (
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
+
+            CREATE INDEX IF NOT EXISTS idx_runs_received_at ON runs(received_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_runs_person_id ON runs(person_id);
+            CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+            CREATE INDEX IF NOT EXISTS idx_runs_boot_run ON runs(device_id, boot_id, run_number);
             """
         )
-        conn.execute(
-            "INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)",
-            (utc_now_iso(),),
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')"
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'unknown')"
-        )
-        conn.execute(
-            "INSERT OR IGNORE INTO app_state (key, value) VALUES ('oled_status', 'unknown')"
-        )
-        conn.commit()
+        conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
+        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
+        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")
+        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('oled_status', 'init')")
 
 
 @contextmanager
 def db_cursor():
     conn = get_connection()
+    cur = conn.cursor()
     try:
-        yield conn, conn.cursor()
+        yield conn, cur
         conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()

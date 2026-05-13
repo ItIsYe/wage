@@ -1,8 +1,9 @@
 import sqlite3
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, HTTPException
 
 from .database import db_cursor, utc_now_iso
-from .schemas import RunBatchIn, RunIn
+from .schemas import RunBatchIn, RunIn, RunUpdate
 
 router = APIRouter(prefix="/api/v1/runs", tags=["runs"])
 
@@ -11,7 +12,7 @@ def _active_person(cur):
     row = cur.execute("SELECT value FROM app_state WHERE key='active_person_id'").fetchone()
     pid = int(row[0]) if row else 1
     person = cur.execute("SELECT id, name FROM persons WHERE id=?", (pid,)).fetchone()
-    return person["id"], person["name"]
+    return (1, "Unbekannt") if not person else (person["id"], person["name"])
 
 
 def _insert_run(cur, run: RunIn):
@@ -24,9 +25,18 @@ def _insert_run(cur, run: RunIn):
             firmware_version, queue_depth, received_at, person_id, person_name, note)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')""",
             (
-                run.device_id, run.boot_id, run.run_number, run.event_id, run.time_ms,
-                run.start_weight_g, run.status, run.firmware_version, run.queue_depth,
-                received_at, person_id, person_name,
+                run.device_id,
+                run.boot_id,
+                run.run_number,
+                run.event_id,
+                run.time_ms,
+                run.start_weight_g,
+                run.status,
+                run.firmware_version,
+                run.queue_depth,
+                received_at,
+                person_id,
+                person_name,
             ),
         )
         run_id = cur.lastrowid
@@ -36,6 +46,13 @@ def _insert_run(cur, run: RunIn):
             "SELECT id, received_at, person_id, person_name FROM runs WHERE device_id=? AND event_id=?",
             (run.device_id, run.event_id),
         ).fetchone()
+        if not existing:
+            existing = cur.execute(
+                "SELECT id, received_at, person_id, person_name FROM runs WHERE device_id=? AND boot_id=? AND run_number=?",
+                (run.device_id, run.boot_id, run.run_number),
+            ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=500, detail="Duplikat konnte nicht aufgelöst werden")
         run_id = existing["id"]
         received_at = existing["received_at"]
         person_id = existing["person_id"]
@@ -90,26 +107,27 @@ def list_runs(limit: int = 50, search: str | None = None, person_id: int | None 
     if status:
         query += " AND status=?"
         params.append(status)
-
-    order_map = {"id_desc": "id DESC", "id_asc": "id ASC", "time_desc": "time_ms DESC", "time_asc": "time_ms ASC"}
+    order_map = {"id_desc": "id DESC", "id_asc": "id ASC", "time_desc": "time_ms DESC", "time_asc": "time_ms ASC", "received_desc": "received_at DESC"}
     query += f" ORDER BY {order_map.get(sort, 'id DESC')} LIMIT ?"
     params.append(max(1, min(limit, 500)))
-
     with db_cursor() as (_, cur):
         rows = [dict(r) for r in cur.execute(query, params).fetchall()]
     return {"runs": rows, "count": len(rows)}
 
 
 @router.put("/{run_id}")
-def update_run(run_id: int, person_id: int | None = None, note: str | None = None):
+def update_run(run_id: int, payload: RunUpdate):
     with db_cursor() as (_, cur):
-        if person_id is not None:
-            person = cur.execute("SELECT name FROM persons WHERE id=?", (person_id,)).fetchone()
+        exists = cur.execute("SELECT id FROM runs WHERE id=?", (run_id,)).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+        if payload.person_id is not None:
+            person = cur.execute("SELECT name FROM persons WHERE id=?", (payload.person_id,)).fetchone()
             if not person:
                 raise HTTPException(status_code=404, detail="Person nicht gefunden")
-            cur.execute("UPDATE runs SET person_id=?, person_name=? WHERE id=?", (person_id, person[0], run_id))
-        if note is not None:
-            cur.execute("UPDATE runs SET note=? WHERE id=?", (note, run_id))
+            cur.execute("UPDATE runs SET person_id=?, person_name=? WHERE id=?", (payload.person_id, person[0], run_id))
+        if payload.note is not None:
+            cur.execute("UPDATE runs SET note=? WHERE id=?", (payload.note, run_id))
     return {"updated": True}
 
 
@@ -117,4 +135,6 @@ def update_run(run_id: int, person_id: int | None = None, note: str | None = Non
 def delete_run(run_id: int):
     with db_cursor() as (_, cur):
         cur.execute("DELETE FROM runs WHERE id=?", (run_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
     return {"deleted": True}
