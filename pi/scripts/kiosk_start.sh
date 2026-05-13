@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-URL="http://localhost:8000"
+URL="${WAGE_PI_URL:-http://localhost:8000}"
 BROWSER="$(command -v chromium-browser || command -v chromium || true)"
 if [ -z "$BROWSER" ]; then
   echo "Kein Chromium gefunden" >&2
