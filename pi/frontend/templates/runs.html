@@ -1,10 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Läufe</h1>
+<div id="msg" class="msg"></div>
 <div class="toolbar">
-  <input id="search" placeholder="Suche">
-  <select id="status-filter"><option value="">Status alle</option><option>ok</option><option>error</option></select>
+  <input id="search" placeholder="Suche (event/device/person/notiz)">
+  <select id="person-filter"></select>
+  <select id="status-filter"><option value="">Status alle</option><option value="ok">ok</option><option value="error">error</option></select>
+  <select id="sort">
+    <option value="id_desc">ID absteigend</option><option value="id_asc">ID aufsteigend</option>
+    <option value="time_desc">Zeit absteigend</option><option value="time_asc">Zeit aufsteigend</option>
+    <option value="received_desc">Empfangen absteigend</option><option value="received_asc">Empfangen aufsteigend</option>
+  </select>
+  <input id="limit" type="number" min="1" max="500" value="100">
   <button onclick="loadRuns()">Läufe laden</button>
 </div>
-<div style="overflow:auto"><table id="runs-table"></table></div>
+<div style="overflow:auto">
+<table>
+<thead><tr><th>ID</th><th>Laufnummer</th><th>Zeit (ms)</th><th>Startgewicht (g)</th><th>Person</th><th>Datum/Zeit</th><th>Status</th><th>Notiz</th><th>Aktion</th></tr></thead>
+<tbody id="runs-body"></tbody>
+</table>
+</div>
 {% endblock %}

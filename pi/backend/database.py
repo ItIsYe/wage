@@ -70,6 +70,7 @@ def init_db() -> None:
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('oled_status', 'init')")
+        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('last_event', 'startup')")
 
 
 @contextmanager
