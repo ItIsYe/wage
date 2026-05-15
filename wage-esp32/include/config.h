@@ -51,6 +51,7 @@ static constexpr uint16_t PIXEL_COUNT = 25;
 static constexpr bool RING2_ENABLED = true;
 static constexpr uint8_t RING2_PIN = 27;
 static constexpr uint16_t RING2_PIXEL_COUNT = 16;
+static constexpr bool RING2_BOOT_TEST = true;
 static constexpr uint8_t DEFAULT_OLED_ROTATION = 0;
 static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
 static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
