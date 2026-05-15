@@ -77,6 +77,7 @@ static inline void ring2Fill(uint32_t color) {
 }
 
 static void ring2Service(uint32_t now) {
+  if (RING2_BOOT_TEST) return;
   static bool ring2AllOnApplied = false;
   static bool lastRing2Enabled = false;
   static uint8_t lastRing2PatternMode = 255;
@@ -193,12 +194,33 @@ void ledsInit() {
   #if RING2_ENABLED
   secondaryLedRing.strip->begin();
   ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
-  ring2Clear();
-  secondaryLedRing.strip->show();
 
-  // Initialen Frame markieren: ring2Service() schreibt das Default-Pattern
-  // beim nächsten Service-Lauf zuverlässig auf Ring 2.
-  ring2FrameDirty = true;
+  if (RING2_BOOT_TEST) {
+    for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+      secondaryLedRing.strip->setPixelColor(
+        i,
+        secondaryLedRing.strip->Color(80, 80, 80)
+      );
+    }
+
+    secondaryLedRing.strip->show();
+    ring2FrameDirty = false;
+
+    if (MASTER_DEBUG_LOG) {
+      Serial.printf(
+        "[RING2] boot test GPIO=%u pixels=%u\n",
+        (unsigned)RING2_PIN,
+        (unsigned)RING2_PIXEL_COUNT
+      );
+    }
+  } else {
+    ring2Clear();
+    secondaryLedRing.strip->show();
+
+    // Initialen Frame markieren: ring2Service() schreibt das Default-Pattern
+    // beim nächsten Service-Lauf zuverlässig auf Ring 2.
+    ring2FrameDirty = true;
+  }
   #endif
 }
 
