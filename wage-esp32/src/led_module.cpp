@@ -78,6 +78,38 @@ static inline void ring2Fill(uint32_t color) {
 
 static void ring2Service(uint32_t now) {
   static bool ring2AllOnApplied = false;
+  static bool lastRing2Enabled = false;
+  static uint8_t lastRing2PatternMode = 255;
+  static bool lastRing2DebugAllOn = false;
+  static uint8_t lastRing2BrightnessPercent = 255;
+  static uint8_t lastRing2StandbyBrightnessPercent = 255;
+
+  if (lastRing2Enabled != activeConfig.ring2Enabled ||
+      lastRing2PatternMode != activeConfig.ring2PatternMode ||
+      lastRing2DebugAllOn != activeConfig.ring2DebugAllOn ||
+      lastRing2BrightnessPercent != activeConfig.ring2BrightnessPercent ||
+      lastRing2StandbyBrightnessPercent != activeConfig.ring2StandbyBrightnessPercent) {
+    ring2FrameDirty = true;
+    if (MASTER_DEBUG_LOG) {
+      Serial.printf("[RING2] refresh en=%u mode=%u dbg=%u b=%u sb=%u\n",
+                    (unsigned)activeConfig.ring2Enabled,
+                    (unsigned)activeConfig.ring2PatternMode,
+                    (unsigned)activeConfig.ring2DebugAllOn,
+                    (unsigned)activeConfig.ring2BrightnessPercent,
+                    (unsigned)activeConfig.ring2StandbyBrightnessPercent);
+    }
+    if (lastRing2PatternMode != activeConfig.ring2PatternMode && activeConfig.ring2PatternMode == 2) {
+      ring2PulseValue = 10;
+      ring2PulseStep = 5;
+      ring2TickMs = now;
+    }
+    lastRing2Enabled = activeConfig.ring2Enabled;
+    lastRing2PatternMode = activeConfig.ring2PatternMode;
+    lastRing2DebugAllOn = activeConfig.ring2DebugAllOn;
+    lastRing2BrightnessPercent = activeConfig.ring2BrightnessPercent;
+    lastRing2StandbyBrightnessPercent = activeConfig.ring2StandbyBrightnessPercent;
+  }
+
   if (!activeConfig.ring2Enabled) {
     ring2AllOnApplied = false;
     if (ring2FrameDirty) { ring2Clear(); secondaryLedRing.strip->show(); ring2FrameDirty = false; }
@@ -85,7 +117,7 @@ static void ring2Service(uint32_t now) {
   }
   if (activeConfig.ring2DebugAllOn) {
     ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
-    if (!ring2AllOnApplied) {
+    if (!ring2AllOnApplied || ring2FrameDirty) {
       ring2Fill(secondaryLedRing.strip->Color(80, 80, 80));
       secondaryLedRing.strip->show();
       ring2AllOnApplied = true;
@@ -163,7 +195,8 @@ void ledsInit() {
   ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   ring2Clear();
   secondaryLedRing.strip->show();
-  ring2FrameDirty = false;
+  ring2FrameDirty = true;
+  if (MASTER_DEBUG_LOG) Serial.println("[RING2] init done, frame dirty");
   #endif
 }
 
