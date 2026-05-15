@@ -195,8 +195,10 @@ void ledsInit() {
   ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   ring2Clear();
   secondaryLedRing.strip->show();
+
+  // Initialen Frame markieren: ring2Service() schreibt das Default-Pattern
+  // beim nächsten Service-Lauf zuverlässig auf Ring 2.
   ring2FrameDirty = true;
-  if (MASTER_DEBUG_LOG) Serial.println("[RING2] init done, frame dirty");
   #endif
 }
 
