@@ -78,7 +78,7 @@ static inline void ring2Fill(uint32_t color) {
 
 static void ring2Service(uint32_t now) {
   if (RING2_BOOT_TEST) return;
-  static bool ring2AllOnApplied = false;
+
   static bool lastRing2Enabled = false;
   static uint8_t lastRing2PatternMode = 255;
   static bool lastRing2DebugAllOn = false;
@@ -92,7 +92,8 @@ static void ring2Service(uint32_t now) {
       lastRing2StandbyBrightnessPercent != activeConfig.ring2StandbyBrightnessPercent) {
     ring2FrameDirty = true;
     if (MASTER_DEBUG_LOG) {
-      Serial.printf("[RING2] refresh en=%u mode=%u dbg=%u b=%u sb=%u\n",
+      Serial.printf("[RING2] pin=%u enabled=%u mode=%u debug=%u brightness=%u standbyBrightness=%u\n",
+                    (unsigned)RING2_PIN,
                     (unsigned)activeConfig.ring2Enabled,
                     (unsigned)activeConfig.ring2PatternMode,
                     (unsigned)activeConfig.ring2DebugAllOn,
@@ -111,41 +112,76 @@ static void ring2Service(uint32_t now) {
     lastRing2StandbyBrightnessPercent = activeConfig.ring2StandbyBrightnessPercent;
   }
 
-  if (!activeConfig.ring2Enabled) {
-    ring2AllOnApplied = false;
-    if (ring2FrameDirty) { ring2Clear(); secondaryLedRing.strip->show(); ring2FrameDirty = false; }
-    return;
-  }
-  if (activeConfig.ring2DebugAllOn) {
+  if (RING2_FORCE_INDEPENDENT_TEST) {
     ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
-    if (!ring2AllOnApplied || ring2FrameDirty) {
-      ring2Fill(secondaryLedRing.strip->Color(80, 80, 80));
+    if (ring2FrameDirty) {
+      ring2Clear();
+      secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
+      secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
+      secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
+      secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
       secondaryLedRing.strip->show();
-      ring2AllOnApplied = true;
       ring2FrameDirty = false;
     }
     return;
   }
-  ring2AllOnApplied = false;
+
+  if (!activeConfig.ring2Enabled) {
+    if (ring2FrameDirty) {
+      ring2Clear();
+      secondaryLedRing.strip->show();
+      ring2FrameDirty = false;
+    }
+    return;
+  }
+
+  if (activeConfig.ring2DebugAllOn) {
+    ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
+    if (ring2FrameDirty) {
+      ring2Fill(secondaryLedRing.strip->Color(80, 80, 80));
+      secondaryLedRing.strip->show();
+      ring2FrameDirty = false;
+    }
+    return;
+  }
 
   const uint8_t mode = activeConfig.ring2PatternMode;
-  const uint8_t brightnessPercent = (mode == 2) ? activeConfig.ring2StandbyBrightnessPercent : activeConfig.ring2BrightnessPercent;
-  ring2SetBrightnessPercent(brightnessPercent);
-  if (mode == 0) {
-    if (ring2FrameDirty) ring2Clear();
-  } else if (mode == 1) {
-    if (ring2FrameDirty) ring2Fill(secondaryLedRing.strip->Color(0, 0, 64));
+  if (mode == 2) {
+    ring2SetBrightnessPercent(activeConfig.ring2StandbyBrightnessPercent);
   } else {
-    if (now - ring2TickMs >= 80) {
-      ring2TickMs = now;
-      const int16_t next = (int16_t)ring2PulseValue + ring2PulseStep;
-      if (next >= 120 || next <= 10) ring2PulseStep = -ring2PulseStep;
-      ring2PulseValue = (uint8_t)((int16_t)ring2PulseValue + ring2PulseStep);
-      ring2Fill(secondaryLedRing.strip->Color(0, 0, ring2PulseValue));
-      ring2FrameDirty = true;
-    }
+    ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   }
-  if (ring2FrameDirty) { secondaryLedRing.strip->show(); ring2FrameDirty = false; }
+
+  if (mode == 0) {
+    if (ring2FrameDirty) {
+      ring2Clear();
+      secondaryLedRing.strip->show();
+      ring2FrameDirty = false;
+    }
+    return;
+  }
+
+  if (mode == 1) {
+    if (ring2FrameDirty) {
+      ring2Fill(secondaryLedRing.strip->Color(0, 0, 64));
+      secondaryLedRing.strip->show();
+      ring2FrameDirty = false;
+    }
+    return;
+  }
+
+  if (now - ring2TickMs >= 80) {
+    ring2TickMs = now;
+    const int16_t next = (int16_t)ring2PulseValue + ring2PulseStep;
+    if (next >= 120 || next <= 10) ring2PulseStep = -ring2PulseStep;
+    ring2PulseValue = (uint8_t)((int16_t)ring2PulseValue + ring2PulseStep);
+    ring2Fill(secondaryLedRing.strip->Color(0, 0, ring2PulseValue));
+    ring2FrameDirty = true;
+  }
+  if (ring2FrameDirty) {
+    secondaryLedRing.strip->show();
+    ring2FrameDirty = false;
+  }
 }
 #else
 static void ring2Service(uint32_t) {}
@@ -363,8 +399,14 @@ void ledMarkAllDirty() {
 
 void ledClear() {
   pixelsClear();
+#if RING2_ENABLED
+  ring2Clear();
+#endif
 }
 
 void ledShow() {
   pixelsShow();
+#if RING2_ENABLED
+  secondaryLedRing.strip->show();
+#endif
 }

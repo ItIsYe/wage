@@ -74,6 +74,7 @@ static constexpr bool RING2_ENABLED = true;
 static constexpr uint8_t RING2_PIN = 14;
 static constexpr uint16_t RING2_PIXEL_COUNT = 16;
 static constexpr bool RING2_BOOT_TEST = false;
+static constexpr bool RING2_FORCE_INDEPENDENT_TEST = false;
 static constexpr bool DEFAULT_RING2_ENABLED = true;
 static constexpr uint8_t DEFAULT_RING2_BRIGHTNESS_PERCENT = 35;
 static constexpr uint8_t DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT = 25;
