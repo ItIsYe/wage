@@ -113,16 +113,19 @@ static void ring2Service(uint32_t now) {
   }
 
   if (RING2_FORCE_INDEPENDENT_TEST) {
-    ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
-    if (ring2FrameDirty) {
-      ring2Clear();
-      secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
-      secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
-      secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
-      secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
-      secondaryLedRing.strip->show();
-      ring2FrameDirty = false;
+    static bool ring2IndependentInitialized = false;
+    if (!ring2IndependentInitialized) {
+      secondaryLedRing.strip->setBrightness(255);
+      ring2IndependentInitialized = true;
     }
+
+    ring2Clear();
+    secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
+    secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
+    secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
+    secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+    secondaryLedRing.strip->show();
+    ring2FrameDirty = false;
     return;
   }
 
