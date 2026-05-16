@@ -25,7 +25,40 @@ pio run -t upload
 ## LED-Ringe
 
 - Ring 1: GPIO **5**, **25** Pixel
-- Ring 2: GPIO **27**, **16** Pixel
+- Ring 2: GPIO **14**, **16** Pixel
+
+### Ring-2 Unabhängigkeitstest
+
+Für den Hardware-Diagnosetest in `include/config.h` setzen:
+
+```cpp
+static constexpr bool RING2_FORCE_INDEPENDENT_TEST = true;
+```
+
+Erwartung nach Flash:
+
+- Ring 1 läuft normal weiter (unverändert)
+- Ring 2 zeigt fest:
+  - Pixel 0 = Rot
+  - Pixel 1 = Grün
+  - Pixel 2 = Blau
+  - Pixel 3 = Weiß
+  - alle anderen aus
+
+Wenn Ring 2 in diesem Modus weiterhin Ring 1 spiegelt, liegt das Problem sehr wahrscheinlich bei Flash/Pin/Hardware und nicht in der Pattern-Logik.
+
+Danach für Normalbetrieb wieder zurücksetzen:
+
+```cpp
+static constexpr bool RING2_FORCE_INDEPENDENT_TEST = false;
+```
+
+Ring-2 Webinterface-Modi für Funktionstest:
+
+- Pattern 0: aus
+- Pattern 1: Solid Blau
+- Pattern 2: Pulse Blau
+- Debug: alle Pixel an
 
 ## Externe Schnittstelle
 

@@ -571,8 +571,16 @@ static void applyPendingConfigIfAllowed(){
   Wire.setClock(activeConfig.oledI2cClockHz);
   display.setRotation(activeConfig.oledRotation);
   ledApplyBrightnessForCurrentMode();
-  ledMarkRing2Dirty();
+  ledMarkAllDirty();
   webConfigSaveToPrefs(activeConfig);
+  if (MASTER_DEBUG_LOG) {
+    Serial.printf("[CFG] Ring2 en=%u mode=%u dbg=%u b=%u sb=%u\n",
+                  (unsigned)activeConfig.ring2Enabled,
+                  (unsigned)activeConfig.ring2PatternMode,
+                  (unsigned)activeConfig.ring2DebugAllOn,
+                  (unsigned)activeConfig.ring2BrightnessPercent,
+                  (unsigned)activeConfig.ring2StandbyBrightnessPercent);
+  }
   externalInterfaceUpdateConfig(activeConfig);
   webClearPendingConfig();
 }
