@@ -6,7 +6,7 @@
 // =========================================================
 // Debug / Logging
 // =========================================================
-static constexpr bool MASTER_DEBUG_LOG = false;
+static constexpr bool MASTER_DEBUG_LOG = true;
 static constexpr bool PERFORMANCE_DEBUG = false;
 
 // =========================================================

@@ -77,7 +77,29 @@ static inline void ring2Fill(uint32_t color) {
 }
 
 static void ring2Service(uint32_t now) {
+  (void)now;
+
   if (RING2_BOOT_TEST) return;
+
+  if (RING2_FORCE_INDEPENDENT_TEST) {
+    static uint32_t lastTestShowMs = 0;
+    if (millis() - lastTestShowMs < 250) return;
+    lastTestShowMs = millis();
+
+    secondaryLedRing.strip->setBrightness(255);
+    ring2Clear();
+    if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
+    if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
+    if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
+    if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+    secondaryLedRing.strip->show();
+    ring2FrameDirty = false;
+
+    if (MASTER_DEBUG_LOG) {
+      Serial.printf("[RING2 TEST] pin=%u pixels=%u\n", (unsigned)RING2_PIN, (unsigned)RING2_PIXEL_COUNT);
+    }
+    return;
+  }
 
   static bool lastRing2Enabled = false;
   static uint8_t lastRing2PatternMode = 255;
@@ -110,23 +132,6 @@ static void ring2Service(uint32_t now) {
     lastRing2DebugAllOn = activeConfig.ring2DebugAllOn;
     lastRing2BrightnessPercent = activeConfig.ring2BrightnessPercent;
     lastRing2StandbyBrightnessPercent = activeConfig.ring2StandbyBrightnessPercent;
-  }
-
-  if (RING2_FORCE_INDEPENDENT_TEST) {
-    static bool ring2IndependentInitialized = false;
-    if (!ring2IndependentInitialized) {
-      secondaryLedRing.strip->setBrightness(255);
-      ring2IndependentInitialized = true;
-    }
-
-    ring2Clear();
-    secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
-    secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
-    secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
-    secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
-    secondaryLedRing.strip->show();
-    ring2FrameDirty = false;
-    return;
   }
 
   if (!activeConfig.ring2Enabled) {
