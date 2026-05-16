@@ -3,10 +3,15 @@
 #include <Arduino.h>
 #include <IPAddress.h>
 
-// WEBINTERFACE / WLAN
+// =========================================================
+// Debug / Logging
+// =========================================================
 static constexpr bool MASTER_DEBUG_LOG = false;
 static constexpr bool PERFORMANCE_DEBUG = false;
 
+// =========================================================
+// WLAN / Webinterface
+// =========================================================
 static constexpr bool WEB_CONFIG_ENABLED = true;
 static constexpr bool WIFI_STA_ENABLED = false;
 static const char* WIFI_SSID = "YOUR_WIFI_SSID";
@@ -24,9 +29,9 @@ static constexpr uint16_t WEB_SERVER_PORT = 80;
 static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 200;
 static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000;
 
-static const char* OLED_SCALE_CONFIG = "1,5";
-
-// Externe Schnittstelle (Pi/Empfaenger)
+// =========================================================
+// Externe Schnittstelle
+// =========================================================
 static constexpr bool EXTERNAL_INTERFACE_ENABLED_DEFAULT = false;
 static const char* EXTERNAL_TARGET_HOST_DEFAULT = "";
 static constexpr uint16_t EXTERNAL_TARGET_PORT_DEFAULT = 80;
@@ -36,39 +41,64 @@ static constexpr uint32_t EXTERNAL_SEND_TIMEOUT_MS = 800;
 static constexpr uint32_t EXTERNAL_RETRY_INTERVAL_MS = 5000;
 static constexpr size_t EXTERNAL_QUEUE_MAX = 50;
 
-// Performance-Takte
+// =========================================================
+// OLED
+// =========================================================
+static const char* OLED_SCALE_CONFIG = "1,5";
 static constexpr uint32_t DEFAULT_OLED_TIMING_REFRESH_MS = 200;
 static constexpr uint32_t OLED_DEBUG_REFRESH_MS = 120;
 static constexpr uint32_t OLED_PATTERN_REFRESH_MS = 50;
 static constexpr uint32_t SERIAL_BASE_REFRESH_MS = 150;
 static constexpr uint32_t SERIAL_STATE_REFRESH_MS = 150;
-static constexpr uint32_t DEFAULT_SCALE_READ_INTERVAL_MS = 40;
-static constexpr uint8_t DEFAULT_SCALE_READ_SAMPLES = 1;
 static constexpr uint32_t DEFAULT_OLED_I2C_CLOCK_HZ = 400000;
-
-// Pixel-/Display-Defaults
-static constexpr uint16_t PIXEL_COUNT = 25;
-static constexpr bool RING2_ENABLED = true;
-static constexpr uint8_t RING2_PIN = 27;
-static constexpr uint16_t RING2_PIXEL_COUNT = 16;
-static constexpr bool RING2_BOOT_TEST = true;
 static constexpr uint8_t DEFAULT_OLED_ROTATION = 0;
-static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
+static constexpr uint8_t I2C_SDA = 21;
+static constexpr uint8_t I2C_SCL = 22;
+static constexpr uint8_t OLED_ADDR = 0x3C;
+static constexpr int SCREEN_W = 128;
+static constexpr int SCREEN_H = 64;
+
+// =========================================================
+// Ring 1 / Haupt-LED-Ring
+// =========================================================
+static constexpr uint8_t LED_STRIP_PIN = 5;
+static constexpr uint16_t PIXEL_COUNT = 25;
 static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
 static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90;
+static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
+
+// =========================================================
+// Ring 2 / Zusatz-LED-Ring
+// =========================================================
+static constexpr bool RING2_ENABLED = true;
+static constexpr uint8_t RING2_PIN = 14;
+static constexpr uint16_t RING2_PIXEL_COUNT = 16;
+static constexpr bool RING2_BOOT_TEST = false;
 static constexpr bool DEFAULT_RING2_ENABLED = true;
 static constexpr uint8_t DEFAULT_RING2_BRIGHTNESS_PERCENT = 35;
 static constexpr uint8_t DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT = 25;
 static constexpr bool DEFAULT_RING2_DEBUG_ALL_ON = false;
 static constexpr uint8_t DEFAULT_RING2_PATTERN_MODE = 1;
 
+// =========================================================
+// HX711 / Waagen-Pins
+// =========================================================
+static constexpr uint8_t HX1_DOUT = 32;
+static constexpr uint8_t HX1_SCK = 33;
+static constexpr uint8_t HX2_DOUT = 25;
+static constexpr uint8_t HX2_SCK = 26;
+
+// =========================================================
 // Kalibrierung
+// =========================================================
 static constexpr float DEFAULT_CAL1 = -235.15f;
 static constexpr float DEFAULT_CAL2 = -235.15f;
 static constexpr bool INVERT1 = true;
 static constexpr bool INVERT2 = true;
 
-// Schwellwerte/Zeit
+// =========================================================
+// Messlogik / Schwellwerte
+// =========================================================
 static constexpr float DEFAULT_OBJECT_PRESENT_G = 100.0f;
 static constexpr float DEFAULT_START_DROP_PERCENT = 5.0f;
 static constexpr float DEFAULT_STOP_RISE_PERCENT = 5.0f;
@@ -82,8 +112,17 @@ static constexpr uint32_t SHOW_RESULT_MS = 6000;
 static constexpr float DEFAULT_EMPTY_THRESHOLD_G = 10.0f;
 static constexpr float DEFAULT_RETARE_TOL_G = 0.6f;
 
+// =========================================================
+// Timing / State Machine
+// =========================================================
 static constexpr uint32_t BOOT_MSG_MS = 1200;
 static constexpr uint16_t TARE_SAMPLES = 25;
+static constexpr uint32_t DEFAULT_SCALE_READ_INTERVAL_MS = 40;
+static constexpr uint8_t DEFAULT_SCALE_READ_SAMPLES = 1;
+
+// =========================================================
+// Standby
+// =========================================================
 static constexpr uint32_t STANDBY_AFTER_MS = 25000;
 static constexpr float DEFAULT_STANDBY_WAKE_THRESHOLD_G = 3.0f;
 static constexpr uint32_t STANDBY_FRAME_MS = 120;
@@ -95,27 +134,17 @@ static constexpr uint8_t STANDBY_VALUE_MAX = 112;
 static constexpr uint8_t STANDBY_ON_MIN = 2;
 static constexpr uint8_t STANDBY_ON_MAX = 9;
 
-// Filter/Stabilitaet
+// =========================================================
+// Filter / Stabilität
+// =========================================================
 static constexpr uint8_t MA_N = 10;
 static constexpr float STABLE_BAND_G = 2.0f;
 static constexpr uint32_t STABLE_WINDOW_MS = 800;
 static constexpr uint32_t STABLE_HOLD_MS = 800;
 
-// Fehler/Recovery
+// =========================================================
+// Fehler / Recovery
+// =========================================================
 static constexpr float NEGATIVE_CLAMP_G = -3.0f;
 static constexpr float NEGATIVE_ERROR_G = -15.0f;
 static constexpr uint32_t RECOVER_WAIT_MS = 1200;
-
-// Hardware-Pins
-static constexpr uint8_t HX1_DOUT = 32;
-static constexpr uint8_t HX1_SCK = 33;
-static constexpr uint8_t HX2_DOUT = 25;
-static constexpr uint8_t HX2_SCK = 26;
-
-static constexpr uint8_t I2C_SDA = 21;
-static constexpr uint8_t I2C_SCL = 22;
-static constexpr uint8_t OLED_ADDR = 0x3C;
-static constexpr int SCREEN_W = 128;
-static constexpr int SCREEN_H = 64;
-
-static constexpr uint8_t LED_STRIP_PIN = 5;

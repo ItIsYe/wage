@@ -571,6 +571,7 @@ static void applyPendingConfigIfAllowed(){
   Wire.setClock(activeConfig.oledI2cClockHz);
   display.setRotation(activeConfig.oledRotation);
   ledApplyBrightnessForCurrentMode();
+  ledMarkRing2Dirty();
   webConfigSaveToPrefs(activeConfig);
   externalInterfaceUpdateConfig(activeConfig);
   webClearPendingConfig();
