@@ -77,7 +77,16 @@ static inline void ring2Fill(uint32_t color) {
 }
 
 static void ring2Service(uint32_t now) {
-  (void)now;
+  if (MASTER_DEBUG_LOG) {
+    static uint32_t lastRing2DiagMs = 0;
+    if (now - lastRing2DiagMs >= 2000) {
+      lastRing2DiagMs = now;
+      Serial.printf("[RING2] service force=%u bootTest=%u enabled=%u\n",
+                    (unsigned)RING2_FORCE_INDEPENDENT_TEST,
+                    (unsigned)RING2_BOOT_TEST,
+                    (unsigned)RING2_ENABLED);
+    }
+  }
 
   if (RING2_BOOT_TEST) return;
 
@@ -299,6 +308,16 @@ void ledsSetMode(LedMode m) {
 }
 
 void ledService(uint32_t now) {
+  if (MASTER_DEBUG_LOG) {
+    static uint32_t lastLedDiagMs = 0;
+    if (now - lastLedDiagMs >= 2000) {
+      lastLedDiagMs = now;
+      Serial.printf("[LED] service mode=%u ring2Force=%u\n",
+                    (unsigned)ledMode,
+                    (unsigned)RING2_FORCE_INDEPENDENT_TEST);
+    }
+  }
+
   static bool allOnApplied = false;
   if (activeConfig.pixelDebugAllOn) {
     setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
