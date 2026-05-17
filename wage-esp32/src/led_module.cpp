@@ -77,38 +77,45 @@ static inline void ring2Fill(uint32_t color) {
 }
 
 static void ring2Service(uint32_t now) {
-  if (MASTER_DEBUG_LOG) {
-    static uint32_t lastRing2DiagMs = 0;
-    if (now - lastRing2DiagMs >= 2000) {
-      lastRing2DiagMs = now;
-      Serial.printf("[RING2] service force=%u bootTest=%u enabled=%u\n",
-                    (unsigned)RING2_FORCE_INDEPENDENT_TEST,
-                    (unsigned)RING2_BOOT_TEST,
-                    (unsigned)RING2_ENABLED);
-    }
+  static uint32_t lastEntryLogMs = 0;
+  if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) {
+    lastEntryLogMs = millis();
+    Serial.printf("[RING2 ENTRY] now=%lu boot=%u force=%u enabled=%u pin=%u\n",
+                  (unsigned long)now,
+                  (unsigned)RING2_BOOT_TEST,
+                  (unsigned)RING2_FORCE_INDEPENDENT_TEST,
+                  (unsigned)RING2_ENABLED,
+                  (unsigned)RING2_PIN);
   }
-
-  if (RING2_BOOT_TEST) return;
 
   if (RING2_FORCE_INDEPENDENT_TEST) {
     static uint32_t lastTestShowMs = 0;
-    if (millis() - lastTestShowMs < 250) return;
-    lastTestShowMs = millis();
+    if (millis() - lastTestShowMs >= 250) {
+      lastTestShowMs = millis();
 
-    secondaryLedRing.strip->setBrightness(255);
-    ring2Clear();
-    if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
-    if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
-    if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
-    if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
-    secondaryLedRing.strip->show();
-    ring2FrameDirty = false;
+      secondaryLedRing.strip->setBrightness(255);
+      secondaryLedRing.strip->clear();
 
-    if (MASTER_DEBUG_LOG) {
-      Serial.printf("[RING2 TEST] pin=%u pixels=%u\n", (unsigned)RING2_PIN, (unsigned)RING2_PIXEL_COUNT);
+      if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
+      if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
+      if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
+      if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+
+      secondaryLedRing.strip->show();
+
+      if (MASTER_DEBUG_LOG) {
+        Serial.printf("[RING2 TEST] wrote RGBW pin=%u pixels=%u\n",
+                      (unsigned)RING2_PIN,
+                      (unsigned)RING2_PIXEL_COUNT);
+        Serial.printf("[RING2 TEST] pin=%u pixels=%u\n",
+                      (unsigned)RING2_PIN,
+                      (unsigned)RING2_PIXEL_COUNT);
+      }
     }
     return;
   }
+
+  if (RING2_BOOT_TEST) return;
 
   static bool lastRing2Enabled = false;
   static uint8_t lastRing2PatternMode = 255;
@@ -326,6 +333,13 @@ void ledService(uint32_t now) {
       pixelsShow();
       allOnApplied = true;
     }
+    if (MASTER_DEBUG_LOG) {
+      static uint32_t lastRing2CallLogMs = 0;
+      if (millis() - lastRing2CallLogMs >= 2000) {
+        lastRing2CallLogMs = millis();
+        Serial.println("[LED] calling ring2Service");
+      }
+    }
     ring2Service(now);
     return;
   }
@@ -406,6 +420,13 @@ void ledService(uint32_t now) {
   }
 
   if (ledFrameDirty) { pixelsShow(); ledFrameDirty = false; }
+  if (MASTER_DEBUG_LOG) {
+    static uint32_t lastRing2CallLogMs = 0;
+    if (millis() - lastRing2CallLogMs >= 2000) {
+      lastRing2CallLogMs = millis();
+      Serial.println("[LED] calling ring2Service");
+    }
+  }
   ring2Service(now);
 }
 
