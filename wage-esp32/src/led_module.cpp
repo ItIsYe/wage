@@ -89,36 +89,6 @@ static inline void ring2Fill(const CRGB& color) {
   for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte);
 }
 
-static void ring2DirectHardTest(uint32_t now) {
-  static uint32_t lastDirectTestMs = 0;
-  static uint32_t lastDirectEntryLogMs = 0;
-  if (MASTER_DEBUG_LOG && now - lastDirectEntryLogMs >= 2000) {
-    lastDirectEntryLogMs = now;
-    Serial.printf("[RING2 DIRECT ENTRY] now=%lu pin=%u force=%u\n",
-                  (unsigned long)now,
-                  (unsigned)RING2_PIN,
-                  (unsigned)RING2_FORCE_INDEPENDENT_TEST);
-  }
-  if (now - lastDirectTestMs < 250) return;
-  lastDirectTestMs = now;
-
-  ring2BrightnessByte = 255;
-  ring2Clear();
-
-  if (RING2_PIXEL_COUNT > 0) ring2Leds[0] = rgb(255, 0, 0);
-  if (RING2_PIXEL_COUNT > 1) ring2Leds[1] = rgb(0, 255, 0);
-  if (RING2_PIXEL_COUNT > 2) ring2Leds[2] = rgb(0, 0, 255);
-  if (RING2_PIXEL_COUNT > 3) ring2Leds[3] = rgb(255, 255, 255);
-
-  FastLED.show();
-
-  if (MASTER_DEBUG_LOG) {
-    Serial.printf("[RING2 DIRECT] wrote RGBW pin=%u pixels=%u\n",
-                  (unsigned)RING2_PIN,
-                  (unsigned)RING2_PIXEL_COUNT);
-  }
-}
-
 static void ring2Service(uint32_t now) {
   static uint32_t lastEntryLogMs = 0;
   if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) {
@@ -131,29 +101,6 @@ static void ring2Service(uint32_t now) {
                   (unsigned)RING2_PIN);
   }
 
-  if (RING2_FORCE_INDEPENDENT_TEST) {
-    static uint32_t lastTestShowMs = 0;
-    if (millis() - lastTestShowMs >= 250) {
-      lastTestShowMs = millis();
-
-      ring2BrightnessByte = 255;
-      ring2Clear();
-
-      if (RING2_PIXEL_COUNT > 0) ring2Leds[0] = rgb(255, 0, 0);
-      if (RING2_PIXEL_COUNT > 1) ring2Leds[1] = rgb(0, 255, 0);
-      if (RING2_PIXEL_COUNT > 2) ring2Leds[2] = rgb(0, 0, 255);
-      if (RING2_PIXEL_COUNT > 3) ring2Leds[3] = rgb(255, 255, 255);
-
-      FastLED.show();
-
-      if (MASTER_DEBUG_LOG) {
-        Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n",
-                      (unsigned)RING2_PIN,
-                      (unsigned)RING2_PIXEL_COUNT);
-      }
-    }
-    return;
-  }
 
   if (RING2_BOOT_TEST) return;
 
@@ -248,17 +195,6 @@ static void ring2Service(uint32_t now) {
   }
 }
 #else
-static void ring2DirectHardTest(uint32_t now) {
-  static uint32_t lastDirectEntryLogMs = 0;
-  if (MASTER_DEBUG_LOG && now - lastDirectEntryLogMs >= 2000) {
-    lastDirectEntryLogMs = now;
-    Serial.printf("[RING2 DIRECT ENTRY] now=%lu pin=%u force=%u\n",
-                  (unsigned long)now,
-                  (unsigned)RING2_PIN,
-                  (unsigned)RING2_FORCE_INDEPENDENT_TEST);
-    Serial.println("[RING2 DIRECT] skipped: RING2_ENABLED=0");
-  }
-}
 static void ring2Service(uint32_t) {}
 #endif
 
@@ -369,7 +305,7 @@ void ledService(uint32_t now) {
     static uint32_t lastInlineEntryLogMs = 0;
     if (now - lastInlineEntryLogMs >= 2000) {
       lastInlineEntryLogMs = now;
-      Serial.printf("[RING2 INLINE ENTRY] force=%u pin=%u pixels=%u now=%lu\n",
+      Serial.printf("[RING2 FASTLED ENTRY] force=%u pin=%u pixels=%u now=%lu\n",
                     (unsigned)RING2_FORCE_INDEPENDENT_TEST,
                     (unsigned)RING2_PIN,
                     (unsigned)RING2_PIXEL_COUNT,
@@ -377,7 +313,8 @@ void ledService(uint32_t now) {
     }
   }
 
-  if (RING2_FORCE_INDEPENDENT_TEST) {
+  const bool ring2ForceTestActive = RING2_FORCE_INDEPENDENT_TEST;
+  if (ring2ForceTestActive) {
     static uint32_t lastInlineWriteMs = 0;
     if (now - lastInlineWriteMs >= 250) {
       lastInlineWriteMs = now;
@@ -405,7 +342,7 @@ void ledService(uint32_t now) {
     static uint32_t lastLedDiagMs = 0;
     if (now - lastLedDiagMs >= 2000) {
       lastLedDiagMs = now;
-      Serial.printf("[LED DIRECT BUILD] service mode=%u ring2Force=%u\n",
+      Serial.printf("[LED FASTLED BUILD] service mode=%u ring2Force=%u\n",
                     (unsigned)ledMode,
                     (unsigned)RING2_FORCE_INDEPENDENT_TEST);
     }
@@ -423,10 +360,12 @@ void ledService(uint32_t now) {
       static uint32_t lastRing2CallLogMs = 0;
       if (millis() - lastRing2CallLogMs >= 2000) {
         lastRing2CallLogMs = millis();
-        Serial.println("[LED DIRECT BUILD] calling ring2Service");
+        Serial.println("[LED FASTLED BUILD] calling ring2Service");
       }
     }
-    ring2Service(now);
+#if RING2_ENABLED
+    if (!ring2ForceTestActive) ring2Service(now);
+#endif
     return;
   }
   allOnApplied = false;
@@ -510,10 +449,12 @@ void ledService(uint32_t now) {
     static uint32_t lastRing2CallLogMs = 0;
     if (millis() - lastRing2CallLogMs >= 2000) {
       lastRing2CallLogMs = millis();
-      Serial.println("[LED DIRECT BUILD] calling ring2Service");
+      Serial.println("[LED FASTLED BUILD] calling ring2Service");
     }
   }
-  ring2Service(now);
+#if RING2_ENABLED
+  if (!ring2ForceTestActive) ring2Service(now);
+#endif
 }
 
 void ledApplyBrightnessForCurrentMode() {
