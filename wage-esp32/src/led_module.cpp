@@ -96,20 +96,45 @@ static inline void ring2Fill(const CRGB& color) {
   for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte);
 }
 
+
+static const char* ring2ModeLabel(uint8_t mode) {
+  if (mode == 0) return "off";
+  if (mode == 1) return "solid-blue";
+  if (mode == 2) return "pulse-blue";
+  return "unknown";
+}
+
 static void ring2Service(uint32_t now) {
   static uint32_t lastEntryLogMs = 0;
   if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) {
     lastEntryLogMs = millis();
-    Serial.printf("[RING2 ENTRY] now=%lu boot=%u force=%u enabled=%u pin=%u\n",
+    Serial.printf("[RING2 SERVICE] now=%lu enabled=%u mode=%u debug=%u brightness=%u standbyBrightness=%u pin=%u\n",
                   (unsigned long)now,
-                  (unsigned)RING2_BOOT_TEST,
-                  (unsigned)RING2_FORCE_INDEPENDENT_TEST,
-                  (unsigned)RING2_ENABLED,
+                  (unsigned)activeConfig.ring2Enabled,
+                  (unsigned)activeConfig.ring2PatternMode,
+                  (unsigned)activeConfig.ring2DebugAllOn,
+                  (unsigned)activeConfig.ring2BrightnessPercent,
+                  (unsigned)activeConfig.ring2StandbyBrightnessPercent,
                   (unsigned)RING2_PIN);
   }
 
 
   if (RING2_BOOT_TEST) return;
+
+
+  static uint8_t lastRenderedState = 255;
+  auto logRenderedState = [&](uint8_t state, const char* label) {
+    if (!MASTER_DEBUG_LOG) return;
+    if (lastRenderedState != state) {
+      Serial.printf("[RING2 RENDER] state=%s mode=%u (%s) debug=%u enabled=%u\n",
+                    label,
+                    (unsigned)activeConfig.ring2PatternMode,
+                    ring2ModeLabel(activeConfig.ring2PatternMode),
+                    (unsigned)activeConfig.ring2DebugAllOn,
+                    (unsigned)activeConfig.ring2Enabled);
+      lastRenderedState = state;
+    }
+  };
 
   static bool lastRing2Enabled = false;
   static uint8_t lastRing2PatternMode = 255;
@@ -124,10 +149,11 @@ static void ring2Service(uint32_t now) {
       lastRing2StandbyBrightnessPercent != activeConfig.ring2StandbyBrightnessPercent) {
     ring2FrameDirty = true;
     if (MASTER_DEBUG_LOG) {
-      Serial.printf("[RING2] pin=%u enabled=%u mode=%u debug=%u brightness=%u standbyBrightness=%u\n",
+      Serial.printf("[RING2 CONFIG] pin=%u enabled=%u mode=%u (%s) debug=%u brightness=%u standbyBrightness=%u\n",
                     (unsigned)RING2_PIN,
                     (unsigned)activeConfig.ring2Enabled,
                     (unsigned)activeConfig.ring2PatternMode,
+                    ring2ModeLabel(activeConfig.ring2PatternMode),
                     (unsigned)activeConfig.ring2DebugAllOn,
                     (unsigned)activeConfig.ring2BrightnessPercent,
                     (unsigned)activeConfig.ring2StandbyBrightnessPercent);
@@ -145,6 +171,7 @@ static void ring2Service(uint32_t now) {
   }
 
   if (!activeConfig.ring2Enabled) {
+    logRenderedState(0, "off");
     if (ring2FrameDirty) {
       ring2Clear();
       FastLED.show();
@@ -154,6 +181,7 @@ static void ring2Service(uint32_t now) {
   }
 
   if (activeConfig.ring2DebugAllOn) {
+    logRenderedState(3, "debug-all-on");
     ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
     if (ring2FrameDirty) {
       ring2Fill(rgb(80, 80, 80));
@@ -171,6 +199,7 @@ static void ring2Service(uint32_t now) {
   }
 
   if (mode == 0) {
+    logRenderedState(0, "off");
     if (ring2FrameDirty) {
       ring2Clear();
       FastLED.show();
@@ -180,12 +209,26 @@ static void ring2Service(uint32_t now) {
   }
 
   if (mode == 1) {
+    logRenderedState(1, "solid-blue");
     if (ring2FrameDirty) {
       ring2Fill(rgb(0, 0, 64));
       FastLED.show();
       ring2FrameDirty = false;
     }
     return;
+  }
+
+  logRenderedState(2, "pulse-blue");
+
+  static uint32_t lastHeartbeatLogMs = 0;
+  if (MASTER_DEBUG_LOG && now - lastHeartbeatLogMs >= 2000) {
+    lastHeartbeatLogMs = now;
+    Serial.printf("[RING2 HEARTBEAT] now=%lu mode=%u (%s) pulse=%u frameDirty=%u\n",
+                  (unsigned long)now,
+                  (unsigned)mode,
+                  ring2ModeLabel(mode),
+                  (unsigned)ring2PulseValue,
+                  (unsigned)ring2FrameDirty);
   }
 
   if (now - ring2TickMs >= 80) {
