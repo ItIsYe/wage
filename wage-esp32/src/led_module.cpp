@@ -76,6 +76,28 @@ static inline void ring2Fill(uint32_t color) {
   for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) secondaryLedRing.strip->setPixelColor(i, color);
 }
 
+static void ring2DirectHardTest(uint32_t now) {
+  static uint32_t lastDirectTestMs = 0;
+  if (now - lastDirectTestMs < 250) return;
+  lastDirectTestMs = now;
+
+  secondaryLedRing.strip->setBrightness(255);
+  secondaryLedRing.strip->clear();
+
+  if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
+  if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
+  if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
+  if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+
+  secondaryLedRing.strip->show();
+
+  if (MASTER_DEBUG_LOG) {
+    Serial.printf("[RING2 DIRECT] wrote RGBW pin=%u pixels=%u\n",
+                  (unsigned)RING2_PIN,
+                  (unsigned)RING2_PIXEL_COUNT);
+  }
+}
+
 static void ring2Service(uint32_t now) {
   static uint32_t lastEntryLogMs = 0;
   if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) {
@@ -324,6 +346,11 @@ void ledService(uint32_t now) {
                     (unsigned)RING2_FORCE_INDEPENDENT_TEST);
     }
   }
+#if RING2_ENABLED
+  if (RING2_FORCE_INDEPENDENT_TEST) {
+    ring2DirectHardTest(now);
+  }
+#endif
 
   static bool allOnApplied = false;
   if (activeConfig.pixelDebugAllOn) {
