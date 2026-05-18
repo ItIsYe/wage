@@ -104,6 +104,15 @@ static const char* ring2ModeLabel(uint8_t mode) {
   return "unknown";
 }
 
+static void logRing2Write(uint32_t now) {
+  if (!MASTER_DEBUG_LOG) return;
+  static uint32_t lastWriteLogMs = 0;
+  if (now - lastWriteLogMs >= 2000) {
+    lastWriteLogMs = now;
+    Serial.println("[RING2 WRITE] show applied");
+  }
+}
+
 static void ring2Service(uint32_t now) {
   static uint32_t lastEntryLogMs = 0;
   if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) {
@@ -126,7 +135,7 @@ static void ring2Service(uint32_t now) {
   auto logRenderedState = [&](uint8_t state, const char* label) {
     if (!MASTER_DEBUG_LOG) return;
     if (lastRenderedState != state) {
-      Serial.printf("[RING2 RENDER] state=%s mode=%u (%s) debug=%u enabled=%u\n",
+      Serial.printf("[RING2 PATTERN] state=%s mode=%u (%s) debug=%u enabled=%u\n",
                     label,
                     (unsigned)activeConfig.ring2PatternMode,
                     ring2ModeLabel(activeConfig.ring2PatternMode),
@@ -175,6 +184,7 @@ static void ring2Service(uint32_t now) {
     if (ring2FrameDirty) {
       ring2Clear();
       FastLED.show();
+      logRing2Write(now);
       ring2FrameDirty = false;
     }
     return;
@@ -186,6 +196,7 @@ static void ring2Service(uint32_t now) {
     if (ring2FrameDirty) {
       ring2Fill(rgb(80, 80, 80));
       FastLED.show();
+      logRing2Write(now);
       ring2FrameDirty = false;
     }
     return;
@@ -203,6 +214,7 @@ static void ring2Service(uint32_t now) {
     if (ring2FrameDirty) {
       ring2Clear();
       FastLED.show();
+      logRing2Write(now);
       ring2FrameDirty = false;
     }
     return;
@@ -213,6 +225,7 @@ static void ring2Service(uint32_t now) {
     if (ring2FrameDirty) {
       ring2Fill(rgb(0, 0, 64));
       FastLED.show();
+      logRing2Write(now);
       ring2FrameDirty = false;
     }
     return;
@@ -241,6 +254,7 @@ static void ring2Service(uint32_t now) {
   }
   if (ring2FrameDirty) {
     FastLED.show();
+    logRing2Write(now);
     ring2FrameDirty = false;
   }
 }
@@ -274,7 +288,7 @@ static inline void logRing2ServiceDispatch(uint32_t now, bool ring2ForceTestActi
     Serial.println("[LED FASTLED BUILD] calling ring2Service");
   } else if (ring2ForceTestActive && now - lastRing2SkipLogMs >= 2000) {
     lastRing2SkipLogMs = now;
-    Serial.println("[LED FASTLED BUILD] skipping ring2Service (force test active)");
+    Serial.println("[LED FASTLED BUILD] skipping ring2Service: force test active");
   }
 }
 
