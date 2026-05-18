@@ -238,6 +238,17 @@ static void ring2Service(uint32_t now) {
   }
 }
 #else
+static void ring2DirectHardTest(uint32_t now) {
+  static uint32_t lastDirectEntryLogMs = 0;
+  if (MASTER_DEBUG_LOG && now - lastDirectEntryLogMs >= 2000) {
+    lastDirectEntryLogMs = now;
+    Serial.printf("[RING2 DIRECT ENTRY] now=%lu pin=%u force=%u\n",
+                  (unsigned long)now,
+                  (unsigned)RING2_PIN,
+                  (unsigned)RING2_FORCE_INDEPENDENT_TEST);
+    Serial.println("[RING2 DIRECT] skipped: RING2_ENABLED=0");
+  }
+}
 static void ring2Service(uint32_t) {}
 #endif
 
