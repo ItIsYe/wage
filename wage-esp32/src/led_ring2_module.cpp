@@ -1,6 +1,9 @@
 #include "led_ring2_module.h"
 
+#include <FastLED.h>
+
 #include "config.h"
+#include "types.h"
 
 extern RuntimeConfig activeConfig;
 
