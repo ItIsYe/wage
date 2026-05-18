@@ -114,6 +114,21 @@ static void logRing2Write(uint32_t now) {
 }
 
 static void ring2Service(uint32_t now) {
+  if (MASTER_DEBUG_LOG) {
+    static uint32_t lastHardEntryLogMs = 0;
+    if (now - lastHardEntryLogMs >= 1000) {
+      lastHardEntryLogMs = now;
+      Serial.printf("[RING2 HARD ENTRY] now=%lu enabled=%u mode=%u debug=%u b=%u sb=%u pin=%u\n",
+                    (unsigned long)now,
+                    (unsigned)activeConfig.ring2Enabled,
+                    (unsigned)activeConfig.ring2PatternMode,
+                    (unsigned)activeConfig.ring2DebugAllOn,
+                    (unsigned)activeConfig.ring2BrightnessPercent,
+                    (unsigned)activeConfig.ring2StandbyBrightnessPercent,
+                    (unsigned)RING2_PIN);
+    }
+  }
+
   static uint32_t lastEntryLogMs = 0;
   if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) {
     lastEntryLogMs = millis();
@@ -439,9 +454,19 @@ void ledService(uint32_t now) {
       pixelsShow();
       allOnApplied = true;
     }
-    logRing2ServiceDispatch(now, ring2ForceTestActive);
 #if RING2_ENABLED
-    if (!ring2ForceTestActive) ring2Service(now);
+    if (!ring2ForceTestActive) {
+      if (MASTER_DEBUG_LOG) {
+        static uint32_t lastDebugPreCallLogMs = 0;
+        if (now - lastDebugPreCallLogMs >= 1000) {
+          lastDebugPreCallLogMs = now;
+          Serial.println("[LED FASTLED BUILD] pre-call ring2Service pixelDebug");
+        }
+      }
+      ring2Service(now);
+    } else {
+      logRing2ServiceDispatch(now, ring2ForceTestActive);
+    }
 #endif
     return;
   }
@@ -522,9 +547,19 @@ void ledService(uint32_t now) {
   }
 
   if (ledFrameDirty) { pixelsShow(); ledFrameDirty = false; }
-  logRing2ServiceDispatch(now, ring2ForceTestActive);
 #if RING2_ENABLED
-  if (!ring2ForceTestActive) ring2Service(now);
+  if (!ring2ForceTestActive) {
+    if (MASTER_DEBUG_LOG) {
+      static uint32_t lastPreCallLogMs = 0;
+      if (now - lastPreCallLogMs >= 1000) {
+        lastPreCallLogMs = now;
+        Serial.println("[LED FASTLED BUILD] pre-call ring2Service");
+      }
+    }
+    ring2Service(now);
+  } else {
+    logRing2ServiceDispatch(now, ring2ForceTestActive);
+  }
 #endif
 }
 
