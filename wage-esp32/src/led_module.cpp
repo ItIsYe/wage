@@ -215,6 +215,19 @@ static inline void pixelsSet(const uint8_t* indices, uint8_t count, const CRGB& 
   }
 }
 
+static inline void logRing2ServiceDispatch(uint32_t now, bool ring2ForceTestActive) {
+  if (!MASTER_DEBUG_LOG) return;
+  static uint32_t lastRing2CallLogMs = 0;
+  static uint32_t lastRing2SkipLogMs = 0;
+  if (!ring2ForceTestActive && now - lastRing2CallLogMs >= 2000) {
+    lastRing2CallLogMs = now;
+    Serial.println("[LED FASTLED BUILD] calling ring2Service");
+  } else if (ring2ForceTestActive && now - lastRing2SkipLogMs >= 2000) {
+    lastRing2SkipLogMs = now;
+    Serial.println("[LED FASTLED BUILD] skipping ring2Service (force test active)");
+  }
+}
+
 static constexpr uint8_t ALT_PATTERN_A[] = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24};
 static constexpr uint8_t ALT_PATTERN_B[] = {1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23};
 
@@ -350,7 +363,7 @@ void ledService(uint32_t now) {
       lastLedDiagMs = now;
       Serial.printf("[LED FASTLED BUILD] service mode=%u ring2Force=%u\n",
                     (unsigned)ledMode,
-                    (unsigned)RING2_FORCE_INDEPENDENT_TEST);
+                    (unsigned)ring2ForceTestActive);
     }
   }
 
@@ -362,13 +375,7 @@ void ledService(uint32_t now) {
       pixelsShow();
       allOnApplied = true;
     }
-    if (MASTER_DEBUG_LOG && !ring2ForceTestActive) {
-      static uint32_t lastRing2CallLogMs = 0;
-      if (millis() - lastRing2CallLogMs >= 2000) {
-        lastRing2CallLogMs = millis();
-        Serial.println("[LED FASTLED BUILD] calling ring2Service");
-      }
-    }
+    logRing2ServiceDispatch(now, ring2ForceTestActive);
 #if RING2_ENABLED
     if (!ring2ForceTestActive) ring2Service(now);
 #endif
@@ -451,13 +458,7 @@ void ledService(uint32_t now) {
   }
 
   if (ledFrameDirty) { pixelsShow(); ledFrameDirty = false; }
-  if (MASTER_DEBUG_LOG && !ring2ForceTestActive) {
-    static uint32_t lastRing2CallLogMs = 0;
-    if (millis() - lastRing2CallLogMs >= 2000) {
-      lastRing2CallLogMs = millis();
-      Serial.println("[LED FASTLED BUILD] calling ring2Service");
-    }
-  }
+  logRing2ServiceDispatch(now, ring2ForceTestActive);
 #if RING2_ENABLED
   if (!ring2ForceTestActive) ring2Service(now);
 #endif
