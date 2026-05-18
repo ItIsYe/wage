@@ -134,10 +134,7 @@ static void ring2Service(uint32_t now) {
       secondaryLedRing.strip->show();
 
       if (MASTER_DEBUG_LOG) {
-        Serial.printf("[RING2 TEST] wrote RGBW pin=%u pixels=%u\n",
-                      (unsigned)RING2_PIN,
-                      (unsigned)RING2_PIXEL_COUNT);
-        Serial.printf("[RING2 TEST] pin=%u pixels=%u\n",
+        Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n",
                       (unsigned)RING2_PIN,
                       (unsigned)RING2_PIXEL_COUNT);
       }
@@ -385,7 +382,7 @@ void ledService(uint32_t now) {
       secondaryLedRing.strip->show();
 
       if (MASTER_DEBUG_LOG) {
-        Serial.printf("[RING2 INLINE WRITE] wrote RGBW pin=%u pixels=%u\n",
+        Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n",
                       (unsigned)RING2_PIN,
                       (unsigned)RING2_PIXEL_COUNT);
       }
