@@ -300,6 +300,13 @@ void ledsSetMode(LedMode m) {
 }
 
 void ledService(uint32_t now) {
+  const bool ring2ForceTestActive =
+#if RING2_ENABLED
+    RING2_FORCE_INDEPENDENT_TEST;
+#else
+    false;
+#endif
+
 #if RING2_ENABLED
   if (MASTER_DEBUG_LOG) {
     static uint32_t lastInlineEntryLogMs = 0;
@@ -313,7 +320,6 @@ void ledService(uint32_t now) {
     }
   }
 
-  const bool ring2ForceTestActive = RING2_FORCE_INDEPENDENT_TEST;
   if (ring2ForceTestActive) {
     static uint32_t lastInlineWriteMs = 0;
     if (now - lastInlineWriteMs >= 250) {
@@ -356,7 +362,7 @@ void ledService(uint32_t now) {
       pixelsShow();
       allOnApplied = true;
     }
-    if (MASTER_DEBUG_LOG) {
+    if (MASTER_DEBUG_LOG && !ring2ForceTestActive) {
       static uint32_t lastRing2CallLogMs = 0;
       if (millis() - lastRing2CallLogMs >= 2000) {
         lastRing2CallLogMs = millis();
@@ -445,7 +451,7 @@ void ledService(uint32_t now) {
   }
 
   if (ledFrameDirty) { pixelsShow(); ledFrameDirty = false; }
-  if (MASTER_DEBUG_LOG) {
+  if (MASTER_DEBUG_LOG && !ring2ForceTestActive) {
     static uint32_t lastRing2CallLogMs = 0;
     if (millis() - lastRing2CallLogMs >= 2000) {
       lastRing2CallLogMs = millis();
@@ -481,7 +487,4 @@ void ledClear() {
 
 void ledShow() {
   pixelsShow();
-#if RING2_ENABLED
-  FastLED.show();
-#endif
 }
