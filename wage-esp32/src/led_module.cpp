@@ -15,13 +15,9 @@ static CRGB ring2Leds[RING2_PIXEL_COUNT];
 static LedMode currentLedMode = LedMode::ALL_OFF;
 
 static inline void logRing2ServiceDispatch(uint32_t now, bool ring2ForceTestActive) {
-  if (!MASTER_DEBUG_LOG) return;
-  static uint32_t lastRing2CallLogMs = 0;
+  if (!MASTER_DEBUG_LOG || !ring2ForceTestActive) return;
   static uint32_t lastRing2SkipLogMs = 0;
-  if (!ring2ForceTestActive && now - lastRing2CallLogMs >= 2000) {
-    lastRing2CallLogMs = now;
-    Serial.println("[LED FASTLED BUILD] early-call ring2Service");
-  } else if (ring2ForceTestActive && now - lastRing2SkipLogMs >= 2000) {
+  if (now - lastRing2SkipLogMs >= 2000) {
     lastRing2SkipLogMs = now;
     Serial.println("[LED FASTLED BUILD] skipping ring2Service: force test active");
   }
@@ -77,6 +73,22 @@ void ledService(uint32_t now) {
 
   bool showNeeded = false;
 
+#if RING2_ENABLED
+  if (!ring2ForceTestActive) {
+    if (MASTER_DEBUG_LOG) {
+      static uint32_t lastEarlyRing2CallLogMs = 0;
+      if (now - lastEarlyRing2CallLogMs >= 1000) {
+        lastEarlyRing2CallLogMs = now;
+        Serial.println("[LED FASTLED BUILD] early-call ring2Service");
+      }
+    }
+    showNeeded = ring2Service(now) || showNeeded;
+  } else {
+    showNeeded = ring2ForceTestService(now) || showNeeded;
+    logRing2ServiceDispatch(now, true);
+  }
+#endif
+
   static bool allOnApplied = false;
   if (activeConfig.pixelDebugAllOn) {
     if (!allOnApplied) {
@@ -84,15 +96,6 @@ void ledService(uint32_t now) {
       showNeeded = true;
       allOnApplied = true;
     }
-#if RING2_ENABLED
-    if (!ring2ForceTestActive) {
-      logRing2ServiceDispatch(now, false);
-      showNeeded = ring2Service(now) || showNeeded;
-    } else {
-      showNeeded = ring2ForceTestService(now) || showNeeded;
-      logRing2ServiceDispatch(now, true);
-    }
-#endif
     if (showNeeded) {
       FastLED.show();
 #if RING2_ENABLED
@@ -104,15 +107,6 @@ void ledService(uint32_t now) {
   allOnApplied = false;
 
   showNeeded = ring1Service(now) || showNeeded;
-#if RING2_ENABLED
-  if (!ring2ForceTestActive) {
-    logRing2ServiceDispatch(now, false);
-    showNeeded = ring2Service(now) || showNeeded;
-  } else {
-    showNeeded = ring2ForceTestService(now) || showNeeded;
-    logRing2ServiceDispatch(now, true);
-  }
-#endif
 
   if (showNeeded) {
     FastLED.show();
