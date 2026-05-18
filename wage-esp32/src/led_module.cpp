@@ -78,6 +78,14 @@ static inline void ring2Fill(uint32_t color) {
 
 static void ring2DirectHardTest(uint32_t now) {
   static uint32_t lastDirectTestMs = 0;
+  static uint32_t lastDirectEntryLogMs = 0;
+  if (MASTER_DEBUG_LOG && now - lastDirectEntryLogMs >= 2000) {
+    lastDirectEntryLogMs = now;
+    Serial.printf("[RING2 DIRECT ENTRY] now=%lu pin=%u force=%u\n",
+                  (unsigned long)now,
+                  (unsigned)RING2_PIN,
+                  (unsigned)RING2_FORCE_INDEPENDENT_TEST);
+  }
   if (now - lastDirectTestMs < 250) return;
   lastDirectTestMs = now;
 
@@ -230,6 +238,17 @@ static void ring2Service(uint32_t now) {
   }
 }
 #else
+static void ring2DirectHardTest(uint32_t now) {
+  static uint32_t lastDirectEntryLogMs = 0;
+  if (MASTER_DEBUG_LOG && now - lastDirectEntryLogMs >= 2000) {
+    lastDirectEntryLogMs = now;
+    Serial.printf("[RING2 DIRECT ENTRY] now=%lu pin=%u force=%u\n",
+                  (unsigned long)now,
+                  (unsigned)RING2_PIN,
+                  (unsigned)RING2_FORCE_INDEPENDENT_TEST);
+    Serial.println("[RING2 DIRECT] skipped: RING2_ENABLED=0");
+  }
+}
 static void ring2Service(uint32_t) {}
 #endif
 
@@ -337,20 +356,19 @@ void ledsSetMode(LedMode m) {
 }
 
 void ledService(uint32_t now) {
+  if (RING2_FORCE_INDEPENDENT_TEST) {
+    ring2DirectHardTest(now);
+  }
+
   if (MASTER_DEBUG_LOG) {
     static uint32_t lastLedDiagMs = 0;
     if (now - lastLedDiagMs >= 2000) {
       lastLedDiagMs = now;
-      Serial.printf("[LED] service mode=%u ring2Force=%u\n",
+      Serial.printf("[LED DIRECT BUILD] service mode=%u ring2Force=%u\n",
                     (unsigned)ledMode,
                     (unsigned)RING2_FORCE_INDEPENDENT_TEST);
     }
   }
-#if RING2_ENABLED
-  if (RING2_FORCE_INDEPENDENT_TEST) {
-    ring2DirectHardTest(now);
-  }
-#endif
 
   static bool allOnApplied = false;
   if (activeConfig.pixelDebugAllOn) {
@@ -364,7 +382,7 @@ void ledService(uint32_t now) {
       static uint32_t lastRing2CallLogMs = 0;
       if (millis() - lastRing2CallLogMs >= 2000) {
         lastRing2CallLogMs = millis();
-        Serial.println("[LED] calling ring2Service");
+        Serial.println("[LED DIRECT BUILD] calling ring2Service");
       }
     }
     ring2Service(now);
@@ -451,7 +469,7 @@ void ledService(uint32_t now) {
     static uint32_t lastRing2CallLogMs = 0;
     if (millis() - lastRing2CallLogMs >= 2000) {
       lastRing2CallLogMs = millis();
-      Serial.println("[LED] calling ring2Service");
+      Serial.println("[LED DIRECT BUILD] calling ring2Service");
     }
   }
   ring2Service(now);
