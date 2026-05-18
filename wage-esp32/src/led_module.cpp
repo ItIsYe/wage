@@ -357,8 +357,39 @@ void ledsSetMode(LedMode m) {
 
 void ledService(uint32_t now) {
 #if RING2_ENABLED
+  if (MASTER_DEBUG_LOG) {
+    static uint32_t lastInlineEntryLogMs = 0;
+    if (now - lastInlineEntryLogMs >= 2000) {
+      lastInlineEntryLogMs = now;
+      Serial.printf("[RING2 INLINE ENTRY] force=%u pin=%u pixels=%u now=%lu\n",
+                    (unsigned)RING2_FORCE_INDEPENDENT_TEST,
+                    (unsigned)RING2_PIN,
+                    (unsigned)RING2_PIXEL_COUNT,
+                    (unsigned long)now);
+    }
+  }
+
   if (RING2_FORCE_INDEPENDENT_TEST) {
-    ring2DirectHardTest(now);
+    static uint32_t lastInlineWriteMs = 0;
+    if (now - lastInlineWriteMs >= 250) {
+      lastInlineWriteMs = now;
+
+      secondaryLedRing.strip->setBrightness(255);
+      secondaryLedRing.strip->clear();
+
+      if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
+      if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
+      if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
+      if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+
+      secondaryLedRing.strip->show();
+
+      if (MASTER_DEBUG_LOG) {
+        Serial.printf("[RING2 INLINE WRITE] wrote RGBW pin=%u pixels=%u\n",
+                      (unsigned)RING2_PIN,
+                      (unsigned)RING2_PIXEL_COUNT);
+      }
+    }
   }
 #endif
 
