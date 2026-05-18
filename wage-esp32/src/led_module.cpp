@@ -1,6 +1,6 @@
 #include "led_module.h"
 
-#include <Adafruit_NeoPixel.h>
+#include <FastLED.h>
 
 #include "config.h"
 #include "types.h"
@@ -8,12 +8,9 @@
 extern RuntimeConfig activeConfig;
 
 // Ring 1 / Haupt-LED-Ring
-static Adafruit_NeoPixel ledStrip(PIXEL_COUNT, LED_STRIP_PIN, NEO_GRB + NEO_KHZ800);
-static LedRingContext primaryLedRing{&ledStrip, PIXEL_COUNT};
+static CRGB primaryLeds[PIXEL_COUNT];
 #if RING2_ENABLED
-// Ring 2 / Zusatz-LED-Ring
-static Adafruit_NeoPixel ring2Strip(RING2_PIXEL_COUNT, RING2_PIN, NEO_GRB + NEO_KHZ800);
-static LedRingContext secondaryLedRing{&ring2Strip, RING2_PIXEL_COUNT};
+static CRGB ring2Leds[RING2_PIXEL_COUNT];
 #endif
 
 static LedMode ledMode = LedMode::ALL_OFF;
@@ -24,16 +21,34 @@ static uint32_t standbyFrameNextMs = 0;
 static uint8_t ledSpinIdx = 0;
 static bool ledFrameDirty = true;
 
+
+static inline CRGB scaleColor(const CRGB& color, uint8_t brightness) {
+  CRGB out = color;
+  out.nscale8_video(brightness);
+  return out;
+}
+
+static inline CRGB rgb(uint8_t r, uint8_t g, uint8_t b) { return CRGB(r, g, b); }
+
+static inline CRGB hsvGamma(uint16_t hue, uint8_t sat, uint8_t val) {
+  CHSV hsv((uint8_t)(hue >> 8), sat, val);
+  CRGB out;
+  hsv2rgb_rainbow(hsv, out);
+  out.r = gamma8(out.r);
+  out.g = gamma8(out.g);
+  out.b = gamma8(out.b);
+  return out;
+}
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
 static uint8_t standbyOnCount = 0;
 static uint8_t currentBrightnessByte = 0;
 static bool brightnessInitialized = false;
 static uint16_t standbyHue[PIXEL_COUNT] = {};
 static uint8_t standbyValue[PIXEL_COUNT] = {};
-static uint32_t colorGreen = 0;
-static uint32_t colorBlue = 0;
-static uint32_t colorRed = 0;
-static uint32_t colorCyan = 0;
+static CRGB colorGreen = CRGB::Black;
+static CRGB colorBlue = CRGB::Black;
+static CRGB colorRed = CRGB::Black;
+static CRGB colorCyan = CRGB::Black;
 #if RING2_ENABLED
 static bool ring2FrameDirty = true;
 static uint8_t ring2BrightnessByte = 0;
@@ -49,13 +64,12 @@ static inline uint8_t brightnessPercentToByte(uint8_t percent) {
 }
 
 // Basis-Helfer Ring 1
-static inline void pixelsClear() { primaryLedRing.strip->clear(); }
-static inline void pixelsShow() { primaryLedRing.strip->show(); }
+static inline void pixelsClear() { fill_solid(primaryLeds, PIXEL_COUNT, CRGB::Black); }
+static inline void pixelsShow() { FastLED.show(); }
 
 static inline void setStripBrightnessPercent(uint8_t percent) {
   const uint8_t target = brightnessPercentToByte(percent);
   if (brightnessInitialized && currentBrightnessByte == target) return;
-  primaryLedRing.strip->setBrightness(target);
   currentBrightnessByte = target;
   brightnessInitialized = true;
 }
@@ -65,15 +79,14 @@ static inline void setStripBrightnessPercent(uint8_t percent) {
 static inline void ring2SetBrightnessPercent(uint8_t percent) {
   const uint8_t target = brightnessPercentToByte(percent);
   if (ring2BrightnessInitialized && ring2BrightnessByte == target) return;
-  secondaryLedRing.strip->setBrightness(target);
   ring2BrightnessByte = target;
   ring2BrightnessInitialized = true;
   ring2FrameDirty = true;
 }
 
-static inline void ring2Clear() { secondaryLedRing.strip->clear(); }
-static inline void ring2Fill(uint32_t color) {
-  for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) secondaryLedRing.strip->setPixelColor(i, color);
+static inline void ring2Clear() { fill_solid(ring2Leds, RING2_PIXEL_COUNT, CRGB::Black); }
+static inline void ring2Fill(const CRGB& color) {
+  for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte);
 }
 
 static void ring2DirectHardTest(uint32_t now) {
@@ -89,15 +102,15 @@ static void ring2DirectHardTest(uint32_t now) {
   if (now - lastDirectTestMs < 250) return;
   lastDirectTestMs = now;
 
-  secondaryLedRing.strip->setBrightness(255);
-  secondaryLedRing.strip->clear();
+  ring2BrightnessByte = 255;
+  ring2Clear();
 
-  if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
-  if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
-  if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
-  if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+  if (RING2_PIXEL_COUNT > 0) ring2Leds[0] = rgb(255, 0, 0);
+  if (RING2_PIXEL_COUNT > 1) ring2Leds[1] = rgb(0, 255, 0);
+  if (RING2_PIXEL_COUNT > 2) ring2Leds[2] = rgb(0, 0, 255);
+  if (RING2_PIXEL_COUNT > 3) ring2Leds[3] = rgb(255, 255, 255);
 
-  secondaryLedRing.strip->show();
+  FastLED.show();
 
   if (MASTER_DEBUG_LOG) {
     Serial.printf("[RING2 DIRECT] wrote RGBW pin=%u pixels=%u\n",
@@ -123,15 +136,15 @@ static void ring2Service(uint32_t now) {
     if (millis() - lastTestShowMs >= 250) {
       lastTestShowMs = millis();
 
-      secondaryLedRing.strip->setBrightness(255);
-      secondaryLedRing.strip->clear();
+      ring2BrightnessByte = 255;
+      ring2Clear();
 
-      if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
-      if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
-      if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
-      if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+      if (RING2_PIXEL_COUNT > 0) ring2Leds[0] = rgb(255, 0, 0);
+      if (RING2_PIXEL_COUNT > 1) ring2Leds[1] = rgb(0, 255, 0);
+      if (RING2_PIXEL_COUNT > 2) ring2Leds[2] = rgb(0, 0, 255);
+      if (RING2_PIXEL_COUNT > 3) ring2Leds[3] = rgb(255, 255, 255);
 
-      secondaryLedRing.strip->show();
+      FastLED.show();
 
       if (MASTER_DEBUG_LOG) {
         Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n",
@@ -180,7 +193,7 @@ static void ring2Service(uint32_t now) {
   if (!activeConfig.ring2Enabled) {
     if (ring2FrameDirty) {
       ring2Clear();
-      secondaryLedRing.strip->show();
+      FastLED.show();
       ring2FrameDirty = false;
     }
     return;
@@ -189,8 +202,8 @@ static void ring2Service(uint32_t now) {
   if (activeConfig.ring2DebugAllOn) {
     ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
     if (ring2FrameDirty) {
-      ring2Fill(secondaryLedRing.strip->Color(80, 80, 80));
-      secondaryLedRing.strip->show();
+      ring2Fill(rgb(80, 80, 80));
+      FastLED.show();
       ring2FrameDirty = false;
     }
     return;
@@ -206,7 +219,7 @@ static void ring2Service(uint32_t now) {
   if (mode == 0) {
     if (ring2FrameDirty) {
       ring2Clear();
-      secondaryLedRing.strip->show();
+      FastLED.show();
       ring2FrameDirty = false;
     }
     return;
@@ -214,8 +227,8 @@ static void ring2Service(uint32_t now) {
 
   if (mode == 1) {
     if (ring2FrameDirty) {
-      ring2Fill(secondaryLedRing.strip->Color(0, 0, 64));
-      secondaryLedRing.strip->show();
+      ring2Fill(rgb(0, 0, 64));
+      FastLED.show();
       ring2FrameDirty = false;
     }
     return;
@@ -226,11 +239,11 @@ static void ring2Service(uint32_t now) {
     const int16_t next = (int16_t)ring2PulseValue + ring2PulseStep;
     if (next >= 120 || next <= 10) ring2PulseStep = -ring2PulseStep;
     ring2PulseValue = (uint8_t)((int16_t)ring2PulseValue + ring2PulseStep);
-    ring2Fill(secondaryLedRing.strip->Color(0, 0, ring2PulseValue));
+    ring2Fill(rgb(0, 0, ring2PulseValue));
     ring2FrameDirty = true;
   }
   if (ring2FrameDirty) {
-    secondaryLedRing.strip->show();
+    FastLED.show();
     ring2FrameDirty = false;
   }
 }
@@ -256,13 +269,13 @@ static inline void applyBrightnessForLedModeInternal() {
   setStripBrightnessPercent(percent);
 }
 
-static inline void pixelsFill(uint32_t color) {
-  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) primaryLedRing.strip->setPixelColor(i, color);
+static inline void pixelsFill(const CRGB& color) {
+  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) primaryLeds[i] = scaleColor(color, currentBrightnessByte);
 }
 
-static inline void pixelsSet(const uint8_t* indices, uint8_t count, uint32_t color) {
+static inline void pixelsSet(const uint8_t* indices, uint8_t count, const CRGB& color) {
   for (uint8_t i = 0; i < count; ++i) {
-    if (indices[i] < PIXEL_COUNT) primaryLedRing.strip->setPixelColor(indices[i], color);
+    if (indices[i] < PIXEL_COUNT) primaryLeds[indices[i]] = scaleColor(color, currentBrightnessByte);
   }
 }
 
@@ -273,35 +286,33 @@ static void standbyApplyOutputs() {
   pixelsClear();
   for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
     if (standbyTwinkleOn[i]) {
-      const uint32_t raw = primaryLedRing.strip->ColorHSV(standbyHue[i], STANDBY_SATURATION, standbyValue[i]);
-      primaryLedRing.strip->setPixelColor(i, primaryLedRing.strip->gamma32(raw));
+      primaryLeds[i] = scaleColor(hsvGamma(standbyHue[i], STANDBY_SATURATION, standbyValue[i]), currentBrightnessByte);
     }
   }
 }
 
 void ledsInit() {
-  primaryLedRing.strip->begin();
+  FastLED.addLeds<WS2812B, LED_STRIP_PIN, GRB>(primaryLeds, PIXEL_COUNT);
+#if RING2_ENABLED
+  FastLED.addLeds<WS2812B, RING2_PIN, GRB>(ring2Leds, RING2_PIXEL_COUNT);
+#endif
   setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
-  colorGreen = primaryLedRing.strip->Color(0, 90, 0);
-  colorBlue = primaryLedRing.strip->Color(0, 0, 100);
-  colorRed = primaryLedRing.strip->Color(100, 0, 0);
-  colorCyan = primaryLedRing.strip->Color(0, 90, 90);
+  colorGreen = rgb(0, 90, 0);
+  colorBlue = rgb(0, 0, 100);
+  colorRed = rgb(100, 0, 0);
+  colorCyan = rgb(0, 90, 90);
   pixelsClear();
   pixelsShow();
   ledFrameDirty = false;
   #if RING2_ENABLED
-  secondaryLedRing.strip->begin();
   ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
 
   if (RING2_BOOT_TEST) {
     for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
-      secondaryLedRing.strip->setPixelColor(
-        i,
-        secondaryLedRing.strip->Color(80, 80, 80)
-      );
+      ring2Leds[i] = scaleColor(rgb(80, 80, 80), ring2BrightnessByte);
     }
 
-    secondaryLedRing.strip->show();
+    FastLED.show();
     ring2FrameDirty = false;
 
     if (MASTER_DEBUG_LOG) {
@@ -313,7 +324,7 @@ void ledsInit() {
     }
   } else {
     ring2Clear();
-    secondaryLedRing.strip->show();
+    FastLED.show();
 
     // Initialen Frame markieren: ring2Service() schreibt das Default-Pattern
     // beim nächsten Service-Lauf zuverlässig auf Ring 2.
@@ -371,15 +382,15 @@ void ledService(uint32_t now) {
     if (now - lastInlineWriteMs >= 250) {
       lastInlineWriteMs = now;
 
-      secondaryLedRing.strip->setBrightness(255);
-      secondaryLedRing.strip->clear();
+      ring2BrightnessByte = 255;
+      ring2Clear();
 
-      if (RING2_PIXEL_COUNT > 0) secondaryLedRing.strip->setPixelColor(0, secondaryLedRing.strip->Color(255, 0, 0));
-      if (RING2_PIXEL_COUNT > 1) secondaryLedRing.strip->setPixelColor(1, secondaryLedRing.strip->Color(0, 255, 0));
-      if (RING2_PIXEL_COUNT > 2) secondaryLedRing.strip->setPixelColor(2, secondaryLedRing.strip->Color(0, 0, 255));
-      if (RING2_PIXEL_COUNT > 3) secondaryLedRing.strip->setPixelColor(3, secondaryLedRing.strip->Color(255, 255, 255));
+      if (RING2_PIXEL_COUNT > 0) ring2Leds[0] = rgb(255, 0, 0);
+      if (RING2_PIXEL_COUNT > 1) ring2Leds[1] = rgb(0, 255, 0);
+      if (RING2_PIXEL_COUNT > 2) ring2Leds[2] = rgb(0, 0, 255);
+      if (RING2_PIXEL_COUNT > 3) ring2Leds[3] = rgb(255, 255, 255);
 
-      secondaryLedRing.strip->show();
+      FastLED.show();
 
       if (MASTER_DEBUG_LOG) {
         Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n",
@@ -404,7 +415,7 @@ void ledService(uint32_t now) {
   if (activeConfig.pixelDebugAllOn) {
     setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
     if (!allOnApplied) {
-      pixelsFill(primaryLedRing.strip->Color(80, 80, 80));
+      pixelsFill(rgb(80, 80, 80));
       pixelsShow();
       allOnApplied = true;
     }
@@ -448,7 +459,7 @@ void ledService(uint32_t now) {
       break;
     case LedMode::TIMING_BLUE_SPINNER:
       if (now - ledTickMs >= 180) { ledTickMs = now; ledSpinIdx = (uint8_t)((ledSpinIdx + 1) % PIXEL_COUNT); ledFrameDirty = true; }
-      if (ledFrameDirty) { pixelsClear(); primaryLedRing.strip->setPixelColor(ledSpinIdx, colorBlue); }
+      if (ledFrameDirty) { pixelsClear(); primaryLeds[ledSpinIdx] = scaleColor(colorBlue, currentBrightnessByte); }
       break;
     case LedMode::RESULT_FLASH_GB_ONCE:
       if (now - ledTickMs < 200) { if (ledFrameDirty) pixelsFill(colorCyan); }
@@ -530,6 +541,6 @@ void ledClear() {
 void ledShow() {
   pixelsShow();
 #if RING2_ENABLED
-  secondaryLedRing.strip->show();
+  FastLED.show();
 #endif
 }
