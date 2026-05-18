@@ -356,9 +356,11 @@ void ledsSetMode(LedMode m) {
 }
 
 void ledService(uint32_t now) {
+#if RING2_ENABLED
   if (RING2_FORCE_INDEPENDENT_TEST) {
     ring2DirectHardTest(now);
   }
+#endif
 
   if (MASTER_DEBUG_LOG) {
     static uint32_t lastLedDiagMs = 0;
