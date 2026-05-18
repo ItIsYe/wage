@@ -1,6 +1,7 @@
 #include "led_module.h"
 
 #include <FastLED.h>
+#include <math.h>
 
 #include "config.h"
 #include "types.h"
@@ -30,13 +31,19 @@ static inline CRGB scaleColor(const CRGB& color, uint8_t brightness) {
 
 static inline CRGB rgb(uint8_t r, uint8_t g, uint8_t b) { return CRGB(r, g, b); }
 
+static inline uint8_t ledGamma8(uint8_t value) {
+  const float normalized = value / 255.0f;
+  const float corrected = powf(normalized, 2.8f);
+  return (uint8_t)(corrected * 255.0f + 0.5f);
+}
+
 static inline CRGB hsvGamma(uint16_t hue, uint8_t sat, uint8_t val) {
   CHSV hsv((uint8_t)(hue >> 8), sat, val);
   CRGB out;
   hsv2rgb_rainbow(hsv, out);
-  out.r = gamma8(out.r);
-  out.g = gamma8(out.g);
-  out.b = gamma8(out.b);
+  out.r = ledGamma8(out.r);
+  out.g = ledGamma8(out.g);
+  out.b = ledGamma8(out.b);
   return out;
 }
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
