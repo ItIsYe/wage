@@ -300,7 +300,7 @@ static inline void logRing2ServiceDispatch(uint32_t now, bool ring2ForceTestActi
   static uint32_t lastRing2SkipLogMs = 0;
   if (!ring2ForceTestActive && now - lastRing2CallLogMs >= 2000) {
     lastRing2CallLogMs = now;
-    Serial.println("[LED FASTLED BUILD] calling ring2Service");
+    Serial.println("[LED FASTLED BUILD] pre-call ring2Service");
   } else if (ring2ForceTestActive && now - lastRing2SkipLogMs >= 2000) {
     lastRing2SkipLogMs = now;
     Serial.println("[LED FASTLED BUILD] skipping ring2Service: force test active");
