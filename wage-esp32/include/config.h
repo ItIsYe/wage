@@ -74,7 +74,7 @@ static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
 static constexpr bool RING2_ENABLED = true;
 // GPIO14: ESP32 nutzbarer Output, teilt sich aber JTAG-Funktion. Bei JTAG-Nutzung Konflikt möglich.
 static constexpr uint8_t RING2_PIN = 14;
-static constexpr uint16_t RING2_PIXEL_COUNT = 16;
+static constexpr uint16_t RING2_PIXEL_COUNT = 24;
 static constexpr bool RING2_BOOT_TEST = false;
 static constexpr bool RING2_FORCE_INDEPENDENT_TEST = false;
 static constexpr bool DEFAULT_RING2_ENABLED = true;
