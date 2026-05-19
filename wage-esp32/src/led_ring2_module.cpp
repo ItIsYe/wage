@@ -181,6 +181,7 @@ bool ring2Service(uint32_t now) {
 void ring2MarkDirty() { ring2FrameDirty = true; }
 void ring2SetState(State s) {
   if (ring2State == s) return;
+  if (MASTER_DEBUG_LOG) Serial.printf("[RING2 STATE] %u -> %u\n", (unsigned)ring2State, (unsigned)s);
   ring2State = s;
   ring2FrameDirty = true;
 }
