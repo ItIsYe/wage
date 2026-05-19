@@ -257,8 +257,11 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   if (cfg.standbyChangeMinMs > STANDBY_CHANGE_MAX_LIMIT_MS) cfg.standbyChangeMinMs = STANDBY_CHANGE_MAX_LIMIT_MS;
   if (cfg.standbyChangeMaxMs < STANDBY_CHANGE_MIN_LIMIT_MS) cfg.standbyChangeMaxMs = STANDBY_CHANGE_MIN_LIMIT_MS;
   if (cfg.standbyChangeMaxMs > STANDBY_CHANGE_MAX_LIMIT_MS) cfg.standbyChangeMaxMs = STANDBY_CHANGE_MAX_LIMIT_MS;
+  if (cfg.standbyChangeMaxMs < cfg.standbyChangeMinMs) cfg.standbyChangeMaxMs = cfg.standbyChangeMinMs;
+  if (cfg.standbyValueMax < cfg.standbyValueMin) cfg.standbyValueMax = cfg.standbyValueMin;
   if (cfg.standbyOnMin > PIXEL_COUNT) cfg.standbyOnMin = PIXEL_COUNT;
   if (cfg.standbyOnMax > PIXEL_COUNT) cfg.standbyOnMax = PIXEL_COUNT;
+  if (cfg.standbyOnMax < cfg.standbyOnMin) cfg.standbyOnMax = cfg.standbyOnMin;
   cfg.oledTimingRefreshMs=prefs.getUInt("oledRef", cfg.oledTimingRefreshMs);
   cfg.scaleReadIntervalMs=prefs.getUInt("scaleInt", cfg.scaleReadIntervalMs);
   cfg.scaleReadSamples=prefs.getUChar("samples", cfg.scaleReadSamples);
