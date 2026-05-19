@@ -1,6 +1,7 @@
 #include "led_ring2_module.h"
 
 #include <FastLED.h>
+#include <math.h>
 
 #include "config.h"
 #include "types.h"
@@ -179,6 +180,7 @@ bool ring2Service(uint32_t now) {
   return false;
 }
 void ring2MarkDirty() { ring2FrameDirty = true; }
+bool ring2IsStandbyState() { return ring2State == State::STANDBY; }
 void ring2SetState(State s) {
   if (ring2State == s) return;
   if (MASTER_DEBUG_LOG) Serial.printf("[RING2 STATE] %u -> %u\n", (unsigned)ring2State, (unsigned)s);
@@ -208,4 +210,24 @@ bool ring2ForceTestService(uint32_t now) {
   if (RING2_PIXEL_COUNT > 3) ring2Leds[3] = rgb(255, 255, 255);
   if (MASTER_DEBUG_LOG) Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n", (unsigned)RING2_PIN, (unsigned)RING2_PIXEL_COUNT);
   return true;
+}
+void ring2ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value, uint16_t count) {
+  if (!ring2Ready()) return;
+  ring2SetBrightnessPercent(activeConfig.ring2StandbyBrightnessPercent);
+  ring2Clear();
+  const uint16_t base = PIXEL_COUNT;
+  for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+    const uint16_t idx = base + i;
+    if (idx >= count || !on[idx]) continue;
+    CHSV hsv((uint8_t)(hue[idx] >> 8), activeConfig.standbySaturation, value[idx]);
+    CRGB c;
+    hsv2rgb_rainbow(hsv, c);
+    const float nr = c.r / 255.0f;
+    const float ng = c.g / 255.0f;
+    const float nb = c.b / 255.0f;
+    c.r = (uint8_t)(powf(nr, 2.8f) * 255.0f + 0.5f);
+    c.g = (uint8_t)(powf(ng, 2.8f) * 255.0f + 0.5f);
+    c.b = (uint8_t)(powf(nb, 2.8f) * 255.0f + 0.5f);
+    ring2Leds[i] = scaleColor(c, ring2BrightnessByte);
+  }
 }

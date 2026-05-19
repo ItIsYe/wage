@@ -247,3 +247,13 @@ void ring1ApplyBrightnessForCurrentMode() { applyBrightnessForLedModeInternal();
 void ring1MarkDirty() { ledFrameDirty = true; }
 void ring1Clear() { if (!ring1Ready()) return; pixelsClear(); }
 void ring1FillDebugAllOn() { if (!ring1Ready()) return; applyBrightnessForLedModeInternal(); pixelsFill(rgb(80, 80, 80)); ledFrameDirty = false; }
+void ring1ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value, uint16_t count) {
+  if (!ring1Ready()) return;
+  setStripBrightnessPercent(activeConfig.standbyBrightnessPercent);
+  pixelsClear();
+  const uint16_t limit = (count < PIXEL_COUNT) ? count : PIXEL_COUNT;
+  for (uint16_t i = 0; i < limit; ++i) {
+    if (!on[i]) continue;
+    primaryLeds[i] = scaleColor(hsvGamma(hue[i], activeConfig.standbySaturation, value[i]), currentBrightnessByte);
+  }
+}
