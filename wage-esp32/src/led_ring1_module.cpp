@@ -79,8 +79,10 @@ static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) {
   return (minValue > maxValue) ? maxValue : minValue;
 }
 static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
-  if (frameMs < STANDBY_FRAME_MIN_MS) return STANDBY_FRAME_MIN_MS;
-  if (frameMs > STANDBY_FRAME_MAX_MS) return STANDBY_FRAME_MAX_MS;
+  static constexpr uint32_t kStandbyFrameMinMs = 30U;
+  static constexpr uint32_t kStandbyFrameMaxMs = 1000U;
+  if (frameMs < kStandbyFrameMinMs) return kStandbyFrameMinMs;
+  if (frameMs > kStandbyFrameMaxMs) return kStandbyFrameMaxMs;
   return frameMs;
 }
 static inline uint32_t randomInclusiveU32(uint32_t minValue, uint32_t maxValue) {
