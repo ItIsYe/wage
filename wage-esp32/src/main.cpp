@@ -289,6 +289,9 @@ void setup() {
   webConfigLoadDefaults(activeConfig);
   initOledScale();
   webConfigLoadFromPrefs(activeConfig, oledScale);
+  Serial.printf("[CFG] Standby after=%lu ms (%lus)\n",
+                (unsigned long)activeConfig.standbyAfterMs,
+                (unsigned long)(activeConfig.standbyAfterMs / 1000U));
   randomSeed(esp_random());
   bootId = esp_random();
   runCounter = 0;
