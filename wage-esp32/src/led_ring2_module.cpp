@@ -14,6 +14,7 @@ static bool ring2BrightnessInitialized = false;
 static uint32_t ring2TickMs = 0;
 static uint8_t ring2PulseValue = 10;
 static int8_t ring2PulseStep = 5;
+static uint8_t ring2ChaseHead = 0;
 
 static inline bool ring2Ready() { return ring2Leds != nullptr; }
 
@@ -28,7 +29,15 @@ static inline void ring2SetBrightnessPercent(uint8_t percent) {
   ring2FrameDirty = true;
 }
 
-static const char* ring2ModeLabel(uint8_t mode) { if (mode == 0) return "off"; if (mode == 1) return "solid-blue"; if (mode == 2) return "pulse-blue"; return "unknown"; }
+static const char* ring2ModeLabel(uint8_t mode) {
+  if (mode == 0) return "off";
+  if (mode == 1) return "solid-blue";
+  if (mode == 2) return "pulse-blue";
+  if (mode == 3) return "solid-cyan";
+  if (mode == 4) return "solid-green";
+  if (mode == 5) return "chase-blue";
+  return "unknown";
+}
 void ring2LogWrite(uint32_t now) { if (!MASTER_DEBUG_LOG) return; static uint32_t lastWriteLogMs = 0; if (now - lastWriteLogMs >= 2000) { lastWriteLogMs = now; Serial.println("[RING2 WRITE] show applied"); } }
 static inline void ring2Fill(const CRGB& color) { if (!ring2Ready()) return; for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte); }
 
@@ -67,16 +76,54 @@ bool ring2Service(uint32_t now) {
   if (lastRing2Enabled != activeConfig.ring2Enabled || lastRing2PatternMode != activeConfig.ring2PatternMode || lastRing2DebugAllOn != activeConfig.ring2DebugAllOn || lastRing2BrightnessPercent != activeConfig.ring2BrightnessPercent || lastRing2StandbyBrightnessPercent != activeConfig.ring2StandbyBrightnessPercent) {
     ring2FrameDirty = true;
     if (MASTER_DEBUG_LOG) Serial.printf("[RING2 CONFIG] pin=%u enabled=%u mode=%u (%s) debug=%u brightness=%u standbyBrightness=%u\n", (unsigned)RING2_PIN,(unsigned)activeConfig.ring2Enabled,(unsigned)activeConfig.ring2PatternMode,ring2ModeLabel(activeConfig.ring2PatternMode),(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent);
-    if (lastRing2PatternMode != activeConfig.ring2PatternMode && activeConfig.ring2PatternMode == 2) { ring2PulseValue = 10; ring2PulseStep = 5; ring2TickMs = now; }
+    if (lastRing2PatternMode != activeConfig.ring2PatternMode) {
+      if (activeConfig.ring2PatternMode == 2) {
+        ring2PulseValue = 10;
+        ring2PulseStep = 5;
+        ring2TickMs = now;
+      }
+      if (activeConfig.ring2PatternMode == 5) {
+        ring2ChaseHead = 0;
+        ring2TickMs = now;
+      }
+    }
     lastRing2Enabled = activeConfig.ring2Enabled; lastRing2PatternMode = activeConfig.ring2PatternMode; lastRing2DebugAllOn = activeConfig.ring2DebugAllOn; lastRing2BrightnessPercent = activeConfig.ring2BrightnessPercent; lastRing2StandbyBrightnessPercent = activeConfig.ring2StandbyBrightnessPercent;
   }
   if (!activeConfig.ring2Enabled) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
-  if (activeConfig.ring2DebugAllOn) { logRenderedState(3, "debug-all-on"); ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent); if (ring2FrameDirty) { ring2Fill(rgb(80, 80, 80)); ring2FrameDirty = false; return true; } return false; }
+  if (activeConfig.ring2DebugAllOn) {
+    logRenderedState(3, "debug-all-on");
+    ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
+    if (ring2FrameDirty) {
+      // Bewusst neutrales Weiß für Hardware-/Verdrahtungsprüfung, nicht für Normalbetrieb.
+      ring2Fill(rgb(80, 80, 80));
+      ring2FrameDirty = false;
+      return true;
+    }
+    return false;
+  }
 
   const uint8_t mode = activeConfig.ring2PatternMode;
   if (mode == 2) ring2SetBrightnessPercent(activeConfig.ring2StandbyBrightnessPercent); else ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   if (mode == 0) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
   if (mode == 1) { logRenderedState(1, "solid-blue"); if (ring2FrameDirty) { ring2Fill(rgb(0, 0, 64)); ring2FrameDirty = false; return true; } return false; }
+  if (mode == 3) { logRenderedState(4, "solid-cyan"); if (ring2FrameDirty) { ring2Fill(rgb(0, 48, 64)); ring2FrameDirty = false; return true; } return false; }
+  if (mode == 4) { logRenderedState(5, "solid-green"); if (ring2FrameDirty) { ring2Fill(rgb(0, 64, 0)); ring2FrameDirty = false; return true; } return false; }
+  if (mode == 5) {
+    logRenderedState(6, "chase-blue");
+    if (now - ring2TickMs >= 110) {
+      ring2TickMs = now;
+      ring2ChaseHead = (uint8_t)((ring2ChaseHead + 1) % RING2_PIXEL_COUNT);
+      ring2FrameDirty = true;
+    }
+    if (ring2FrameDirty) {
+      ring2Clear();
+      ring2Leds[ring2ChaseHead] = scaleColor(rgb(0, 0, 90), ring2BrightnessByte);
+      if (RING2_PIXEL_COUNT > 1) ring2Leds[(ring2ChaseHead + RING2_PIXEL_COUNT - 1) % RING2_PIXEL_COUNT] = scaleColor(rgb(0, 0, 25), ring2BrightnessByte);
+      ring2FrameDirty = false;
+      return true;
+    }
+    return false;
+  }
 
   logRenderedState(2, "pulse-blue");
   static uint32_t lastHeartbeatLogMs = 0;
