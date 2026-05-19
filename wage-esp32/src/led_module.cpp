@@ -9,9 +9,7 @@
 extern RuntimeConfig activeConfig;
 
 static CRGB primaryLeds[PIXEL_COUNT];
-#if RING2_ENABLED
 static CRGB ring2Leds[RING2_PIXEL_COUNT];
-#endif
 static LedMode currentLedMode = LedMode::ALL_OFF;
 
 static inline void logRing2ServiceDispatch(uint32_t now, bool ring2ForceTestActive) {
@@ -26,10 +24,10 @@ static inline void logRing2ServiceDispatch(uint32_t now, bool ring2ForceTestActi
 void ledsInit() {
   FastLED.addLeds<WS2812B, LED_STRIP_PIN, GRB>(primaryLeds, PIXEL_COUNT);
   ring1Init(primaryLeds);
-#if RING2_ENABLED
-  FastLED.addLeds<WS2812B, RING2_PIN, GRB>(ring2Leds, RING2_PIXEL_COUNT);
-  ring2Init(ring2Leds);
-#endif
+  if (RING2_ENABLED) {
+    FastLED.addLeds<WS2812B, RING2_PIN, GRB>(ring2Leds, RING2_PIXEL_COUNT);
+    ring2Init(ring2Leds);
+  }
   FastLED.show();
 }
 
@@ -40,26 +38,8 @@ void ledsSetMode(LedMode m) {
 }
 
 void ledService(uint32_t now) {
-  const bool ring2ForceTestActive =
-#if RING2_ENABLED
-    RING2_FORCE_INDEPENDENT_TEST;
-#else
-    false;
-#endif
+  const bool ring2ForceTestActive = RING2_ENABLED && RING2_FORCE_INDEPENDENT_TEST;
 
-#if RING2_ENABLED
-  if (MASTER_DEBUG_LOG) {
-    static uint32_t lastInlineEntryLogMs = 0;
-    if (now - lastInlineEntryLogMs >= 2000) {
-      lastInlineEntryLogMs = now;
-      Serial.printf("[RING2 FASTLED ENTRY] force=%u pin=%u pixels=%u now=%lu\n",
-                    (unsigned)RING2_FORCE_INDEPENDENT_TEST,
-                    (unsigned)RING2_PIN,
-                    (unsigned)RING2_PIXEL_COUNT,
-                    (unsigned long)now);
-    }
-  }
-#endif
 
   if (MASTER_DEBUG_LOG) {
     static uint32_t lastLedDiagMs = 0;
@@ -71,10 +51,10 @@ void ledService(uint32_t now) {
     }
   }
 
-  bool showNeeded = false;
+  bool ring1Changed = false;
+  bool ring2Changed = false;
 
-#if RING2_ENABLED
-  if (!ring2ForceTestActive) {
+  if (RING2_ENABLED && !ring2ForceTestActive) {
     if (MASTER_DEBUG_LOG) {
       static uint32_t lastEarlyRing2CallLogMs = 0;
       if (now - lastEarlyRing2CallLogMs >= 1000) {
@@ -82,46 +62,36 @@ void ledService(uint32_t now) {
         Serial.println("[LED FASTLED BUILD] early-call ring2Service");
       }
     }
-    showNeeded = ring2Service(now) || showNeeded;
-  } else {
-    showNeeded = ring2ForceTestService(now) || showNeeded;
+    ring2Changed = ring2Service(now);
+  } else if (RING2_ENABLED) {
+    ring2Changed = ring2ForceTestService(now);
     logRing2ServiceDispatch(now, true);
   }
-#endif
 
   static bool allOnApplied = false;
   if (activeConfig.pixelDebugAllOn) {
     if (!allOnApplied) {
       ring1FillDebugAllOn();
-      showNeeded = true;
+      ring1Changed = true;
       allOnApplied = true;
     }
-    if (showNeeded) {
-      FastLED.show();
-#if RING2_ENABLED
-      ring2LogWrite(now);
-#endif
-    }
-    return;
+  } else {
+    allOnApplied = false;
+    ring1Changed = ring1Service(now);
   }
-  allOnApplied = false;
 
-  showNeeded = ring1Service(now) || showNeeded;
-
-  if (showNeeded) {
+  if (ring1Changed || ring2Changed) {
     FastLED.show();
-#if RING2_ENABLED
-    ring2LogWrite(now);
-#endif
+    if (RING2_ENABLED && ring2Changed) {
+      ring2LogWrite(now);
+    }
   }
 }
 
 void ledApplyBrightnessForCurrentMode() { ring1ApplyBrightnessForCurrentMode(); }
 
 void ledMarkRing2Dirty() {
-#if RING2_ENABLED
-  ring2MarkDirty();
-#endif
+  if (RING2_ENABLED) ring2MarkDirty();
 }
 
 void ledMarkAllDirty() {
@@ -131,9 +101,7 @@ void ledMarkAllDirty() {
 
 void ledClear() {
   ring1Clear();
-#if RING2_ENABLED
-  ring2Clear();
-#endif
+  if (RING2_ENABLED) ring2Clear();
 }
 
 void ledShow() { FastLED.show(); }

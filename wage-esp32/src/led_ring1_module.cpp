@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "config.h"
+#include "types.h"
 
 extern RuntimeConfig activeConfig;
 
@@ -24,6 +25,8 @@ static CRGB colorGreen = CRGB::Black;
 static CRGB colorBlue = CRGB::Black;
 static CRGB colorRed = CRGB::Black;
 static CRGB colorCyan = CRGB::Black;
+
+static inline bool ring1Ready() { return primaryLeds != nullptr; }
 
 static inline uint8_t brightnessPercentToByte(uint8_t percent) {
   if (percent >= 100) return 255;
@@ -55,11 +58,13 @@ static inline void setStripBrightnessPercent(uint8_t percent) {
   currentBrightnessByte = target;
   brightnessInitialized = true;
 }
-static inline void pixelsClear() { fill_solid(primaryLeds, PIXEL_COUNT, CRGB::Black); }
+static inline void pixelsClear() { if (!ring1Ready()) return; fill_solid(primaryLeds, PIXEL_COUNT, CRGB::Black); }
 static inline void pixelsFill(const CRGB& color) {
+  if (!ring1Ready()) return;
   for (uint16_t i = 0; i < PIXEL_COUNT; ++i) primaryLeds[i] = scaleColor(color, currentBrightnessByte);
 }
 static inline void pixelsSet(const uint8_t* indices, uint8_t count, const CRGB& color) {
+  if (!ring1Ready()) return;
   for (uint8_t i = 0; i < count; ++i) {
     if (indices[i] < PIXEL_COUNT) primaryLeds[indices[i]] = scaleColor(color, currentBrightnessByte);
   }
@@ -73,6 +78,7 @@ static inline void applyBrightnessForLedModeInternal() {
 static constexpr uint8_t ALT_PATTERN_A[] = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24};
 static constexpr uint8_t ALT_PATTERN_B[] = {1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23};
 static void standbyApplyOutputs() {
+  if (!ring1Ready()) return;
   pixelsClear();
   for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
     if (standbyTwinkleOn[i]) {
@@ -121,6 +127,7 @@ void ring1SetMode(LedMode m, uint32_t now) {
 }
 
 bool ring1Service(uint32_t now) {
+  if (!ring1Ready()) return false;
   applyBrightnessForLedModeInternal();
   switch (ledMode) {
     case LedMode::ALL_OFF: if (ledFrameDirty) pixelsClear(); break;
@@ -191,5 +198,5 @@ bool ring1Service(uint32_t now) {
 }
 void ring1ApplyBrightnessForCurrentMode() { applyBrightnessForLedModeInternal(); }
 void ring1MarkDirty() { ledFrameDirty = true; }
-void ring1Clear() { pixelsClear(); }
-void ring1FillDebugAllOn() { applyBrightnessForLedModeInternal(); pixelsFill(rgb(80, 80, 80)); ledFrameDirty = false; }
+void ring1Clear() { if (!ring1Ready()) return; pixelsClear(); }
+void ring1FillDebugAllOn() { if (!ring1Ready()) return; applyBrightnessForLedModeInternal(); pixelsFill(rgb(80, 80, 80)); ledFrameDirty = false; }
