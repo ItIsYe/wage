@@ -174,7 +174,9 @@ void ledService(uint32_t now) {
     }
   } else {
     allOnApplied = false;
-    ring1Changed = ring1Service(now);
+    if (!sharedStandbyActive) {
+      ring1Changed = ring1Service(now);
+    }
   }
 
   if (ring1Changed || ring2Changed) {
