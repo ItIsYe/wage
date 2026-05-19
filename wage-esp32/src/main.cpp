@@ -589,6 +589,9 @@ static void applyPendingConfigIfAllowed(){
                   (unsigned)activeConfig.ring2DebugAllOn,
                   (unsigned)activeConfig.ring2BrightnessPercent,
                   (unsigned)activeConfig.ring2StandbyBrightnessPercent);
+    Serial.printf("[CFG] Standby after=%lu ms (%lus)\n",
+                  (unsigned long)activeConfig.standbyAfterMs,
+                  (unsigned long)(activeConfig.standbyAfterMs / 1000U));
   }
   externalInterfaceUpdateConfig(activeConfig);
   webClearPendingConfig();
