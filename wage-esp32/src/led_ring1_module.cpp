@@ -78,6 +78,25 @@ static inline void applyBrightnessForLedModeInternal() {
 static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) {
   return (minValue > maxValue) ? maxValue : minValue;
 }
+static inline uint32_t randomInclusiveU32(uint32_t minValue, uint32_t maxValue) {
+  if (minValue > maxValue) {
+    const uint32_t tmp = minValue;
+    minValue = maxValue;
+    maxValue = tmp;
+  }
+  if (maxValue == UINT32_MAX) {
+    return minValue + (uint32_t)random(0, (long)(maxValue - minValue));
+  }
+  return minValue + (uint32_t)random(0, (long)(maxValue - minValue + 1U));
+}
+static inline uint8_t randomInclusiveU8(uint8_t minValue, uint8_t maxValue) {
+  if (minValue > maxValue) {
+    const uint8_t tmp = minValue;
+    minValue = maxValue;
+    maxValue = tmp;
+  }
+  return (uint8_t)(minValue + (uint8_t)random(0, (int16_t)(maxValue - minValue + 1U)));
+}
 
 static constexpr uint8_t ALT_PATTERN_A[] = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24};
 static constexpr uint8_t ALT_PATTERN_B[] = {1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23};
@@ -118,14 +137,14 @@ void ring1SetMode(LedMode m, uint32_t now) {
     const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
 
     standbyFrameNextMs = now + activeConfig.standbyFrameMs;
-    twinkleNextMs = now + random(changeMinMs, changeMaxMs + 1U);
+    twinkleNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
     standbyOnCount = 0;
     for (uint8_t i = 0; i < PIXEL_COUNT; i++) {
       standbyTwinkleOn[i] = false;
       standbyHue[i] = (uint16_t)random(0, 65536);
-      standbyValue[i] = (uint8_t)random(valueMin, valueMax + 1U);
+      standbyValue[i] = randomInclusiveU8(valueMin, valueMax);
     }
-    const uint8_t initialOn = (uint8_t)random(onMin, onMax + 1U);
+    const uint8_t initialOn = randomInclusiveU8(onMin, onMax);
     for (uint8_t i = 0; i < initialOn; ++i) {
       const uint8_t idx = (uint8_t)random(0, PIXEL_COUNT);
       if (!standbyTwinkleOn[idx]) {
@@ -173,7 +192,7 @@ bool ring1Service(uint32_t now) {
         const uint8_t onMax = activeConfig.standbyOnMax;
         const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
 
-        twinkleNextMs = now + random(changeMinMs, changeMaxMs + 1U);
+        twinkleNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
         const bool needMore = standbyOnCount < onMin;
         const bool needLess = standbyOnCount > onMax;
         const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
@@ -181,13 +200,13 @@ bool ring1Service(uint32_t now) {
           for (uint8_t tries = 0; tries < PIXEL_COUNT; ++tries) {
             const uint8_t i = (uint8_t)random(0, PIXEL_COUNT);
             if (needMore) {
-              if (!standbyTwinkleOn[i]) { standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = (uint8_t)random(valueMin, valueMax + 1U); ledFrameDirty = true; break; }
+              if (!standbyTwinkleOn[i]) { standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = randomInclusiveU8(valueMin, valueMax); ledFrameDirty = true; break; }
             } else if (needLess) {
               if (standbyTwinkleOn[i]) { standbyTwinkleOn[i] = false; --standbyOnCount; ledFrameDirty = true; break; }
             } else if (standbyTwinkleOn[i]) {
               standbyTwinkleOn[i] = false; --standbyOnCount; ledFrameDirty = true; break;
             } else {
-              standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = (uint8_t)random(valueMin, valueMax + 1U); ledFrameDirty = true; break;
+              standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = randomInclusiveU8(valueMin, valueMax); ledFrameDirty = true; break;
             }
           }
         }
