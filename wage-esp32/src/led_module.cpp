@@ -20,12 +20,23 @@ static uint16_t sharedStandbyHue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyValue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyTargetValue[SHARED_PIXELS] = {};
 static uint16_t sharedStandbyOnCount = 0;
+static uint16_t sharedStandbyCursor = 0;
 
 static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) { return (minValue > maxValue) ? maxValue : minValue; }
 static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
   if (frameMs < 30U) return 30U;
   if (frameMs > 1000U) return 1000U;
   return frameMs;
+}
+static inline uint32_t sanitizeSharedStandbyFrameMs(uint32_t frameMs) {
+  if (frameMs < 80U) return 80U;
+  if (frameMs > 1000U) return 1000U;
+  return frameMs;
+}
+static inline void sanitizeSharedStandbyChangeRange(uint32_t& minMs, uint32_t& maxMs) {
+  if (minMs < 700U) minMs = 700U;
+  if (maxMs < 900U) maxMs = 900U;
+  if (maxMs < minMs) maxMs = minMs;
 }
 static inline uint32_t randomInclusiveU32(uint32_t minValue, uint32_t maxValue) {
   if (minValue > maxValue) { const uint32_t t = minValue; minValue = maxValue; maxValue = t; }
@@ -42,16 +53,24 @@ static uint8_t scaleSharedStandbyCount(uint8_t count) {
   if (scaled > SHARED_PIXELS) scaled = SHARED_PIXELS;
   return (uint8_t)scaled;
 }
+static void applySharedStandbyFrame() {
+  ring1ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
+  if (RING2_ENABLED) {
+    ring2ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
+  }
+}
 static void sharedStandbyInit(uint32_t now) {
-  const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
-  const uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
+  uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
+  uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
+  sanitizeSharedStandbyChangeRange(changeMinMs, changeMaxMs);
   const uint8_t valueMax = activeConfig.standbyValueMax;
   const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
   const uint8_t onMax = scaleSharedStandbyCount(activeConfig.standbyOnMax);
   const uint8_t onMinRaw = scaleSharedStandbyCount(activeConfig.standbyOnMin);
   const uint8_t onMin = (onMinRaw > onMax) ? onMax : onMinRaw;
-  sharedStandbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
+  sharedStandbyFrameNextMs = now + sanitizeSharedStandbyFrameMs(activeConfig.standbyFrameMs);
   sharedStandbyChangeNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
+  sharedStandbyCursor = (uint16_t)random(0, SHARED_PIXELS);
   sharedStandbyOnCount = 0;
   for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
     sharedStandbyTwinkleOn[i] = true;
@@ -61,15 +80,16 @@ static void sharedStandbyInit(uint32_t now) {
   }
   const uint8_t initialOn = randomInclusiveU8(onMin, onMax);
   for (uint8_t i = 0; i < initialOn; ++i) {
-    const uint16_t idx = (uint16_t)random(0, SHARED_PIXELS);
+    const uint16_t idx = (uint16_t)((sharedStandbyCursor + i) % SHARED_PIXELS);
     if (sharedStandbyTargetValue[idx] == 0) { sharedStandbyTargetValue[idx] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
   }
 }
 static bool sharedStandbyService(uint32_t now) {
   bool changed = false;
   if (now >= sharedStandbyChangeNextMs) {
-    const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
-    const uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
+    uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
+    uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
+    sanitizeSharedStandbyChangeRange(changeMinMs, changeMaxMs);
     const uint8_t valueMax = activeConfig.standbyValueMax;
     const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
     const uint8_t onMax = scaleSharedStandbyCount(activeConfig.standbyOnMax);
@@ -81,7 +101,8 @@ static bool sharedStandbyService(uint32_t now) {
     const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
     if (needMore || needLess || shouldToggle) {
       for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
-        const uint16_t i = (uint16_t)random(0, SHARED_PIXELS);
+        const uint16_t i = sharedStandbyCursor;
+        sharedStandbyCursor = (uint16_t)((sharedStandbyCursor + 1U) % SHARED_PIXELS);
         if (needMore && sharedStandbyTargetValue[i] == 0) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; changed = true; break; }
         if (needLess && sharedStandbyTargetValue[i] > 0) { sharedStandbyTargetValue[i] = 0; --sharedStandbyOnCount; changed = true; break; }
         if (!needMore && !needLess) {
@@ -96,7 +117,7 @@ static bool sharedStandbyService(uint32_t now) {
   if (now >= sharedStandbyFrameNextMs) {
     const uint8_t valueMax = activeConfig.standbyValueMax;
     const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
-    sharedStandbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
+    sharedStandbyFrameNextMs = now + sanitizeSharedStandbyFrameMs(activeConfig.standbyFrameMs);
     for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
       const uint8_t target = sharedStandbyTargetValue[i];
       sharedStandbyHue[i] = (uint16_t)(sharedStandbyHue[i] + (int16_t)random(-2, 3));
@@ -117,8 +138,7 @@ static bool sharedStandbyService(uint32_t now) {
     changed = true;
   }
   if (changed) {
-    ring1ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
-    if (RING2_ENABLED) ring2ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
+    applySharedStandbyFrame();
   }
   return changed;
 }
@@ -173,6 +193,7 @@ void ledService(uint32_t now) {
   if (sharedStandbyShouldRun && !sharedStandbyActive) {
     sharedStandbyActive = true;
     sharedStandbyInit(now);
+    applySharedStandbyFrame();
     ring1Changed = true;
     ring2Changed = true;
     if (MASTER_DEBUG_LOG) {
