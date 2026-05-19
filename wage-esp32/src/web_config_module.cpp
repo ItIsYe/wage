@@ -124,7 +124,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>emptyThresholdG (g)</label><input type='number' step='0.1' min='0' name='emptyThresholdG' value='"); h += String(c.emptyThresholdG,2); h += F("'>");
   h += F("<label>retareTolG (g)</label><input type='number' step='0.1' min='0' name='retareTolG' value='"); h += String(c.retareTolG,2); h += F("'>");
   h += F("<label>standbyWakeThresholdG (g)</label><input type='number' step='0.1' min='0' name='standbyWakeThresholdG' value='"); h += String(c.standbyWakeThresholdG,2); h += F("'>");
-  h += F("<label>Standby nach (s)</label><input type='number' min='5' max='300' name='standbyAfterS' value='"); h += String(c.standbyAfterMs / 1000U); h += F("'></fieldset>");
+  h += F("<label>Standby nach (s)</label><input type='number' min='5' max='300' name='standbyAfterS' value='"); h += String(c.standbyAfterMs / 1000U); h += F("'><small>Nur im Idle ohne Glas: Nach dieser Zeit wird in den Standby-Twinkle gewechselt.</small></fieldset>");
   h += F("<fieldset><legend>Ring 1 Standby-Twinkle</legend>");
   h += F("<label>Standby Twinkle Speed / Frame-Zeit (ms)</label><input type='number' min='30' max='1000' name='standbyFrameMs' value='"); h += String(c.standbyFrameMs); h += F("'>");
   h += F("<label>Standby Change Min (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMinMs' value='"); h += String(c.standbyChangeMinMs); h += F("'>");
