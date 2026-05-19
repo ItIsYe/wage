@@ -68,6 +68,7 @@ struct RuntimeConfig {
   uint8_t ring2StandbyBrightnessPercent;
   bool ring2DebugAllOn;
   uint8_t ring2PatternMode;
+  bool ring2FollowState;
   char deviceId[32];
   bool externalEnabled;
   char externalHost[64];
