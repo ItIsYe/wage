@@ -78,6 +78,11 @@ static inline void applyBrightnessForLedModeInternal() {
 static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) {
   return (minValue > maxValue) ? maxValue : minValue;
 }
+static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
+  if (frameMs < STANDBY_FRAME_MIN_MS) return STANDBY_FRAME_MIN_MS;
+  if (frameMs > STANDBY_FRAME_MAX_MS) return STANDBY_FRAME_MAX_MS;
+  return frameMs;
+}
 static inline uint32_t randomInclusiveU32(uint32_t minValue, uint32_t maxValue) {
   if (minValue > maxValue) {
     const uint32_t tmp = minValue;
@@ -136,7 +141,7 @@ void ring1SetMode(LedMode m, uint32_t now) {
     const uint8_t onMax = activeConfig.standbyOnMax;
     const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
 
-    standbyFrameNextMs = now + activeConfig.standbyFrameMs;
+    standbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
     twinkleNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
     standbyOnCount = 0;
     for (uint8_t i = 0; i < PIXEL_COUNT; i++) {
@@ -215,7 +220,7 @@ bool ring1Service(uint32_t now) {
         const uint8_t valueMax = activeConfig.standbyValueMax;
         const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
 
-        standbyFrameNextMs = now + activeConfig.standbyFrameMs;
+        standbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
         for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
           if (!standbyTwinkleOn[i]) continue;
           const int16_t shift = (int16_t)random(-2, 3);
