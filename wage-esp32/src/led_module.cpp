@@ -34,13 +34,21 @@ static inline uint8_t randomInclusiveU8(uint8_t minValue, uint8_t maxValue) {
   if (minValue > maxValue) { const uint8_t t = minValue; minValue = maxValue; maxValue = t; }
   return (uint8_t)(minValue + (uint8_t)random(0, (int16_t)(maxValue - minValue + 1U)));
 }
+static uint8_t scaleSharedStandbyCount(uint8_t count) {
+  if (PIXEL_COUNT == 0) return count;
+
+  uint16_t scaled = ((uint16_t)count * SHARED_PIXELS + PIXEL_COUNT - 1U) / PIXEL_COUNT;
+  if (scaled > SHARED_PIXELS) scaled = SHARED_PIXELS;
+  return (uint8_t)scaled;
+}
 static void sharedStandbyInit(uint32_t now) {
   const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
   const uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
   const uint8_t valueMax = activeConfig.standbyValueMax;
   const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
-  const uint8_t onMax = activeConfig.standbyOnMax;
-  const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
+  const uint8_t onMax = scaleSharedStandbyCount(activeConfig.standbyOnMax);
+  const uint8_t onMinRaw = scaleSharedStandbyCount(activeConfig.standbyOnMin);
+  const uint8_t onMin = (onMinRaw > onMax) ? onMax : onMinRaw;
   sharedStandbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
   sharedStandbyChangeNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
   sharedStandbyOnCount = 0;
@@ -62,8 +70,9 @@ static bool sharedStandbyService(uint32_t now) {
     const uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
     const uint8_t valueMax = activeConfig.standbyValueMax;
     const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
-    const uint8_t onMax = activeConfig.standbyOnMax;
-    const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
+    const uint8_t onMax = scaleSharedStandbyCount(activeConfig.standbyOnMax);
+    const uint8_t onMinRaw = scaleSharedStandbyCount(activeConfig.standbyOnMin);
+    const uint8_t onMin = (onMinRaw > onMax) ? onMax : onMinRaw;
     sharedStandbyChangeNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
     const bool needMore = sharedStandbyOnCount < onMin;
     const bool needLess = sharedStandbyOnCount > onMax;
@@ -144,8 +153,19 @@ void ledService(uint32_t now) {
   bool ring1Changed = false;
   bool ring2Changed = false;
 
-  const bool sharedStandbyShouldRun = RING2_ENABLED && !ring2ForceTestActive && currentLedMode == LedMode::STANDBY_TWINKLE && ring2IsStandbyState();
-  if (sharedStandbyShouldRun && !sharedStandbyActive) { sharedStandbyActive = true; sharedStandbyInit(now); ring1Changed = true; ring2Changed = true; }
+  const bool sharedStandbyShouldRun = RING2_ENABLED && activeConfig.ring2Enabled && !ring2ForceTestActive && !activeConfig.pixelDebugAllOn && !activeConfig.ring2DebugAllOn && currentLedMode == LedMode::STANDBY_TWINKLE && ring2IsStandbyState();
+  if (sharedStandbyShouldRun && !sharedStandbyActive) {
+    sharedStandbyActive = true;
+    sharedStandbyInit(now);
+    ring1Changed = true;
+    ring2Changed = true;
+    if (MASTER_DEBUG_LOG) {
+      Serial.printf("[LED SHARED STANDBY] active totalPixels=%u ring1=%u ring2=%u\n",
+                    (unsigned)SHARED_PIXELS,
+                    (unsigned)PIXEL_COUNT,
+                    (unsigned)RING2_PIXEL_COUNT);
+    }
+  }
   if (!sharedStandbyShouldRun && sharedStandbyActive) sharedStandbyActive = false;
 
   if (sharedStandbyActive) {
