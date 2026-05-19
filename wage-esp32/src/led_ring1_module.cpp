@@ -82,7 +82,7 @@ static void standbyApplyOutputs() {
   pixelsClear();
   for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
     if (standbyTwinkleOn[i]) {
-      primaryLeds[i] = scaleColor(hsvGamma(standbyHue[i], STANDBY_SATURATION, standbyValue[i]), currentBrightnessByte);
+      primaryLeds[i] = scaleColor(hsvGamma(standbyHue[i], activeConfig.standbySaturation, standbyValue[i]), currentBrightnessByte);
     }
   }
 }
@@ -106,15 +106,15 @@ void ring1SetMode(LedMode m, uint32_t now) {
   ledSpinIdx = 0;
   ledFrameDirty = true;
   if (m == LedMode::STANDBY_TWINKLE) {
-    standbyFrameNextMs = now + STANDBY_FRAME_MS;
-    twinkleNextMs = now + random(STANDBY_CHANGE_MIN_MS, STANDBY_CHANGE_MAX_MS);
+    standbyFrameNextMs = now + activeConfig.standbyFrameMs;
+    twinkleNextMs = now + random(activeConfig.standbyChangeMinMs, activeConfig.standbyChangeMaxMs + 1U);
     standbyOnCount = 0;
     for (uint8_t i = 0; i < PIXEL_COUNT; i++) {
       standbyTwinkleOn[i] = false;
       standbyHue[i] = (uint16_t)random(0, 65536);
-      standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1);
+      standbyValue[i] = (uint8_t)random(activeConfig.standbyValueMin, activeConfig.standbyValueMax + 1);
     }
-    const uint8_t initialOn = (uint8_t)random(STANDBY_ON_MIN, STANDBY_ON_MAX + 1);
+    const uint8_t initialOn = (uint8_t)random(activeConfig.standbyOnMin, activeConfig.standbyOnMax + 1);
     for (uint8_t i = 0; i < initialOn; ++i) {
       const uint8_t idx = (uint8_t)random(0, PIXEL_COUNT);
       if (!standbyTwinkleOn[idx]) {
@@ -155,35 +155,35 @@ bool ring1Service(uint32_t now) {
       break;
     case LedMode::STANDBY_TWINKLE: {
       if (now >= twinkleNextMs) {
-        twinkleNextMs = now + random(STANDBY_CHANGE_MIN_MS, STANDBY_CHANGE_MAX_MS);
-        const bool needMore = standbyOnCount < STANDBY_ON_MIN;
-        const bool needLess = standbyOnCount > STANDBY_ON_MAX;
+        twinkleNextMs = now + random(activeConfig.standbyChangeMinMs, activeConfig.standbyChangeMaxMs + 1U);
+        const bool needMore = standbyOnCount < activeConfig.standbyOnMin;
+        const bool needLess = standbyOnCount > activeConfig.standbyOnMax;
         const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
         if (needMore || needLess || shouldToggle) {
           for (uint8_t tries = 0; tries < PIXEL_COUNT; ++tries) {
             const uint8_t i = (uint8_t)random(0, PIXEL_COUNT);
             if (needMore) {
-              if (!standbyTwinkleOn[i]) { standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1); ledFrameDirty = true; break; }
+              if (!standbyTwinkleOn[i]) { standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = (uint8_t)random(activeConfig.standbyValueMin, activeConfig.standbyValueMax + 1); ledFrameDirty = true; break; }
             } else if (needLess) {
               if (standbyTwinkleOn[i]) { standbyTwinkleOn[i] = false; --standbyOnCount; ledFrameDirty = true; break; }
             } else if (standbyTwinkleOn[i]) {
               standbyTwinkleOn[i] = false; --standbyOnCount; ledFrameDirty = true; break;
             } else {
-              standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = (uint8_t)random(STANDBY_VALUE_MIN, STANDBY_VALUE_MAX + 1); ledFrameDirty = true; break;
+              standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = (uint8_t)random(activeConfig.standbyValueMin, activeConfig.standbyValueMax + 1); ledFrameDirty = true; break;
             }
           }
         }
       }
       if (now >= standbyFrameNextMs) {
-        standbyFrameNextMs = now + STANDBY_FRAME_MS;
+        standbyFrameNextMs = now + activeConfig.standbyFrameMs;
         for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
           if (!standbyTwinkleOn[i]) continue;
           const int16_t shift = (int16_t)random(-2, 3);
           standbyHue[i] = (uint16_t)(standbyHue[i] + shift);
           const int16_t delta = (int16_t)random(-4, 5);
           int16_t nextValue = (int16_t)standbyValue[i] + delta;
-          if (nextValue < STANDBY_VALUE_MIN) nextValue = STANDBY_VALUE_MIN;
-          if (nextValue > STANDBY_VALUE_MAX) nextValue = STANDBY_VALUE_MAX;
+          if (nextValue < activeConfig.standbyValueMin) nextValue = activeConfig.standbyValueMin;
+          if (nextValue > activeConfig.standbyValueMax) nextValue = activeConfig.standbyValueMax;
           standbyValue[i] = (uint8_t)nextValue;
         }
         ledFrameDirty = true;
