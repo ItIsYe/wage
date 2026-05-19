@@ -6,6 +6,7 @@
 
 void ledsInit();
 void ledsSetMode(LedMode m);
+void ledSetState(State state);
 void ledService(uint32_t now);
 void ledApplyBrightnessForCurrentMode();
 void ledClear();

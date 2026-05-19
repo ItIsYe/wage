@@ -37,6 +37,10 @@ void ledsSetMode(LedMode m) {
   ring1SetMode(m, millis());
 }
 
+void ledSetState(State state) {
+  if (RING2_ENABLED) ring2SetState(state);
+}
+
 void ledService(uint32_t now) {
   const bool ring2ForceTestActive = RING2_ENABLED && RING2_FORCE_INDEPENDENT_TEST;
 

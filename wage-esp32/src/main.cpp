@@ -8,7 +8,6 @@
 #include "types.h"
 #include "display_module.h"
 #include "led_module.h"
-#include "led_ring2_module.h"
 #include "scale_module.h"
 #include "web_config_module.h"
 #include "external_interface_module.h"
@@ -262,7 +261,7 @@ static void setState(State s) {
     Serial.println(stateToStr(s));
   }
   state = s;
-  ring2SetState(s);
+  ledSetState(s);
   lastActionMs = millis();
 }
 
