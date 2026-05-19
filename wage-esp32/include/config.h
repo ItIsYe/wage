@@ -61,6 +61,7 @@ static constexpr int SCREEN_H = 64;
 // =========================================================
 // Ring 1 / Haupt-LED-Ring
 // =========================================================
+// GPIO5: ESP32 nutzbarer Output, aber Strapping-Pin. Externe Beschaltung darf Boot nicht stören.
 static constexpr uint8_t LED_STRIP_PIN = 5;
 static constexpr uint16_t PIXEL_COUNT = 25;
 static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
@@ -71,6 +72,7 @@ static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
 // Ring 2 / Zusatz-LED-Ring
 // =========================================================
 static constexpr bool RING2_ENABLED = true;
+// GPIO14: ESP32 nutzbarer Output, teilt sich aber JTAG-Funktion. Bei JTAG-Nutzung Konflikt möglich.
 static constexpr uint8_t RING2_PIN = 14;
 static constexpr uint16_t RING2_PIXEL_COUNT = 16;
 static constexpr bool RING2_BOOT_TEST = false;

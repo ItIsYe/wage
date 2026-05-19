@@ -7,7 +7,6 @@
 
 extern RuntimeConfig activeConfig;
 
-#if RING2_ENABLED
 static CRGB* ring2Leds = nullptr;
 static bool ring2FrameDirty = true;
 static uint8_t ring2BrightnessByte = 0;
@@ -15,6 +14,8 @@ static bool ring2BrightnessInitialized = false;
 static uint32_t ring2TickMs = 0;
 static uint8_t ring2PulseValue = 10;
 static int8_t ring2PulseStep = 5;
+
+static inline bool ring2Ready() { return ring2Leds != nullptr; }
 
 static inline CRGB scaleColor(const CRGB& color, uint8_t brightness) { CRGB out = color; out.nscale8_video(brightness); return out; }
 static inline CRGB rgb(uint8_t r, uint8_t g, uint8_t b) { return CRGB(r, g, b); }
@@ -29,7 +30,7 @@ static inline void ring2SetBrightnessPercent(uint8_t percent) {
 
 static const char* ring2ModeLabel(uint8_t mode) { if (mode == 0) return "off"; if (mode == 1) return "solid-blue"; if (mode == 2) return "pulse-blue"; return "unknown"; }
 void ring2LogWrite(uint32_t now) { if (!MASTER_DEBUG_LOG) return; static uint32_t lastWriteLogMs = 0; if (now - lastWriteLogMs >= 2000) { lastWriteLogMs = now; Serial.println("[RING2 WRITE] show applied"); } }
-static inline void ring2Fill(const CRGB& color) { for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte); }
+static inline void ring2Fill(const CRGB& color) { if (!ring2Ready()) return; for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte); }
 
 void ring2Init(CRGB* leds) {
   ring2Leds = leds;
@@ -45,6 +46,16 @@ void ring2Init(CRGB* leds) {
 }
 
 bool ring2Service(uint32_t now) {
+  if (!ring2Ready()) {
+    if (MASTER_DEBUG_LOG) {
+      static uint32_t lastNotReadyLogMs = 0;
+      if (now - lastNotReadyLogMs >= 2000) {
+        lastNotReadyLogMs = now;
+        Serial.println("[RING2 ERROR] ring2Leds not initialized");
+      }
+    }
+    return false;
+  }
   if (MASTER_DEBUG_LOG) { static uint32_t lastHardEntryLogMs = 0; if (now - lastHardEntryLogMs >= 1000) { lastHardEntryLogMs = now; Serial.printf("[RING2 HARD ENTRY] now=%lu enabled=%u mode=%u debug=%u b=%u sb=%u pin=%u\n", (unsigned long)now,(unsigned)activeConfig.ring2Enabled,(unsigned)activeConfig.ring2PatternMode,(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent,(unsigned)RING2_PIN); }}
   static uint32_t lastEntryLogMs = 0;
   if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) { lastEntryLogMs = millis(); Serial.printf("[RING2 SERVICE] now=%lu enabled=%u mode=%u debug=%u brightness=%u standbyBrightness=%u pin=%u\n", (unsigned long)now,(unsigned)activeConfig.ring2Enabled,(unsigned)activeConfig.ring2PatternMode,(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent,(unsigned)RING2_PIN); }
@@ -75,8 +86,18 @@ bool ring2Service(uint32_t now) {
   return false;
 }
 void ring2MarkDirty() { ring2FrameDirty = true; }
-void ring2Clear() { fill_solid(ring2Leds, RING2_PIXEL_COUNT, CRGB::Black); }
+void ring2Clear() { if (!ring2Ready()) return; fill_solid(ring2Leds, RING2_PIXEL_COUNT, CRGB::Black); }
 bool ring2ForceTestService(uint32_t now) {
+  if (!ring2Ready()) {
+    if (MASTER_DEBUG_LOG) {
+      static uint32_t lastNotReadyLogMs = 0;
+      if (now - lastNotReadyLogMs >= 2000) {
+        lastNotReadyLogMs = now;
+        Serial.println("[RING2 ERROR] ring2Leds not initialized");
+      }
+    }
+    return false;
+  }
   static uint32_t lastInlineWriteMs = 0;
   if (now - lastInlineWriteMs < 250) return false;
   lastInlineWriteMs = now;
@@ -89,11 +110,3 @@ bool ring2ForceTestService(uint32_t now) {
   if (MASTER_DEBUG_LOG) Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n", (unsigned)RING2_PIN, (unsigned)RING2_PIXEL_COUNT);
   return true;
 }
-#else
-void ring2Init(CRGB*) {}
-bool ring2Service(uint32_t) { return false; }
-void ring2MarkDirty() {}
-void ring2Clear() {}
-bool ring2ForceTestService(uint32_t) { return false; }
-void ring2LogWrite(uint32_t) {}
-#endif
