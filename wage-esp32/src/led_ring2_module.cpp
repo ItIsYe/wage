@@ -14,7 +14,9 @@ static bool ring2BrightnessInitialized = false;
 static uint32_t ring2TickMs = 0;
 static uint8_t ring2PulseValue = 10;
 static int8_t ring2PulseStep = 5;
-static uint8_t ring2ChaseHead = 0;
+static uint8_t ring2SpinnerHead = 0;
+static uint8_t ring2BreathingValue = 10;
+static int8_t ring2BreathingStep = 3;
 
 static inline bool ring2Ready() { return ring2Leds != nullptr; }
 
@@ -33,9 +35,8 @@ static const char* ring2ModeLabel(uint8_t mode) {
   if (mode == 0) return "off";
   if (mode == 1) return "solid-blue";
   if (mode == 2) return "pulse-blue";
-  if (mode == 3) return "solid-cyan";
-  if (mode == 4) return "solid-green";
-  if (mode == 5) return "chase-blue";
+  if (mode == 3) return "breathing-white";
+  if (mode == 4) return "slow-blue-spinner";
   return "unknown";
 }
 void ring2LogWrite(uint32_t now) { if (!MASTER_DEBUG_LOG) return; static uint32_t lastWriteLogMs = 0; if (now - lastWriteLogMs >= 2000) { lastWriteLogMs = now; Serial.println("[RING2 WRITE] show applied"); } }
@@ -82,8 +83,13 @@ bool ring2Service(uint32_t now) {
         ring2PulseStep = 5;
         ring2TickMs = now;
       }
-      if (activeConfig.ring2PatternMode == 5) {
-        ring2ChaseHead = 0;
+      if (activeConfig.ring2PatternMode == 3) {
+        ring2BreathingValue = 10;
+        ring2BreathingStep = 3;
+        ring2TickMs = now;
+      }
+      if (activeConfig.ring2PatternMode == 4) {
+        ring2SpinnerHead = 0;
         ring2TickMs = now;
       }
     }
@@ -106,19 +112,30 @@ bool ring2Service(uint32_t now) {
   if (mode == 2) ring2SetBrightnessPercent(activeConfig.ring2StandbyBrightnessPercent); else ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   if (mode == 0) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
   if (mode == 1) { logRenderedState(1, "solid-blue"); if (ring2FrameDirty) { ring2Fill(rgb(0, 0, 64)); ring2FrameDirty = false; return true; } return false; }
-  if (mode == 3) { logRenderedState(4, "solid-cyan"); if (ring2FrameDirty) { ring2Fill(rgb(0, 48, 64)); ring2FrameDirty = false; return true; } return false; }
-  if (mode == 4) { logRenderedState(5, "solid-green"); if (ring2FrameDirty) { ring2Fill(rgb(0, 64, 0)); ring2FrameDirty = false; return true; } return false; }
-  if (mode == 5) {
-    logRenderedState(6, "chase-blue");
-    if (now - ring2TickMs >= 110) {
+  if (mode == 3) {
+    logRenderedState(4, "breathing-white");
+    if (now - ring2TickMs >= 80) {
       ring2TickMs = now;
-      ring2ChaseHead = (uint8_t)((ring2ChaseHead + 1) % RING2_PIXEL_COUNT);
+      const int16_t next = (int16_t)ring2BreathingValue + ring2BreathingStep;
+      if (next >= 140 || next <= 10) ring2BreathingStep = -ring2BreathingStep;
+      ring2BreathingValue = (uint8_t)((int16_t)ring2BreathingValue + ring2BreathingStep);
+      ring2Fill(rgb(ring2BreathingValue, ring2BreathingValue, ring2BreathingValue));
+      ring2FrameDirty = true;
+    }
+    if (ring2FrameDirty) { ring2FrameDirty = false; return true; }
+    return false;
+  }
+  if (mode == 4) {
+    logRenderedState(5, "slow-blue-spinner");
+    if (now - ring2TickMs >= 180) {
+      ring2TickMs = now;
+      ring2SpinnerHead = (uint8_t)((ring2SpinnerHead + 1) % RING2_PIXEL_COUNT);
       ring2FrameDirty = true;
     }
     if (ring2FrameDirty) {
       ring2Clear();
-      ring2Leds[ring2ChaseHead] = scaleColor(rgb(0, 0, 90), ring2BrightnessByte);
-      if (RING2_PIXEL_COUNT > 1) ring2Leds[(ring2ChaseHead + RING2_PIXEL_COUNT - 1) % RING2_PIXEL_COUNT] = scaleColor(rgb(0, 0, 25), ring2BrightnessByte);
+      ring2Leds[ring2SpinnerHead] = scaleColor(rgb(0, 0, 90), ring2BrightnessByte);
+      if (RING2_PIXEL_COUNT > 1) ring2Leds[(ring2SpinnerHead + RING2_PIXEL_COUNT - 1) % RING2_PIXEL_COUNT] = scaleColor(rgb(0, 0, 25), ring2BrightnessByte);
       ring2FrameDirty = false;
       return true;
     }

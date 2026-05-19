@@ -138,7 +138,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>Ring 2 Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2BrightnessPercent' value='"); h += String(c.ring2BrightnessPercent); h += F("'>");
   h += F("<label>Ring 2 Standby-Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2StandbyBrightnessPercent' value='"); h += String(c.ring2StandbyBrightnessPercent); h += F("'>");
   h += F("<label><input type='checkbox' name='ring2DebugAllOn' "); if (c.ring2DebugAllOn) h += F("checked"); h += F("> Ring 2 Debug alle Pixel an</label>");
-  h += F("<label>Ring 2 Pattern</label><select name='ring2PatternMode'><option value='0'"); if (c.ring2PatternMode == 0) h += F(" selected"); h += F(">Aus</option><option value='1'"); if (c.ring2PatternMode == 1) h += F(" selected"); h += F(">Solid Blau</option><option value='2'"); if (c.ring2PatternMode == 2) h += F(" selected"); h += F(">Pulse Blau</option><option value='3'"); if (c.ring2PatternMode == 3) h += F(" selected"); h += F(">Solid Cyan</option><option value='4'"); if (c.ring2PatternMode == 4) h += F(" selected"); h += F(">Solid Gruen</option><option value='5'"); if (c.ring2PatternMode == 5) h += F(" selected"); h += F(">Chase Blau</option></select></fieldset>");
+  h += F("<label>Ring 2 Pattern</label><select name='ring2PatternMode'><option value='0'"); if (c.ring2PatternMode == 0) h += F(" selected"); h += F(">Aus</option><option value='1'"); if (c.ring2PatternMode == 1) h += F(" selected"); h += F(">Solid Blau</option><option value='2'"); if (c.ring2PatternMode == 2) h += F(" selected"); h += F(">Pulse Blau</option><option value='3'"); if (c.ring2PatternMode == 3) h += F(" selected"); h += F(">Breathing Weiss</option><option value='4'"); if (c.ring2PatternMode == 4) h += F(" selected"); h += F(">Slow Blue Spinner</option></select></fieldset>");
 
   h += F("<fieldset><legend>Externe Schnittstelle</legend>");
   h += F("<label><input type='checkbox' name='externalEnabled' "); if (c.externalEnabled) h += F("checked"); h += F("> Externe Schnittstelle aktiv</label>");
@@ -227,7 +227,7 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   cfg.ring2DebugAllOn=prefs.getBool("r2dbg", cfg.ring2DebugAllOn); cfg.ring2PatternMode=prefs.getUChar("r2pat", cfg.ring2PatternMode);
   if (cfg.ring2BrightnessPercent > 100) cfg.ring2BrightnessPercent = 100;
   if (cfg.ring2StandbyBrightnessPercent > 100) cfg.ring2StandbyBrightnessPercent = 100;
-  if (cfg.ring2PatternMode > 5) cfg.ring2PatternMode = DEFAULT_RING2_PATTERN_MODE;
+  if (cfg.ring2PatternMode > 4) cfg.ring2PatternMode = DEFAULT_RING2_PATTERN_MODE;
   String dev=prefs.getString("dev", cfg.deviceId); strncpy(cfg.deviceId, dev.c_str(), sizeof(cfg.deviceId)-1);
   cfg.externalEnabled=prefs.getBool("exEn", cfg.externalEnabled);
   String exHost=prefs.getString("exHost", cfg.externalHost); strncpy(cfg.externalHost, exHost.c_str(), sizeof(cfg.externalHost)-1);
@@ -304,7 +304,7 @@ void webConfigSetup() {
     if (!errMsg.length() && (n.startDropPercent < 0 || n.startDropPercent > 100 || n.stopRisePercent < 0 || n.stopRisePercent > 100)) errMsg = "Prozentwerte muessen zwischen 0 und 100 liegen.";
     if (!errMsg.length() && (n.pixelBrightnessPercent > 100 || n.standbyBrightnessPercent > 100)) errMsg = "Helligkeit muss 0..100 sein.";
     if (!errMsg.length() && (n.ring2BrightnessPercent > 100 || n.ring2StandbyBrightnessPercent > 100)) errMsg = "Ring-2-Helligkeit muss 0..100 sein.";
-    if (!errMsg.length() && n.ring2PatternMode > 5) errMsg = "Ring-2-Pattern muss 0..5 sein.";
+    if (!errMsg.length() && n.ring2PatternMode > 4) errMsg = "Ring-2-Pattern muss 0..4 sein.";
     if (!errMsg.length() && (n.scaleReadSamples < 1 || n.scaleReadSamples > 5)) errMsg = "scaleReadSamples muss 1..5 sein.";
     if (!errMsg.length() && n.oledRotation > 3) errMsg = "oledRotation muss 0..3 sein.";
     if (!errMsg.length() && (n.oledTimingRefreshMs < 50 || n.oledTimingRefreshMs > 1000)) errMsg = "oledTimingRefreshMs muss 50..1000 ms sein.";
