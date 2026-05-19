@@ -325,7 +325,7 @@ static void stateMachineService(uint32_t now) {
     resetNegativeDetection();
   }
 
-  const bool standbyDue = (now - lastActionMs) > STANDBY_AFTER_MS;
+  const bool standbyDue = (now - lastActionMs) > activeConfig.standbyAfterMs;
 
   switch (state) {
     case State::BOOT_MSG: {

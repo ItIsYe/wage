@@ -115,7 +115,8 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>objectPresentG (g)</label><input type='number' step='0.1' min='0' name='objectPresentG' value='"); h += String(c.objectPresentG,2); h += F("'>");
   h += F("<label>emptyThresholdG (g)</label><input type='number' step='0.1' min='0' name='emptyThresholdG' value='"); h += String(c.emptyThresholdG,2); h += F("'>");
   h += F("<label>retareTolG (g)</label><input type='number' step='0.1' min='0' name='retareTolG' value='"); h += String(c.retareTolG,2); h += F("'>");
-  h += F("<label>standbyWakeThresholdG (g)</label><input type='number' step='0.1' min='0' name='standbyWakeThresholdG' value='"); h += String(c.standbyWakeThresholdG,2); h += F("'></fieldset>");
+  h += F("<label>standbyWakeThresholdG (g)</label><input type='number' step='0.1' min='0' name='standbyWakeThresholdG' value='"); h += String(c.standbyWakeThresholdG,2); h += F("'>");
+  h += F("<label>standbyAfterMs (ms)</label><input type='number' min='1000' max='600000' name='standbyAfterMs' value='"); h += String(c.standbyAfterMs); h += F("'></fieldset>");
   h += F("<fieldset><legend>Performance</legend>");
   h += F("<label>oledTimingRefreshMs (ms)</label><input type='number' min='50' max='1000' name='oledTimingRefreshMs' value='"); h += String(c.oledTimingRefreshMs); h += F("'>");
   h += F("<label>scaleReadIntervalMs (ms)</label><input type='number' min='10' max='500' name='scaleReadIntervalMs' value='"); h += String(c.scaleReadIntervalMs); h += F("'>");
@@ -174,7 +175,7 @@ static String renderBusyPage(const String& hint = "") {
 void webConfigLoadDefaults(RuntimeConfig& cfg) { memset(&cfg,0,sizeof(cfg));
   cfg.startDropPercent=DEFAULT_START_DROP_PERCENT; cfg.stopRisePercent=DEFAULT_STOP_RISE_PERCENT;
   cfg.objectPresentG=DEFAULT_OBJECT_PRESENT_G; cfg.emptyThresholdG=DEFAULT_EMPTY_THRESHOLD_G;
-  cfg.retareTolG=DEFAULT_RETARE_TOL_G; cfg.standbyWakeThresholdG=DEFAULT_STANDBY_WAKE_THRESHOLD_G;
+  cfg.retareTolG=DEFAULT_RETARE_TOL_G; cfg.standbyWakeThresholdG=DEFAULT_STANDBY_WAKE_THRESHOLD_G; cfg.standbyAfterMs=STANDBY_AFTER_MS;
   cfg.oledTimingRefreshMs=DEFAULT_OLED_TIMING_REFRESH_MS; cfg.scaleReadIntervalMs=DEFAULT_SCALE_READ_INTERVAL_MS;
   cfg.scaleReadSamples=DEFAULT_SCALE_READ_SAMPLES; cfg.oledI2cClockHz=DEFAULT_OLED_I2C_CLOCK_HZ;
   cfg.oledRotation=DEFAULT_OLED_ROTATION; cfg.oledScaleValue=1.5f; cfg.debugMode=false; cfg.oledDebugMode=false;
@@ -193,7 +194,7 @@ void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.begin("cfg", false);
   prefs.putFloat("startDrop", c.startDropPercent); prefs.putFloat("stopRise", c.stopRisePercent);
   prefs.putFloat("obj", c.objectPresentG); prefs.putFloat("empty", c.emptyThresholdG); prefs.putFloat("retare", c.retareTolG);
-  prefs.putFloat("wake", c.standbyWakeThresholdG); prefs.putUInt("oledRef", c.oledTimingRefreshMs); prefs.putUInt("scaleInt", c.scaleReadIntervalMs);
+  prefs.putFloat("wake", c.standbyWakeThresholdG); prefs.putUInt("stbyAfter", c.standbyAfterMs); prefs.putUInt("oledRef", c.oledTimingRefreshMs); prefs.putUInt("scaleInt", c.scaleReadIntervalMs);
   prefs.putUChar("samples", c.scaleReadSamples); prefs.putUInt("i2c", c.oledI2cClockHz); prefs.putUChar("rot", c.oledRotation);
   prefs.putFloat("oledScale", c.oledScaleValue); prefs.putBool("dbg", c.debugMode); prefs.putBool("odbg", c.oledDebugMode);
   prefs.putUChar("pixB", c.pixelBrightnessPercent); prefs.putUChar("stbyB", c.standbyBrightnessPercent); prefs.putBool("pixDbg", c.pixelDebugAllOn);
@@ -216,6 +217,7 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   cfg.emptyThresholdG=prefs.getFloat("empty", cfg.emptyThresholdG);
   cfg.retareTolG=prefs.getFloat("retare", cfg.retareTolG);
   cfg.standbyWakeThresholdG=prefs.getFloat("wake", cfg.standbyWakeThresholdG);
+  cfg.standbyAfterMs=prefs.getUInt("stbyAfter", cfg.standbyAfterMs);
   cfg.oledTimingRefreshMs=prefs.getUInt("oledRef", cfg.oledTimingRefreshMs);
   cfg.scaleReadIntervalMs=prefs.getUInt("scaleInt", cfg.scaleReadIntervalMs);
   cfg.scaleReadSamples=prefs.getUChar("samples", cfg.scaleReadSamples);
@@ -279,6 +281,7 @@ void webConfigSetup() {
     parseFloatArg("emptyThresholdG", n.emptyThresholdG);
     parseFloatArg("retareTolG", n.retareTolG);
     parseFloatArg("standbyWakeThresholdG", n.standbyWakeThresholdG);
+    parseUIntArg("standbyAfterMs", n.standbyAfterMs);
     parseUIntArg("oledTimingRefreshMs", n.oledTimingRefreshMs);
     parseUIntArg("scaleReadIntervalMs", n.scaleReadIntervalMs);
     parseU8Arg("scaleReadSamples", n.scaleReadSamples);
@@ -309,6 +312,7 @@ void webConfigSetup() {
     if (!errMsg.length() && n.oledRotation > 3) errMsg = "oledRotation muss 0..3 sein.";
     if (!errMsg.length() && (n.oledTimingRefreshMs < 50 || n.oledTimingRefreshMs > 1000)) errMsg = "oledTimingRefreshMs muss 50..1000 ms sein.";
     if (!errMsg.length() && (n.scaleReadIntervalMs < 10 || n.scaleReadIntervalMs > 500)) errMsg = "scaleReadIntervalMs muss 10..500 ms sein.";
+    if (!errMsg.length() && (n.standbyAfterMs < 1000 || n.standbyAfterMs > 600000)) errMsg = "standbyAfterMs muss 1000..600000 ms sein.";
     if (!errMsg.length() && !(n.oledI2cClockHz == 100000 || n.oledI2cClockHz == 200000 || n.oledI2cClockHz == 400000)) errMsg = "oledI2cClockHz muss 100000, 200000 oder 400000 sein.";
     if (!errMsg.length() && (n.objectPresentG <= 0 || n.emptyThresholdG < 0 || n.retareTolG <= 0 || n.standbyWakeThresholdG <= 0 || n.oledScaleValue <= 0)) errMsg = "Gramm- und OLED-Skalierungswerte muessen positiv und sinnvoll sein.";
     if (!errMsg.length() && n.externalPort == 0) errMsg = "externalPort muss 1..65535 sein.";
