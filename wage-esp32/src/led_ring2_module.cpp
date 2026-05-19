@@ -24,7 +24,10 @@ static inline bool ring2Ready() { return ring2Leds != nullptr; }
 
 static inline CRGB scaleColor(const CRGB& color, uint8_t brightness) { CRGB out = color; out.nscale8_video(brightness); return out; }
 static inline CRGB rgb(uint8_t r, uint8_t g, uint8_t b) { return CRGB(r, g, b); }
-static inline uint8_t brightnessPercentToByte(uint8_t percent) { if (percent >= 100) return 255; return (uint8_t)((uint16_t)percent * 255u / 100u); }
+static inline uint8_t brightnessPercentToByte(uint8_t percent) {
+  if (percent >= 100) return 255;
+  return (uint8_t)(((uint16_t)percent * 255u + 50u) / 100u);
+}
 static inline void ring2SetBrightnessPercent(uint8_t percent) {
   const uint8_t target = brightnessPercentToByte(percent);
   if (ring2BrightnessInitialized && ring2BrightnessByte == target) return;
@@ -129,7 +132,7 @@ bool ring2Service(uint32_t now) {
   }
 
   const uint8_t mode = resolvedMode;
-  if (mode == 2) ring2SetBrightnessPercent(activeConfig.ring2StandbyBrightnessPercent); else ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
+  ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   if (mode == 0) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
   if (mode == 1) { logRenderedState(1, "solid-blue"); if (ring2FrameDirty) { ring2Fill(rgb(0, 0, 64)); ring2FrameDirty = false; return true; } return false; }
   if (mode == 3) {

@@ -18,6 +18,7 @@ static constexpr uint16_t SHARED_PIXELS = PIXEL_COUNT + RING2_PIXEL_COUNT;
 static bool sharedStandbyTwinkleOn[SHARED_PIXELS] = {};
 static uint16_t sharedStandbyHue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyValue[SHARED_PIXELS] = {};
+static uint8_t sharedStandbyTargetValue[SHARED_PIXELS] = {};
 static uint16_t sharedStandbyOnCount = 0;
 
 static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) { return (minValue > maxValue) ? maxValue : minValue; }
@@ -53,14 +54,15 @@ static void sharedStandbyInit(uint32_t now) {
   sharedStandbyChangeNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
   sharedStandbyOnCount = 0;
   for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
-    sharedStandbyTwinkleOn[i] = false;
+    sharedStandbyTwinkleOn[i] = true;
     sharedStandbyHue[i] = (uint16_t)random(0, 65536);
-    sharedStandbyValue[i] = randomInclusiveU8(valueMin, valueMax);
+    sharedStandbyValue[i] = 0;
+    sharedStandbyTargetValue[i] = 0;
   }
   const uint8_t initialOn = randomInclusiveU8(onMin, onMax);
   for (uint8_t i = 0; i < initialOn; ++i) {
     const uint16_t idx = (uint16_t)random(0, SHARED_PIXELS);
-    if (!sharedStandbyTwinkleOn[idx]) { sharedStandbyTwinkleOn[idx] = true; ++sharedStandbyOnCount; }
+    if (sharedStandbyTargetValue[idx] == 0) { sharedStandbyTargetValue[idx] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
   }
 }
 static bool sharedStandbyService(uint32_t now) {
@@ -80,9 +82,14 @@ static bool sharedStandbyService(uint32_t now) {
     if (needMore || needLess || shouldToggle) {
       for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
         const uint16_t i = (uint16_t)random(0, SHARED_PIXELS);
-        if (needMore && !sharedStandbyTwinkleOn[i]) { sharedStandbyTwinkleOn[i] = true; ++sharedStandbyOnCount; sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyValue[i] = randomInclusiveU8(valueMin, valueMax); changed = true; break; }
-        if (needLess && sharedStandbyTwinkleOn[i]) { sharedStandbyTwinkleOn[i] = false; --sharedStandbyOnCount; changed = true; break; }
-        if (!needMore && !needLess) { sharedStandbyTwinkleOn[i] = !sharedStandbyTwinkleOn[i]; if (sharedStandbyTwinkleOn[i]) { ++sharedStandbyOnCount; sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyValue[i] = randomInclusiveU8(valueMin, valueMax); } else --sharedStandbyOnCount; changed = true; break; }
+        if (needMore && sharedStandbyTargetValue[i] == 0) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; changed = true; break; }
+        if (needLess && sharedStandbyTargetValue[i] > 0) { sharedStandbyTargetValue[i] = 0; --sharedStandbyOnCount; changed = true; break; }
+        if (!needMore && !needLess) {
+          if (sharedStandbyTargetValue[i] == 0) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
+          else { sharedStandbyTargetValue[i] = 0; --sharedStandbyOnCount; }
+          changed = true;
+          break;
+        }
       }
     }
   }
@@ -91,12 +98,21 @@ static bool sharedStandbyService(uint32_t now) {
     const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
     sharedStandbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
     for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
-      if (!sharedStandbyTwinkleOn[i]) continue;
+      const uint8_t target = sharedStandbyTargetValue[i];
       sharedStandbyHue[i] = (uint16_t)(sharedStandbyHue[i] + (int16_t)random(-2, 3));
-      int16_t nextValue = (int16_t)sharedStandbyValue[i] + (int16_t)random(-4, 5);
-      if (nextValue < valueMin) nextValue = valueMin;
-      if (nextValue > valueMax) nextValue = valueMax;
-      sharedStandbyValue[i] = (uint8_t)nextValue;
+      int16_t dynamicTarget = target;
+      if (target > 0) {
+        dynamicTarget += (int16_t)random(-3, 4);
+        if (dynamicTarget < valueMin) dynamicTarget = valueMin;
+        if (dynamicTarget > valueMax) dynamicTarget = valueMax;
+      }
+      const int16_t current = sharedStandbyValue[i];
+      const int16_t delta = dynamicTarget - current;
+      if (delta != 0) {
+        int16_t step = delta / 4;
+        if (step == 0) step = (delta > 0) ? 1 : -1;
+        sharedStandbyValue[i] = (uint8_t)(current + step);
+      }
     }
     changed = true;
   }

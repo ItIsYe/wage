@@ -270,6 +270,8 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   cfg.pixelBrightnessPercent=prefs.getUChar("pixB", cfg.pixelBrightnessPercent); cfg.standbyBrightnessPercent=prefs.getUChar("stbyB", cfg.standbyBrightnessPercent); cfg.pixelDebugAllOn=prefs.getBool("pixDbg", cfg.pixelDebugAllOn);
   cfg.ring2Enabled=prefs.getBool("r2en", cfg.ring2Enabled); cfg.ring2BrightnessPercent=prefs.getUChar("r2b", cfg.ring2BrightnessPercent); cfg.ring2StandbyBrightnessPercent=prefs.getUChar("r2sb", cfg.ring2StandbyBrightnessPercent);
   cfg.ring2DebugAllOn=prefs.getBool("r2dbg", cfg.ring2DebugAllOn);
+  if (cfg.pixelBrightnessPercent > 100) cfg.pixelBrightnessPercent = 100;
+  if (cfg.standbyBrightnessPercent > 100) cfg.standbyBrightnessPercent = 100;
   if (cfg.ring2BrightnessPercent > 100) cfg.ring2BrightnessPercent = 100;
   if (cfg.ring2StandbyBrightnessPercent > 100) cfg.ring2StandbyBrightnessPercent = 100;
   String dev=prefs.getString("dev", cfg.deviceId); strncpy(cfg.deviceId, dev.c_str(), sizeof(cfg.deviceId)-1);
