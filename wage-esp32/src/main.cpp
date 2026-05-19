@@ -587,10 +587,8 @@ static void applyPendingConfigIfAllowed(){
   ledMarkAllDirty();
   webConfigSaveToPrefs(activeConfig);
   if (MASTER_DEBUG_LOG) {
-    Serial.printf("[CFG] Ring2 en=%u mode=%u follow=%u dbg=%u b=%u sb=%u\n",
+    Serial.printf("[CFG] Ring2 en=%u dbg=%u b=%u sb=%u\n",
                   (unsigned)activeConfig.ring2Enabled,
-                  (unsigned)activeConfig.ring2PatternMode,
-                  (unsigned)activeConfig.ring2FollowState,
                   (unsigned)activeConfig.ring2DebugAllOn,
                   (unsigned)activeConfig.ring2BrightnessPercent,
                   (unsigned)activeConfig.ring2StandbyBrightnessPercent);
