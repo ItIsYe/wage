@@ -277,9 +277,21 @@ static void oledService(uint32_t now) {
 
 void setup() {
   Serial.begin(115200);
+  delay(150);
+  Serial.println("[BOOT] WAGE ESP32 beta ring2-direct-test build");
+  Serial.printf("[BOOT] ring1Pin=%u ring2Pin=%u ring2Enabled=%u ring2BootTest=%u ring2ForceTest=%u masterDebug=%u\n",
+                (unsigned)LED_STRIP_PIN,
+                (unsigned)RING2_PIN,
+                (unsigned)RING2_ENABLED,
+                (unsigned)RING2_BOOT_TEST,
+                (unsigned)RING2_FORCE_INDEPENDENT_TEST,
+                (unsigned)MASTER_DEBUG_LOG);
   webConfigLoadDefaults(activeConfig);
   initOledScale();
   webConfigLoadFromPrefs(activeConfig, oledScale);
+  Serial.printf("[CFG] Standby after=%lu ms (%lus)\n",
+                (unsigned long)activeConfig.standbyAfterMs,
+                (unsigned long)(activeConfig.standbyAfterMs / 1000U));
   randomSeed(esp_random());
   bootId = esp_random();
   runCounter = 0;
@@ -316,7 +328,7 @@ static void stateMachineService(uint32_t now) {
     resetNegativeDetection();
   }
 
-  const bool standbyDue = (now - lastActionMs) > STANDBY_AFTER_MS;
+  const bool standbyDue = (now - lastActionMs) > activeConfig.standbyAfterMs;
 
   switch (state) {
     case State::BOOT_MSG: {
@@ -571,7 +583,19 @@ static void applyPendingConfigIfAllowed(){
   Wire.setClock(activeConfig.oledI2cClockHz);
   display.setRotation(activeConfig.oledRotation);
   ledApplyBrightnessForCurrentMode();
+  ledMarkAllDirty();
   webConfigSaveToPrefs(activeConfig);
+  if (MASTER_DEBUG_LOG) {
+    Serial.printf("[CFG] Ring2 en=%u mode=%u dbg=%u b=%u sb=%u\n",
+                  (unsigned)activeConfig.ring2Enabled,
+                  (unsigned)activeConfig.ring2PatternMode,
+                  (unsigned)activeConfig.ring2DebugAllOn,
+                  (unsigned)activeConfig.ring2BrightnessPercent,
+                  (unsigned)activeConfig.ring2StandbyBrightnessPercent);
+    Serial.printf("[CFG] Standby after=%lu ms (%lus)\n",
+                  (unsigned long)activeConfig.standbyAfterMs,
+                  (unsigned long)(activeConfig.standbyAfterMs / 1000U));
+  }
   externalInterfaceUpdateConfig(activeConfig);
   webClearPendingConfig();
 }

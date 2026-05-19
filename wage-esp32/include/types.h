@@ -43,6 +43,15 @@ struct RuntimeConfig {
   float emptyThresholdG;
   float retareTolG;
   float standbyWakeThresholdG;
+  uint32_t standbyAfterMs;
+  uint32_t standbyFrameMs;
+  uint32_t standbyChangeMinMs;
+  uint32_t standbyChangeMaxMs;
+  uint8_t standbySaturation;
+  uint8_t standbyValueMin;
+  uint8_t standbyValueMax;
+  uint8_t standbyOnMin;
+  uint8_t standbyOnMax;
   uint32_t oledTimingRefreshMs;
   uint32_t scaleReadIntervalMs;
   uint8_t scaleReadSamples;
