@@ -25,6 +25,10 @@ static Preferences prefs;
 static bool resetRequested = false;
 static String resetStatusMsg;
 static uint32_t lastWebServiceMs = 0;
+static const uint32_t STANDBY_MIN_S = 5U;
+static const uint32_t STANDBY_MAX_S = 300U;
+static const uint32_t STANDBY_MIN_MS = STANDBY_MIN_S * 1000U;
+static const uint32_t STANDBY_MAX_MS = STANDBY_MAX_S * 1000U;
 
 static void disableDebugModesNow() {
   activeConfig.oledDebugMode = false;
@@ -218,8 +222,8 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   cfg.retareTolG=prefs.getFloat("retare", cfg.retareTolG);
   cfg.standbyWakeThresholdG=prefs.getFloat("wake", cfg.standbyWakeThresholdG);
   cfg.standbyAfterMs=prefs.getUInt("stbyAfter", cfg.standbyAfterMs);
-  if (cfg.standbyAfterMs < 5000) cfg.standbyAfterMs = 5000;
-  if (cfg.standbyAfterMs > 300000) cfg.standbyAfterMs = 300000;
+  if (cfg.standbyAfterMs < STANDBY_MIN_MS) cfg.standbyAfterMs = STANDBY_MIN_MS;
+  if (cfg.standbyAfterMs > STANDBY_MAX_MS) cfg.standbyAfterMs = STANDBY_MAX_MS;
   cfg.oledTimingRefreshMs=prefs.getUInt("oledRef", cfg.oledTimingRefreshMs);
   cfg.scaleReadIntervalMs=prefs.getUInt("scaleInt", cfg.scaleReadIntervalMs);
   cfg.scaleReadSamples=prefs.getUChar("samples", cfg.scaleReadSamples);
@@ -285,6 +289,8 @@ void webConfigSetup() {
     parseFloatArg("standbyWakeThresholdG", n.standbyWakeThresholdG);
     uint32_t standbyAfterS = n.standbyAfterMs / 1000U;
     parseUIntArg("standbyAfterS", standbyAfterS);
+    if (standbyAfterS < STANDBY_MIN_S) standbyAfterS = STANDBY_MIN_S;
+    if (standbyAfterS > STANDBY_MAX_S) standbyAfterS = STANDBY_MAX_S;
     n.standbyAfterMs = standbyAfterS * 1000U;
     parseUIntArg("oledTimingRefreshMs", n.oledTimingRefreshMs);
     parseUIntArg("scaleReadIntervalMs", n.scaleReadIntervalMs);
@@ -316,7 +322,7 @@ void webConfigSetup() {
     if (!errMsg.length() && n.oledRotation > 3) errMsg = "oledRotation muss 0..3 sein.";
     if (!errMsg.length() && (n.oledTimingRefreshMs < 50 || n.oledTimingRefreshMs > 1000)) errMsg = "oledTimingRefreshMs muss 50..1000 ms sein.";
     if (!errMsg.length() && (n.scaleReadIntervalMs < 10 || n.scaleReadIntervalMs > 500)) errMsg = "scaleReadIntervalMs muss 10..500 ms sein.";
-    if (!errMsg.length() && (n.standbyAfterMs < 5000 || n.standbyAfterMs > 300000)) errMsg = "Standby nach muss 5..300 s sein.";
+    if (!errMsg.length() && (n.standbyAfterMs < STANDBY_MIN_MS || n.standbyAfterMs > STANDBY_MAX_MS)) errMsg = "Standby nach muss 5..300 s sein.";
     if (!errMsg.length() && !(n.oledI2cClockHz == 100000 || n.oledI2cClockHz == 200000 || n.oledI2cClockHz == 400000)) errMsg = "oledI2cClockHz muss 100000, 200000 oder 400000 sein.";
     if (!errMsg.length() && (n.objectPresentG <= 0 || n.emptyThresholdG < 0 || n.retareTolG <= 0 || n.standbyWakeThresholdG <= 0 || n.oledScaleValue <= 0)) errMsg = "Gramm- und OLED-Skalierungswerte muessen positiv und sinnvoll sein.";
     if (!errMsg.length() && n.externalPort == 0) errMsg = "externalPort muss 1..65535 sein.";
