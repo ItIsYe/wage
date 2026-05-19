@@ -97,7 +97,7 @@ bool ring2Service(uint32_t now) {
   }
   if (!activeConfig.ring2Enabled) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
   if (activeConfig.ring2DebugAllOn) {
-    logRenderedState(3, "debug-all-on");
+    logRenderedState(250, "debug-white-all-on");
     ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
     if (ring2FrameDirty) {
       // Bewusst neutrales Weiß für Hardware-/Verdrahtungsprüfung, nicht für Normalbetrieb.
@@ -113,7 +113,7 @@ bool ring2Service(uint32_t now) {
   if (mode == 0) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
   if (mode == 1) { logRenderedState(1, "solid-blue"); if (ring2FrameDirty) { ring2Fill(rgb(0, 0, 64)); ring2FrameDirty = false; return true; } return false; }
   if (mode == 3) {
-    logRenderedState(4, "breathing-white");
+    logRenderedState(3, "breathing-white");
     if (now - ring2TickMs >= 80) {
       ring2TickMs = now;
       const int16_t next = (int16_t)ring2BreathingValue + ring2BreathingStep;
@@ -126,7 +126,7 @@ bool ring2Service(uint32_t now) {
     return false;
   }
   if (mode == 4) {
-    logRenderedState(5, "slow-blue-spinner");
+    logRenderedState(4, "slow-blue-spinner");
     if (now - ring2TickMs >= 180) {
       ring2TickMs = now;
       ring2SpinnerHead = (uint8_t)((ring2SpinnerHead + 1) % RING2_PIXEL_COUNT);
@@ -151,7 +151,7 @@ bool ring2Service(uint32_t now) {
     return false;
   }
 
-  logRenderedState(6, "unknown-off");
+  logRenderedState(251, "unknown-off");
   if (ring2FrameDirty) {
     ring2Clear();
     ring2FrameDirty = false;
