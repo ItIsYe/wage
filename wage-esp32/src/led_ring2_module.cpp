@@ -17,6 +17,7 @@ static int8_t ring2PulseStep = 5;
 static uint8_t ring2SpinnerHead = 0;
 static uint8_t ring2BreathingValue = 10;
 static int8_t ring2BreathingStep = 3;
+static State ring2State = State::BOOT_MSG;
 
 static inline bool ring2Ready() { return ring2Leds != nullptr; }
 
@@ -38,6 +39,38 @@ static const char* ring2ModeLabel(uint8_t mode) {
   if (mode == 3) return "breathing-white";
   if (mode == 4) return "slow-blue-spinner";
   return "unknown";
+}
+static uint8_t ring2ResolveModeFromState() {
+  switch (ring2State) {
+    case State::BOOT_MSG: return 1;
+    case State::BOOT_TARE: return 1;
+    case State::IDLE_WAIT_GLASS: return 3;
+    case State::GLASS_DETECTED: return 1;
+    case State::READY_FOR_TIMING: return 2;
+    case State::TIMING: return 4;
+    case State::SHOW_RESULT: return 2;
+    case State::WAIT_EMPTY_AFTER_RESULT: return 1;
+    case State::CHECK_RETARE: return 1;
+    case State::STANDBY: return 3;
+    case State::ERROR_RECOVER: return 0;
+  }
+  return 0;
+}
+static void ring2ResetPatternAnimation(uint8_t mode, uint32_t now) {
+  if (mode == 2) {
+    ring2PulseValue = 10;
+    ring2PulseStep = 5;
+    ring2TickMs = now;
+  }
+  if (mode == 3) {
+    ring2BreathingValue = 10;
+    ring2BreathingStep = 3;
+    ring2TickMs = now;
+  }
+  if (mode == 4) {
+    ring2SpinnerHead = 0;
+    ring2TickMs = now;
+  }
 }
 void ring2LogWrite(uint32_t now) { if (!MASTER_DEBUG_LOG) return; static uint32_t lastWriteLogMs = 0; if (now - lastWriteLogMs >= 2000) { lastWriteLogMs = now; Serial.println("[RING2 WRITE] show applied"); } }
 static inline void ring2Fill(const CRGB& color) { if (!ring2Ready()) return; for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte); }
@@ -66,34 +99,20 @@ bool ring2Service(uint32_t now) {
     }
     return false;
   }
-  if (MASTER_DEBUG_LOG) { static uint32_t lastHardEntryLogMs = 0; if (now - lastHardEntryLogMs >= 1000) { lastHardEntryLogMs = now; Serial.printf("[RING2 HARD ENTRY] now=%lu enabled=%u mode=%u debug=%u b=%u sb=%u pin=%u\n", (unsigned long)now,(unsigned)activeConfig.ring2Enabled,(unsigned)activeConfig.ring2PatternMode,(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent,(unsigned)RING2_PIN); }}
+  const uint8_t resolvedMode = activeConfig.ring2FollowState ? ring2ResolveModeFromState() : activeConfig.ring2PatternMode;
+  if (MASTER_DEBUG_LOG) { static uint32_t lastHardEntryLogMs = 0; if (now - lastHardEntryLogMs >= 1000) { lastHardEntryLogMs = now; Serial.printf("[RING2 HARD ENTRY] now=%lu enabled=%u mode=%u debug=%u follow=%u state=%u b=%u sb=%u pin=%u\n", (unsigned long)now,(unsigned)activeConfig.ring2Enabled,(unsigned)resolvedMode,(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2FollowState,(unsigned)ring2State,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent,(unsigned)RING2_PIN); }}
   static uint32_t lastEntryLogMs = 0;
-  if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) { lastEntryLogMs = millis(); Serial.printf("[RING2 SERVICE] now=%lu enabled=%u mode=%u debug=%u brightness=%u standbyBrightness=%u pin=%u\n", (unsigned long)now,(unsigned)activeConfig.ring2Enabled,(unsigned)activeConfig.ring2PatternMode,(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent,(unsigned)RING2_PIN); }
+  if (MASTER_DEBUG_LOG && millis() - lastEntryLogMs >= 2000) { lastEntryLogMs = millis(); Serial.printf("[RING2 SERVICE] now=%lu enabled=%u mode=%u debug=%u follow=%u brightness=%u standbyBrightness=%u pin=%u\n", (unsigned long)now,(unsigned)activeConfig.ring2Enabled,(unsigned)resolvedMode,(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2FollowState,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent,(unsigned)RING2_PIN); }
   if (RING2_BOOT_TEST) return false;
 
   static uint8_t lastRenderedState = 255;
-  auto logRenderedState = [&](uint8_t state, const char* label) { if (!MASTER_DEBUG_LOG) return; if (lastRenderedState != state) { Serial.printf("[RING2 PATTERN] state=%s mode=%u (%s) debug=%u enabled=%u\n", label,(unsigned)activeConfig.ring2PatternMode,ring2ModeLabel(activeConfig.ring2PatternMode),(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2Enabled); lastRenderedState = state; } };
-  static bool lastRing2Enabled = false; static uint8_t lastRing2PatternMode = 255; static bool lastRing2DebugAllOn = false; static uint8_t lastRing2BrightnessPercent = 255; static uint8_t lastRing2StandbyBrightnessPercent = 255;
-  if (lastRing2Enabled != activeConfig.ring2Enabled || lastRing2PatternMode != activeConfig.ring2PatternMode || lastRing2DebugAllOn != activeConfig.ring2DebugAllOn || lastRing2BrightnessPercent != activeConfig.ring2BrightnessPercent || lastRing2StandbyBrightnessPercent != activeConfig.ring2StandbyBrightnessPercent) {
+  auto logRenderedState = [&](uint8_t state, const char* label) { if (!MASTER_DEBUG_LOG) return; if (lastRenderedState != state) { Serial.printf("[RING2 PATTERN] state=%s mode=%u (%s) debug=%u enabled=%u follow=%u\n", label,(unsigned)resolvedMode,ring2ModeLabel(resolvedMode),(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2Enabled,(unsigned)activeConfig.ring2FollowState); lastRenderedState = state; } };
+  static bool lastRing2Enabled = false; static uint8_t lastResolvedMode = 255; static bool lastRing2DebugAllOn = false; static bool lastRing2FollowState = false; static uint8_t lastRing2BrightnessPercent = 255; static uint8_t lastRing2StandbyBrightnessPercent = 255;
+  if (lastRing2Enabled != activeConfig.ring2Enabled || lastResolvedMode != resolvedMode || lastRing2DebugAllOn != activeConfig.ring2DebugAllOn || lastRing2FollowState != activeConfig.ring2FollowState || lastRing2BrightnessPercent != activeConfig.ring2BrightnessPercent || lastRing2StandbyBrightnessPercent != activeConfig.ring2StandbyBrightnessPercent) {
     ring2FrameDirty = true;
-    if (MASTER_DEBUG_LOG) Serial.printf("[RING2 CONFIG] pin=%u enabled=%u mode=%u (%s) debug=%u brightness=%u standbyBrightness=%u\n", (unsigned)RING2_PIN,(unsigned)activeConfig.ring2Enabled,(unsigned)activeConfig.ring2PatternMode,ring2ModeLabel(activeConfig.ring2PatternMode),(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent);
-    if (lastRing2PatternMode != activeConfig.ring2PatternMode) {
-      if (activeConfig.ring2PatternMode == 2) {
-        ring2PulseValue = 10;
-        ring2PulseStep = 5;
-        ring2TickMs = now;
-      }
-      if (activeConfig.ring2PatternMode == 3) {
-        ring2BreathingValue = 10;
-        ring2BreathingStep = 3;
-        ring2TickMs = now;
-      }
-      if (activeConfig.ring2PatternMode == 4) {
-        ring2SpinnerHead = 0;
-        ring2TickMs = now;
-      }
-    }
-    lastRing2Enabled = activeConfig.ring2Enabled; lastRing2PatternMode = activeConfig.ring2PatternMode; lastRing2DebugAllOn = activeConfig.ring2DebugAllOn; lastRing2BrightnessPercent = activeConfig.ring2BrightnessPercent; lastRing2StandbyBrightnessPercent = activeConfig.ring2StandbyBrightnessPercent;
+    if (MASTER_DEBUG_LOG) Serial.printf("[RING2 CONFIG] pin=%u enabled=%u mode=%u (%s) debug=%u follow=%u brightness=%u standbyBrightness=%u\n", (unsigned)RING2_PIN,(unsigned)activeConfig.ring2Enabled,(unsigned)resolvedMode,ring2ModeLabel(resolvedMode),(unsigned)activeConfig.ring2DebugAllOn,(unsigned)activeConfig.ring2FollowState,(unsigned)activeConfig.ring2BrightnessPercent,(unsigned)activeConfig.ring2StandbyBrightnessPercent);
+    if (lastResolvedMode != resolvedMode) ring2ResetPatternAnimation(resolvedMode, now);
+    lastRing2Enabled = activeConfig.ring2Enabled; lastResolvedMode = resolvedMode; lastRing2DebugAllOn = activeConfig.ring2DebugAllOn; lastRing2FollowState = activeConfig.ring2FollowState; lastRing2BrightnessPercent = activeConfig.ring2BrightnessPercent; lastRing2StandbyBrightnessPercent = activeConfig.ring2StandbyBrightnessPercent;
   }
   if (!activeConfig.ring2Enabled) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
   if (activeConfig.ring2DebugAllOn) {
@@ -108,7 +127,7 @@ bool ring2Service(uint32_t now) {
     return false;
   }
 
-  const uint8_t mode = activeConfig.ring2PatternMode;
+  const uint8_t mode = resolvedMode;
   if (mode == 2) ring2SetBrightnessPercent(activeConfig.ring2StandbyBrightnessPercent); else ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   if (mode == 0) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
   if (mode == 1) { logRenderedState(1, "solid-blue"); if (ring2FrameDirty) { ring2Fill(rgb(0, 0, 64)); ring2FrameDirty = false; return true; } return false; }
@@ -160,6 +179,11 @@ bool ring2Service(uint32_t now) {
   return false;
 }
 void ring2MarkDirty() { ring2FrameDirty = true; }
+void ring2SetState(State s) {
+  if (ring2State == s) return;
+  ring2State = s;
+  ring2FrameDirty = true;
+}
 void ring2Clear() { if (!ring2Ready()) return; fill_solid(ring2Leds, RING2_PIXEL_COUNT, CRGB::Black); }
 bool ring2ForceTestService(uint32_t now) {
   if (!ring2Ready()) {

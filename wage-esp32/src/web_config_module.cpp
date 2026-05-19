@@ -156,6 +156,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>Ring 2 Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2BrightnessPercent' value='"); h += String(c.ring2BrightnessPercent); h += F("'>");
   h += F("<label>Ring 2 Standby-Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2StandbyBrightnessPercent' value='"); h += String(c.ring2StandbyBrightnessPercent); h += F("'>");
   h += F("<label><input type='checkbox' name='ring2DebugAllOn' "); if (c.ring2DebugAllOn) h += F("checked"); h += F("> Ring 2 Debug alle Pixel an</label>");
+  h += F("<label><input type='checkbox' name='ring2FollowState' "); if (c.ring2FollowState) h += F("checked"); h += F("> Ring 2 folgt Waagen-State</label>");
   h += F("<label>Ring 2 Pattern</label><select name='ring2PatternMode'><option value='0'"); if (c.ring2PatternMode == 0) h += F(" selected"); h += F(">Aus</option><option value='1'"); if (c.ring2PatternMode == 1) h += F(" selected"); h += F(">Solid Blau</option><option value='2'"); if (c.ring2PatternMode == 2) h += F(" selected"); h += F(">Pulse Blau</option><option value='3'"); if (c.ring2PatternMode == 3) h += F(" selected"); h += F(">Breathing Weiss</option><option value='4'"); if (c.ring2PatternMode == 4) h += F(" selected"); h += F(">Slow Blue Spinner</option></select></fieldset>");
 
   h += F("<fieldset><legend>Externe Schnittstelle</legend>");
@@ -203,7 +204,7 @@ void webConfigLoadDefaults(RuntimeConfig& cfg) { memset(&cfg,0,sizeof(cfg));
   cfg.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON;
   cfg.ring2Enabled=DEFAULT_RING2_ENABLED; cfg.ring2BrightnessPercent=DEFAULT_RING2_BRIGHTNESS_PERCENT;
   cfg.ring2StandbyBrightnessPercent=DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT; cfg.ring2DebugAllOn=DEFAULT_RING2_DEBUG_ALL_ON;
-  cfg.ring2PatternMode=DEFAULT_RING2_PATTERN_MODE; strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);
+  cfg.ring2PatternMode=DEFAULT_RING2_PATTERN_MODE; cfg.ring2FollowState=DEFAULT_RING2_FOLLOW_STATE; strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);
   cfg.externalEnabled=EXTERNAL_INTERFACE_ENABLED_DEFAULT;
   strncpy(cfg.externalHost, EXTERNAL_TARGET_HOST_DEFAULT, sizeof(cfg.externalHost)-1);
   cfg.externalPort=EXTERNAL_TARGET_PORT_DEFAULT;
@@ -222,7 +223,7 @@ void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.putFloat("oledScale", c.oledScaleValue); prefs.putBool("dbg", c.debugMode); prefs.putBool("odbg", c.oledDebugMode);
   prefs.putUChar("pixB", c.pixelBrightnessPercent); prefs.putUChar("stbyB", c.standbyBrightnessPercent); prefs.putBool("pixDbg", c.pixelDebugAllOn);
   prefs.putBool("r2en", c.ring2Enabled); prefs.putUChar("r2b", c.ring2BrightnessPercent); prefs.putUChar("r2sb", c.ring2StandbyBrightnessPercent);
-  prefs.putBool("r2dbg", c.ring2DebugAllOn); prefs.putUChar("r2pat", c.ring2PatternMode);
+  prefs.putBool("r2dbg", c.ring2DebugAllOn); prefs.putUChar("r2pat", c.ring2PatternMode); prefs.putBool("r2fol", c.ring2FollowState);
   prefs.putString("dev", c.deviceId);
   prefs.putBool("exEn", c.externalEnabled);
   prefs.putString("exHost", c.externalHost);
@@ -270,7 +271,7 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   cfg.debugMode=prefs.getBool("dbg", cfg.debugMode); cfg.oledDebugMode=prefs.getBool("odbg", cfg.oledDebugMode);
   cfg.pixelBrightnessPercent=prefs.getUChar("pixB", cfg.pixelBrightnessPercent); cfg.standbyBrightnessPercent=prefs.getUChar("stbyB", cfg.standbyBrightnessPercent); cfg.pixelDebugAllOn=prefs.getBool("pixDbg", cfg.pixelDebugAllOn);
   cfg.ring2Enabled=prefs.getBool("r2en", cfg.ring2Enabled); cfg.ring2BrightnessPercent=prefs.getUChar("r2b", cfg.ring2BrightnessPercent); cfg.ring2StandbyBrightnessPercent=prefs.getUChar("r2sb", cfg.ring2StandbyBrightnessPercent);
-  cfg.ring2DebugAllOn=prefs.getBool("r2dbg", cfg.ring2DebugAllOn); cfg.ring2PatternMode=prefs.getUChar("r2pat", cfg.ring2PatternMode);
+  cfg.ring2DebugAllOn=prefs.getBool("r2dbg", cfg.ring2DebugAllOn); cfg.ring2PatternMode=prefs.getUChar("r2pat", cfg.ring2PatternMode); cfg.ring2FollowState=prefs.getBool("r2fol", cfg.ring2FollowState);
   if (cfg.ring2BrightnessPercent > 100) cfg.ring2BrightnessPercent = 100;
   if (cfg.ring2StandbyBrightnessPercent > 100) cfg.ring2StandbyBrightnessPercent = 100;
   if (cfg.ring2PatternMode > 4) cfg.ring2PatternMode = DEFAULT_RING2_PATTERN_MODE;
@@ -354,6 +355,7 @@ void webConfigSetup() {
     parseU8Arg("ring2StandbyBrightnessPercent", n.ring2StandbyBrightnessPercent);
     parseBoolArg("ring2DebugAllOn", n.ring2DebugAllOn);
     parseU8Arg("ring2PatternMode", n.ring2PatternMode);
+    parseBoolArg("ring2FollowState", n.ring2FollowState);
     parseBoolArg("externalEnabled", n.externalEnabled);
     String extHost = server.arg("externalHost"); extHost.trim(); strncpy(n.externalHost, extHost.c_str(), sizeof(n.externalHost)-1); n.externalHost[sizeof(n.externalHost)-1] = '\0';
     uint32_t extPort = n.externalPort; parseUIntArg("externalPort", extPort); n.externalPort = (uint16_t) extPort;

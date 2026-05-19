@@ -82,6 +82,7 @@ static constexpr uint8_t DEFAULT_RING2_BRIGHTNESS_PERCENT = 35;
 static constexpr uint8_t DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT = 25;
 static constexpr bool DEFAULT_RING2_DEBUG_ALL_ON = false;
 static constexpr uint8_t DEFAULT_RING2_PATTERN_MODE = 1;
+static constexpr bool DEFAULT_RING2_FOLLOW_STATE = false;
 
 // =========================================================
 // HX711 / Waagen-Pins
