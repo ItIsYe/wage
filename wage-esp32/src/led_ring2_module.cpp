@@ -142,11 +142,21 @@ bool ring2Service(uint32_t now) {
     return false;
   }
 
-  logRenderedState(2, "pulse-blue");
-  static uint32_t lastHeartbeatLogMs = 0;
-  if (MASTER_DEBUG_LOG && now - lastHeartbeatLogMs >= 2000) { lastHeartbeatLogMs = now; Serial.printf("[RING2 HEARTBEAT] now=%lu mode=%u (%s) pulse=%u frameDirty=%u\n", (unsigned long)now,(unsigned)mode,ring2ModeLabel(mode),(unsigned)ring2PulseValue,(unsigned)ring2FrameDirty); }
-  if (now - ring2TickMs >= 80) { ring2TickMs = now; const int16_t next = (int16_t)ring2PulseValue + ring2PulseStep; if (next >= 120 || next <= 10) ring2PulseStep = -ring2PulseStep; ring2PulseValue = (uint8_t)((int16_t)ring2PulseValue + ring2PulseStep); ring2Fill(rgb(0, 0, ring2PulseValue)); ring2FrameDirty = true; }
-  if (ring2FrameDirty) { ring2FrameDirty = false; return true; }
+  if (mode == 2) {
+    logRenderedState(2, "pulse-blue");
+    static uint32_t lastHeartbeatLogMs = 0;
+    if (MASTER_DEBUG_LOG && now - lastHeartbeatLogMs >= 2000) { lastHeartbeatLogMs = now; Serial.printf("[RING2 HEARTBEAT] now=%lu mode=%u (%s) pulse=%u frameDirty=%u\n", (unsigned long)now,(unsigned)mode,ring2ModeLabel(mode),(unsigned)ring2PulseValue,(unsigned)ring2FrameDirty); }
+    if (now - ring2TickMs >= 80) { ring2TickMs = now; const int16_t next = (int16_t)ring2PulseValue + ring2PulseStep; if (next >= 120 || next <= 10) ring2PulseStep = -ring2PulseStep; ring2PulseValue = (uint8_t)((int16_t)ring2PulseValue + ring2PulseStep); ring2Fill(rgb(0, 0, ring2PulseValue)); ring2FrameDirty = true; }
+    if (ring2FrameDirty) { ring2FrameDirty = false; return true; }
+    return false;
+  }
+
+  logRenderedState(6, "unknown-off");
+  if (ring2FrameDirty) {
+    ring2Clear();
+    ring2FrameDirty = false;
+    return true;
+  }
   return false;
 }
 void ring2MarkDirty() { ring2FrameDirty = true; }
