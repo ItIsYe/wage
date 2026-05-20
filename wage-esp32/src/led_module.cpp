@@ -289,7 +289,7 @@ void ledMarkRing2Dirty() {
 
 void ledMarkAllDirty() {
   ring1MarkDirty();
-  ledMarkRing2Dirty();
+  if (RING2_ENABLED) ring2MarkDirty();
 }
 
 void ledClear() {
