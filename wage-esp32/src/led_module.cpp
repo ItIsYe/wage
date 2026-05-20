@@ -20,7 +20,6 @@ static uint16_t sharedStandbyHue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyValue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyTargetValue[SHARED_PIXELS] = {};
 static uint16_t sharedStandbyOnCount = 0;
-static uint16_t sharedStandbyCursor = 0;
 
 static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) { return (minValue > maxValue) ? maxValue : minValue; }
 static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
@@ -54,6 +53,16 @@ static uint8_t scaleSharedStandbyCount(uint8_t count) {
   if (scaled > SHARED_PIXELS) scaled = SHARED_PIXELS;
   return (uint8_t)scaled;
 }
+static uint8_t sharedStandbyBaseValue(uint8_t valueMin, uint8_t valueMax) {
+  if (valueMax == 0) return 0;
+
+  uint8_t base = valueMin / 3U;
+  if (base < 6U) base = 6U;
+  if (base > 24U) base = 24U;
+
+  if (base > valueMax) base = valueMax;
+  return base;
+}
 static void applySharedStandbyFrame() {
   ring1ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
   if (RING2_ENABLED) {
@@ -66,23 +75,30 @@ static void sharedStandbyInit(uint32_t now) {
   sanitizeSharedStandbyChangeRange(changeMinMs, changeMaxMs);
   const uint8_t valueMax = activeConfig.standbyValueMax;
   const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
+  const uint8_t valueBase = sharedStandbyBaseValue(valueMin, valueMax);
   const uint8_t onMax = scaleSharedStandbyCount(activeConfig.standbyOnMax);
   const uint8_t onMinRaw = scaleSharedStandbyCount(activeConfig.standbyOnMin);
   const uint8_t onMin = (onMinRaw > onMax) ? onMax : onMinRaw;
   sharedStandbyFrameNextMs = now + sanitizeSharedStandbyFrameMs(activeConfig.standbyFrameMs);
   sharedStandbyChangeNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
-  sharedStandbyCursor = (uint16_t)random(0, SHARED_PIXELS);
   sharedStandbyOnCount = 0;
   for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
-    sharedStandbyTwinkleOn[i] = true;
+    sharedStandbyTwinkleOn[i] = false;
     sharedStandbyHue[i] = (uint16_t)random(0, 65536);
-    sharedStandbyValue[i] = 0;
-    sharedStandbyTargetValue[i] = 0;
+    sharedStandbyValue[i] = valueBase;
+    sharedStandbyTargetValue[i] = valueBase;
   }
   const uint8_t initialOn = randomInclusiveU8(onMin, onMax);
   for (uint8_t i = 0; i < initialOn; ++i) {
-    const uint16_t idx = (uint16_t)((sharedStandbyCursor + i) % SHARED_PIXELS);
-    if (sharedStandbyTargetValue[idx] == 0) { sharedStandbyTargetValue[idx] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
+    for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
+      const uint16_t idx = (uint16_t)random(0, SHARED_PIXELS);
+      if (!sharedStandbyTwinkleOn[idx]) {
+        sharedStandbyTwinkleOn[idx] = true;
+        sharedStandbyTargetValue[idx] = randomInclusiveU8(valueMin, valueMax);
+        ++sharedStandbyOnCount;
+        break;
+      }
+    }
   }
 }
 static bool sharedStandbyService(uint32_t now) {
@@ -93,6 +109,7 @@ static bool sharedStandbyService(uint32_t now) {
     sanitizeSharedStandbyChangeRange(changeMinMs, changeMaxMs);
     const uint8_t valueMax = activeConfig.standbyValueMax;
     const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
+    const uint8_t valueBase = sharedStandbyBaseValue(valueMin, valueMax);
     const uint8_t onMax = scaleSharedStandbyCount(activeConfig.standbyOnMax);
     const uint8_t onMinRaw = scaleSharedStandbyCount(activeConfig.standbyOnMin);
     const uint8_t onMin = (onMinRaw > onMax) ? onMax : onMinRaw;
@@ -102,13 +119,12 @@ static bool sharedStandbyService(uint32_t now) {
     const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 20);
     if (needMore || needLess || shouldToggle) {
       for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
-        const uint16_t i = sharedStandbyCursor;
-        sharedStandbyCursor = (uint16_t)((sharedStandbyCursor + 1U) % SHARED_PIXELS);
-        if (needMore && sharedStandbyTargetValue[i] == 0) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; changed = true; break; }
-        if (needLess && sharedStandbyTargetValue[i] > 0) { sharedStandbyTargetValue[i] = 0; --sharedStandbyOnCount; changed = true; break; }
+        const uint16_t i = (uint16_t)random(0, SHARED_PIXELS);
+        if (needMore && !sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; changed = true; break; }
+        if (needLess && sharedStandbyTwinkleOn[i]) { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; changed = true; break; }
         if (!needMore && !needLess) {
-          if (sharedStandbyTargetValue[i] == 0) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
-          else { sharedStandbyTargetValue[i] = 0; --sharedStandbyOnCount; }
+          if (!sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
+          else { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; }
           changed = true;
           break;
         }
@@ -118,15 +134,19 @@ static bool sharedStandbyService(uint32_t now) {
   if (now >= sharedStandbyFrameNextMs) {
     const uint8_t valueMax = activeConfig.standbyValueMax;
     const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
+    const uint8_t valueBase = sharedStandbyBaseValue(valueMin, valueMax);
     sharedStandbyFrameNextMs = now + sanitizeSharedStandbyFrameMs(activeConfig.standbyFrameMs);
     for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
       const uint8_t target = sharedStandbyTargetValue[i];
       sharedStandbyHue[i] = (uint16_t)(sharedStandbyHue[i] + (int16_t)random(-1, 2));
       int16_t dynamicTarget = target;
-      if (target > 0) {
+      if (sharedStandbyTwinkleOn[i]) {
         dynamicTarget += (int16_t)random(-1, 2);
         if (dynamicTarget < valueMin) dynamicTarget = valueMin;
         if (dynamicTarget > valueMax) dynamicTarget = valueMax;
+      } else {
+        dynamicTarget = valueBase;
+        sharedStandbyTargetValue[i] = valueBase;
       }
       const int16_t current = sharedStandbyValue[i];
       const int16_t delta = dynamicTarget - current;
