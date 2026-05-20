@@ -90,11 +90,11 @@ static void sharedStandbyCaptureConfigSnapshot() {
 static bool sharedStandbyConfigChanged(bool* needsReinit) {
   const bool brightnessChanged =
       (lastSharedStandbyB1 != activeConfig.standbyBrightnessPercent) ||
-      (lastSharedStandbyB2 != activeConfig.ring2StandbyBrightnessPercent) ||
-      (lastSharedStandbySat != activeConfig.standbySaturation);
+      (lastSharedStandbyB2 != activeConfig.ring2StandbyBrightnessPercent);
   const bool patternChanged =
       (lastSharedStandbyValueMin != activeConfig.standbyValueMin) ||
       (lastSharedStandbyValueMax != activeConfig.standbyValueMax) ||
+      (lastSharedStandbySat != activeConfig.standbySaturation) ||
       (lastSharedStandbyOnMin != activeConfig.standbyOnMin) ||
       (lastSharedStandbyOnMax != activeConfig.standbyOnMax) ||
       (lastSharedStandbyFrameMs != activeConfig.standbyFrameMs) ||
@@ -326,9 +326,6 @@ void ledService(uint32_t now) {
 
 void ledApplyBrightnessForCurrentMode() {
   ring1ApplyBrightnessForCurrentMode();
-  if (sharedStandbyActive) {
-    applySharedStandbyFrame();
-  }
 }
 
 void ledMarkRing2Dirty() {
