@@ -105,7 +105,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Pending:</b> "); h += (pendingConfigValid ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>Hinweis:</b> "); h += ((state==State::IDLE_WAIT_GLASS || state==State::STANDBY) ? F("Aenderungen werden sofort aktiv") : F("Aenderungen warten bis Idle")); h += F("</p></div>");
+  h += F("<p><b>Hinweis:</b> "); h += ((state==State::IDLE_WAIT_GLASS || state==State::STANDBY) ? F("Aenderungen werden sofort aktiv") : F("Aenderungen werden automatisch uebernommen, sobald Idle oder Standby erreicht ist")); h += F("</p></div>");
   if (errorMsg.length()) { h += F("<div class='err'><b>Fehler:</b> "); h += htmlEscape(errorMsg); h += F("</div>"); }
   if (resetRequested) { h += F("<div class='err'><b>Reset:</b> Reset wartet auf sicheren Zustand</div>"); }
   if (state == State::TIMING) { h += F("<div class='err'><b>Info:</b> Reset wird erst nach der Messung ausgefuehrt</div>"); }
@@ -117,32 +117,32 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<fieldset><legend>System</legend><label>Device-ID</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>1 bis 31 Zeichen</small>");
   h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION; h += F("' readonly>");
   h += F("<label>State</label><input value='"); h += stateToStrLocal(state); h += F("' readonly></fieldset>");
-  h += F("<fieldset><legend>Messung</legend>");
-  h += F("<label>startDropPercent (%)</label><input type='number' step='0.1' min='0' max='100' name='startDropPercent' value='"); h += String(c.startDropPercent,2); h += F("'>");
-  h += F("<label>stopRisePercent (%)</label><input type='number' step='0.1' min='0' max='100' name='stopRisePercent' value='"); h += String(c.stopRisePercent,2); h += F("'>");
-  h += F("<label>objectPresentG (g)</label><input type='number' step='0.1' min='0' name='objectPresentG' value='"); h += String(c.objectPresentG,2); h += F("'>");
+  h += F("<fieldset><legend>Messwerte & Schwellwerte</legend>");
+  h += F("<label>Messstart bei Gewichtsabfall (%)</label><input type='number' step='0.1' min='0' max='100' name='startDropPercent' value='"); h += String(c.startDropPercent,2); h += F("'><small>Min: 0, Max: 100. Startet die Messung beim Unterschreiten des Abfalls.</small>");
+  h += F("<label>Messende bei Gewichtsanstieg (%)</label><input type='number' step='0.1' min='0' max='100' name='stopRisePercent' value='"); h += String(c.stopRisePercent,2); h += F("'><small>Min: 0, Max: 100. Beendet die Messung beim Rueckanstieg.</small>");
+  h += F("<label>Glas erkannt ab (g)</label><input type='number' step='0.1' min='0' name='objectPresentG' value='"); h += String(c.objectPresentG,2); h += F("'><small>Min: 0. Schwelle, ab der ein Objekt als vorhanden gilt.</small>");
   h += F("<label>emptyThresholdG (g)</label><input type='number' step='0.1' min='0' name='emptyThresholdG' value='"); h += String(c.emptyThresholdG,2); h += F("'>");
   h += F("<label>retareTolG (g)</label><input type='number' step='0.1' min='0' name='retareTolG' value='"); h += String(c.retareTolG,2); h += F("'>");
   h += F("<label>standbyWakeThresholdG (g)</label><input type='number' step='0.1' min='0' name='standbyWakeThresholdG' value='"); h += String(c.standbyWakeThresholdG,2); h += F("'>");
   h += F("<label>Standby nach (s)</label><input type='number' min='5' max='300' name='standbyAfterS' value='"); h += String(c.standbyAfterMs / 1000U); h += F("'><small>Nur im Idle ohne Glas: Nach dieser Zeit wird in den Standby-Twinkle gewechselt.</small></fieldset>");
-  h += F("<fieldset><legend>Ring 1 Standby-Twinkle</legend>");
+  h += F("<fieldset><legend>Ring 1 Standby-Effekt</legend>");
   h += F("<label>Standby Twinkle Speed / Frame-Zeit (ms)</label><input type='number' min='30' max='1000' name='standbyFrameMs' value='"); h += String(c.standbyFrameMs); h += F("'>");
   h += F("<label>Standby Change Min (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMinMs' value='"); h += String(c.standbyChangeMinMs); h += F("'>");
   h += F("<label>Standby Change Max (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMaxMs' value='"); h += String(c.standbyChangeMaxMs); h += F("'>");
   h += F("<label>Standby Twinkle Anzahl Min</label><input type='number' min='0' max='25' name='standbyOnMin' value='"); h += String(c.standbyOnMin); h += F("'>");
   h += F("<label>Standby Twinkle Anzahl Max</label><input type='number' min='0' max='25' name='standbyOnMax' value='"); h += String(c.standbyOnMax); h += F("'>");
-  h += F("<label>Standby Value Min</label><input type='number' min='0' max='255' name='standbyValueMin' value='"); h += String(c.standbyValueMin); h += F("'>");
+  h += F("<label>Standby-Helligkeit Minimum (0-255)</label><input type='number' min='0' max='255' name='standbyValueMin' value='"); h += String(c.standbyValueMin); h += F("'><small>Min: 0, Max: 255. Untere Grenze der LED-Helligkeit im Standby.</small>");
   h += F("<label>Standby Value Max</label><input type='number' min='0' max='255' name='standbyValueMax' value='"); h += String(c.standbyValueMax); h += F("'>");
   h += F("<label>Standby Saturation</label><input type='number' min='0' max='255' name='standbySaturation' value='"); h += String(c.standbySaturation); h += F("'></fieldset>");
-  h += F("<fieldset><legend>Performance</legend>");
-  h += F("<label>oledTimingRefreshMs (ms)</label><input type='number' min='50' max='1000' name='oledTimingRefreshMs' value='"); h += String(c.oledTimingRefreshMs); h += F("'>");
+  h += F("<fieldset><legend>Aktualisierung & Geschwindigkeit</legend>");
+  h += F("<label>OLED-Aktualisierungsintervall (ms)</label><input type='number' min='50' max='1000' name='oledTimingRefreshMs' value='"); h += String(c.oledTimingRefreshMs); h += F("'><small>Min: 50, Max: 1000. Kleinere Werte aktualisieren haeufiger.</small>");
   h += F("<label>scaleReadIntervalMs (ms)</label><input type='number' min='10' max='500' name='scaleReadIntervalMs' value='"); h += String(c.scaleReadIntervalMs); h += F("'>");
   h += F("<label>scaleReadSamples</label><input type='number' min='1' max='5' name='scaleReadSamples' value='"); h += String(c.scaleReadSamples); h += F("'>");
   h += F("<label>oledI2cClockHz (Hz)</label><select name='oledI2cClockHz'><option value='100000'");
   if (c.oledI2cClockHz == 100000) h += F(" selected"); h += F(">100000</option><option value='200000'");
   if (c.oledI2cClockHz == 200000) h += F(" selected"); h += F(">200000</option><option value='400000'");
   if (c.oledI2cClockHz == 400000) h += F(" selected"); h += F(">400000</option></select></fieldset>");
-  h += F("<fieldset><legend>OLED</legend>");
+  h += F("<fieldset><legend>OLED-Anzeige</legend>");
   h += F("<label>oledRotation</label><input type='number' min='0' max='3' name='oledRotation' value='"); h += String(c.oledRotation); h += F("'>");
   h += F("<label>oledScaleValue</label><input type='number' step='0.1' min='0.1' name='oledScaleValue' value='"); h += String(c.oledScaleValue,2); h += F("'>");
   h += F("<label><input type='checkbox' name='debugMode' "); if (c.debugMode) h += F("checked"); h += F("> Gewichts-Debug auf OLED anzeigen</label>");
