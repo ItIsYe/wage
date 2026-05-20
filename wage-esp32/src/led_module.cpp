@@ -145,7 +145,9 @@ static bool sharedStandbyService(uint32_t now) {
     sharedStandbyFrameNextMs = now + sanitizeSharedStandbyFrameMs(activeConfig.standbyFrameMs);
     for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
       const uint8_t target = sharedStandbyTargetValue[i];
-      sharedStandbyHue[i] = (uint16_t)(sharedStandbyHue[i] + (int16_t)random(-1, 2));
+      if (sharedStandbyTwinkleOn[i]) {
+        sharedStandbyHue[i] = (uint16_t)(sharedStandbyHue[i] + (int16_t)random(-1, 2));
+      }
       int16_t dynamicTarget = target;
       if (sharedStandbyTwinkleOn[i]) {
         dynamicTarget += (int16_t)random(-1, 2);
