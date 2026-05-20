@@ -13,11 +13,16 @@ static bool ring2FrameDirty = true;
 static uint8_t ring2BrightnessByte = 0;
 static bool ring2BrightnessInitialized = false;
 static uint32_t ring2TickMs = 0;
-static uint8_t ring2PulseValue = 10;
-static int8_t ring2PulseStep = 5;
-static uint8_t ring2SpinnerHead = 0;
+static uint8_t ring2PulseValue = 0;
 static uint8_t ring2BreathingValue = 10;
 static int8_t ring2BreathingStep = 3;
+
+static constexpr uint8_t RING2_MODE_OFF = 0;
+static constexpr uint8_t RING2_MODE_SHORT_GREEN_FLASH = 1;
+static constexpr uint8_t RING2_MODE_TIMING_STATIC_10 = 2;
+static constexpr uint8_t RING2_MODE_WAIT_EMPTY_RED_BREATHE_5 = 3;
+static constexpr uint8_t RING2_MODE_ERROR_SOLID_RED = 4;
+static constexpr uint8_t RING2_MODE_IDLE_OFF = 5;
 static State ring2State = State::BOOT_MSG;
 
 static inline bool ring2Ready() { return ring2Leds != nullptr; }
@@ -37,42 +42,38 @@ static inline void ring2SetBrightnessPercent(uint8_t percent) {
 }
 
 static const char* ring2ModeLabel(uint8_t mode) {
-  if (mode == 0) return "off";
-  if (mode == 1) return "solid-blue";
-  if (mode == 2) return "pulse-blue";
-  if (mode == 3) return "breathing-white";
-  if (mode == 4) return "slow-blue-spinner";
+  if (mode == RING2_MODE_OFF) return "off";
+  if (mode == RING2_MODE_SHORT_GREEN_FLASH) return "short-green-flash";
+  if (mode == RING2_MODE_TIMING_STATIC_10) return "timing-static-10";
+  if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) return "wait-empty-red-breathe-5";
+  if (mode == RING2_MODE_ERROR_SOLID_RED) return "error-solid-red";
+  if (mode == RING2_MODE_IDLE_OFF) return "idle-off";
   return "unknown";
 }
 static uint8_t ring2ResolveModeFromState() {
   switch (ring2State) {
-    case State::BOOT_MSG: return 1;
-    case State::BOOT_TARE: return 1;
-    case State::IDLE_WAIT_GLASS: return 3;
-    case State::GLASS_DETECTED: return 1;
-    case State::READY_FOR_TIMING: return 2;
-    case State::TIMING: return 4;
-    case State::SHOW_RESULT: return 2;
-    case State::WAIT_EMPTY_AFTER_RESULT: return 1;
-    case State::CHECK_RETARE: return 1;
-    case State::STANDBY: return 3;
-    case State::ERROR_RECOVER: return 0;
+    case State::BOOT_MSG: return RING2_MODE_OFF;
+    case State::BOOT_TARE: return RING2_MODE_OFF;
+    case State::IDLE_WAIT_GLASS: return RING2_MODE_IDLE_OFF;
+    case State::GLASS_DETECTED: return RING2_MODE_SHORT_GREEN_FLASH;
+    case State::READY_FOR_TIMING: return RING2_MODE_OFF;
+    case State::TIMING: return RING2_MODE_TIMING_STATIC_10;
+    case State::SHOW_RESULT: return RING2_MODE_OFF;
+    case State::WAIT_EMPTY_AFTER_RESULT: return RING2_MODE_WAIT_EMPTY_RED_BREATHE_5;
+    case State::CHECK_RETARE: return RING2_MODE_OFF;
+    case State::STANDBY: return RING2_MODE_OFF;
+    case State::ERROR_RECOVER: return RING2_MODE_ERROR_SOLID_RED;
   }
-  return 0;
+  return RING2_MODE_OFF;
 }
 static void ring2ResetPatternAnimation(uint8_t mode, uint32_t now) {
-  if (mode == 2) {
-    ring2PulseValue = 10;
-    ring2PulseStep = 5;
+  if (mode == RING2_MODE_SHORT_GREEN_FLASH) {
+    ring2PulseValue = 1;
     ring2TickMs = now;
   }
-  if (mode == 3) {
+  if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) {
     ring2BreathingValue = 10;
     ring2BreathingStep = 3;
-    ring2TickMs = now;
-  }
-  if (mode == 4) {
-    ring2SpinnerHead = 0;
     ring2TickMs = now;
   }
 }
@@ -133,44 +134,52 @@ bool ring2Service(uint32_t now) {
 
   const uint8_t mode = resolvedMode;
   ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
-  if (mode == 0) { logRenderedState(0, "off"); if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; } return false; }
-  if (mode == 1) { logRenderedState(1, "solid-blue"); if (ring2FrameDirty) { ring2Fill(rgb(0, 0, 64)); ring2FrameDirty = false; return true; } return false; }
-  if (mode == 3) {
-    logRenderedState(3, "breathing-white");
-    if (now - ring2TickMs >= 80) {
-      ring2TickMs = now;
-      const int16_t next = (int16_t)ring2BreathingValue + ring2BreathingStep;
-      if (next >= 140 || next <= 10) ring2BreathingStep = -ring2BreathingStep;
-      ring2BreathingValue = (uint8_t)((int16_t)ring2BreathingValue + ring2BreathingStep);
-      ring2Fill(rgb(ring2BreathingValue, ring2BreathingValue, ring2BreathingValue));
-      ring2FrameDirty = true;
-    }
-    if (ring2FrameDirty) { ring2FrameDirty = false; return true; }
+  if (mode == RING2_MODE_OFF || mode == RING2_MODE_IDLE_OFF) {
+    logRenderedState(mode, "off");
+    if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; }
     return false;
   }
-  if (mode == 4) {
-    logRenderedState(4, "slow-blue-spinner");
-    if (now - ring2TickMs >= 180) {
-      ring2TickMs = now;
-      ring2SpinnerHead = (uint8_t)((ring2SpinnerHead + 1) % RING2_PIXEL_COUNT);
+
+  if (mode == RING2_MODE_SHORT_GREEN_FLASH) {
+    logRenderedState(RING2_MODE_SHORT_GREEN_FLASH, "short-green-flash");
+    if (ring2PulseValue != 0 && now - ring2TickMs >= 120) {
+      ring2PulseValue = 0;
       ring2FrameDirty = true;
     }
     if (ring2FrameDirty) {
-      ring2Clear();
-      ring2Leds[ring2SpinnerHead] = scaleColor(rgb(0, 0, 90), ring2BrightnessByte);
-      if (RING2_PIXEL_COUNT > 1) ring2Leds[(ring2SpinnerHead + RING2_PIXEL_COUNT - 1) % RING2_PIXEL_COUNT] = scaleColor(rgb(0, 0, 25), ring2BrightnessByte);
+      if (ring2PulseValue != 0) ring2Fill(rgb(0, 80, 0));
+      else ring2Clear();
       ring2FrameDirty = false;
       return true;
     }
     return false;
   }
 
-  if (mode == 2) {
-    logRenderedState(2, "pulse-blue");
-    static uint32_t lastHeartbeatLogMs = 0;
-    if (MASTER_DEBUG_LOG && now - lastHeartbeatLogMs >= 2000) { lastHeartbeatLogMs = now; Serial.printf("[RING2 HEARTBEAT] now=%lu mode=%u (%s) pulse=%u frameDirty=%u\n", (unsigned long)now,(unsigned)mode,ring2ModeLabel(mode),(unsigned)ring2PulseValue,(unsigned)ring2FrameDirty); }
-    if (now - ring2TickMs >= 80) { ring2TickMs = now; const int16_t next = (int16_t)ring2PulseValue + ring2PulseStep; if (next >= 120 || next <= 10) ring2PulseStep = -ring2PulseStep; ring2PulseValue = (uint8_t)((int16_t)ring2PulseValue + ring2PulseStep); ring2Fill(rgb(0, 0, ring2PulseValue)); ring2FrameDirty = true; }
+  if (mode == RING2_MODE_TIMING_STATIC_10) {
+    logRenderedState(RING2_MODE_TIMING_STATIC_10, "timing-static-10");
+    ring2SetBrightnessPercent(10);
+    if (ring2FrameDirty) { ring2Fill(rgb(64, 80, 80)); ring2FrameDirty = false; return true; }
+    return false;
+  }
+
+  if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) {
+    logRenderedState(RING2_MODE_WAIT_EMPTY_RED_BREATHE_5, "wait-empty-red-breathe-5");
+    ring2SetBrightnessPercent(5);
+    if (now - ring2TickMs >= 110) {
+      ring2TickMs = now;
+      const int16_t next = (int16_t)ring2BreathingValue + ring2BreathingStep;
+      if (next >= 60 || next <= 8) ring2BreathingStep = -ring2BreathingStep;
+      ring2BreathingValue = (uint8_t)((int16_t)ring2BreathingValue + ring2BreathingStep);
+      ring2Fill(rgb(ring2BreathingValue, 0, 0));
+      ring2FrameDirty = true;
+    }
     if (ring2FrameDirty) { ring2FrameDirty = false; return true; }
+    return false;
+  }
+
+  if (mode == RING2_MODE_ERROR_SOLID_RED) {
+    logRenderedState(RING2_MODE_ERROR_SOLID_RED, "error-solid-red");
+    if (ring2FrameDirty) { ring2Fill(rgb(90, 0, 0)); ring2FrameDirty = false; return true; }
     return false;
   }
 
