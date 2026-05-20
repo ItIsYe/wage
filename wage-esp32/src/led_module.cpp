@@ -89,15 +89,17 @@ static void sharedStandbyInit(uint32_t now) {
     sharedStandbyTargetValue[i] = valueBase;
   }
   const uint8_t initialOn = randomInclusiveU8(onMin, onMax);
+  const uint16_t initialStride = (initialOn > 0U) ? (uint16_t)(SHARED_PIXELS / initialOn) : SHARED_PIXELS;
+  const uint16_t startOffset = (uint16_t)random(0, SHARED_PIXELS);
   for (uint8_t i = 0; i < initialOn; ++i) {
-    for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
-      const uint16_t idx = (uint16_t)random(0, SHARED_PIXELS);
-      if (!sharedStandbyTwinkleOn[idx]) {
-        sharedStandbyTwinkleOn[idx] = true;
-        sharedStandbyTargetValue[idx] = randomInclusiveU8(valueMin, valueMax);
-        ++sharedStandbyOnCount;
-        break;
-      }
+    uint16_t idx = (uint16_t)((startOffset + (uint32_t)i * initialStride) % SHARED_PIXELS);
+    for (uint16_t tries = 0; tries < SHARED_PIXELS && sharedStandbyTwinkleOn[idx]; ++tries) {
+      idx = (uint16_t)((idx + 1U) % SHARED_PIXELS);
+    }
+    if (!sharedStandbyTwinkleOn[idx]) {
+      sharedStandbyTwinkleOn[idx] = true;
+      sharedStandbyTargetValue[idx] = randomInclusiveU8(valueMin, valueMax);
+      ++sharedStandbyOnCount;
     }
   }
 }
