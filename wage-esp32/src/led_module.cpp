@@ -292,7 +292,7 @@ void ledMarkAllDirty() {
   ledMarkRing2Dirty();
 
   if (sharedStandbyActive) {
-    sharedStandbyInit(millis());
+    // Keep the current shared standby animation state intact; just redraw it.
     applySharedStandbyFrame();
   }
 }
