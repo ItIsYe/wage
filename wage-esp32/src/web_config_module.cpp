@@ -310,7 +310,7 @@ void webConfigSetup() {
   });
   server.on("/save", HTTP_POST, [](){
     if (!isConfigApplyAllowedState()) {
-      server.send(409, "text/html", renderBusyPage("Speichern nur im Idle moeglich."));
+      server.send(409, "text/html", renderBusyPage("Speichern nur in Idle oder Standby moeglich."));
       return;
     }
     RuntimeConfig n = activeConfig;
