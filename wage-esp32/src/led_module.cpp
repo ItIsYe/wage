@@ -292,9 +292,8 @@ void ledMarkAllDirty() {
   ledMarkRing2Dirty();
 
   if (sharedStandbyActive) {
-    // Reinitialize shared standby so updated config values (brightness/ranges/counts)
-    // are applied immediately across both rings.
-    sharedStandbyInit(millis());
+    // Keep current shared standby pattern; only re-render so updated brightness
+    // settings become visible without reseeding twinkle state.
     applySharedStandbyFrame();
   }
 }
