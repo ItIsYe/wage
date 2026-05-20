@@ -177,7 +177,7 @@ static String renderBusyPage(const String& hint = "") {
   h += F("<title>Waage aktiv</title><style>body{font-family:Arial,sans-serif;max-width:560px;margin:12px auto;padding:0 10px;}button{padding:10px 14px;margin-top:10px;}p{margin:8px 0;}.hint{background:#fff3cd;border:1px solid #d6b656;padding:8px;color:#6b5200;}</style></head><body>");
   h += F("<h2>Waage aktiv</h2>");
   h += F("<p><b>State:</b> "); h += stateToStrLocal(state); h += F("</p>");
-  h += F("<p>Config im Idle bearbeiten</p>");
+  h += F("<p>Config in Idle oder Standby bearbeiten</p>");
   if (hint.length()) { h += F("<p class='hint'>"); h += htmlEscape(hint); h += F("</p>"); }
   if (resetStatusMsg.length()) { h += F("<p class='hint'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</p>"); }
   h += F("<form method='GET' action='/'><button type='submit'>Neu laden</button></form>");
