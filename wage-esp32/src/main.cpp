@@ -577,7 +577,7 @@ static void stateMachineService(uint32_t now) {
 
 
 static void applyPendingConfigIfAllowed(){
-  if (!(webHasPendingConfig() && state == State::IDLE_WAIT_GLASS)) return;
+  if (!(webHasPendingConfig() && (state == State::IDLE_WAIT_GLASS || state == State::STANDBY))) return;
   const RuntimeConfig pendingConfig = webGetPendingConfig();
   activeConfig = pendingConfig;
   oledScale = activeConfig.oledScaleValue;
