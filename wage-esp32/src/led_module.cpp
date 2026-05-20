@@ -58,9 +58,9 @@ static uint8_t scaleSharedStandbyCount(uint8_t count) {
 static uint8_t sharedStandbyBaseValue(uint8_t valueMin, uint8_t valueMax) {
   if (valueMax == 0) return 0;
 
-  uint8_t base = valueMin / 3U;
-  if (base < 6U) base = 6U;
-  if (base > 24U) base = 24U;
+  uint8_t base = valueMin / 2U;
+  if (base < 12U) base = 12U;
+  if (base > 42U) base = 42U;
 
   if (base > valueMax) base = valueMax;
   return base;
