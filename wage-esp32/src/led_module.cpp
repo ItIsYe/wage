@@ -91,6 +91,8 @@ static bool sharedStandbyConfigChanged(bool* needsReinit) {
   const bool brightnessChanged =
       (lastSharedStandbyB1 != activeConfig.standbyBrightnessPercent) ||
       (lastSharedStandbyB2 != activeConfig.ring2StandbyBrightnessPercent);
+  // standbySaturation is part of the shared standby pattern/render config,
+  // not a pure output brightness setting.
   const bool patternChanged =
       (lastSharedStandbyValueMin != activeConfig.standbyValueMin) ||
       (lastSharedStandbyValueMax != activeConfig.standbyValueMax) ||
@@ -325,6 +327,9 @@ void ledService(uint32_t now) {
 }
 
 void ledApplyBrightnessForCurrentMode() {
+  // Shared standby self-detects config updates in sharedStandbyService().
+  // Avoid direct frame output from brightness-apply path.
+  if (sharedStandbyActive) return;
   ring1ApplyBrightnessForCurrentMode();
 }
 
