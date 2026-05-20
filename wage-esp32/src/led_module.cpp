@@ -290,6 +290,11 @@ void ledMarkRing2Dirty() {
 void ledMarkAllDirty() {
   ring1MarkDirty();
   ledMarkRing2Dirty();
+
+  if (sharedStandbyActive) {
+    sharedStandbyInit(millis());
+    applySharedStandbyFrame();
+  }
 }
 
 void ledClear() {
