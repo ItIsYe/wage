@@ -16,13 +16,14 @@ static uint32_t ring2TickMs = 0;
 static uint8_t ring2PulseValue = 0;
 static uint8_t ring2BreathingValue = 10;
 static int8_t ring2BreathingStep = 3;
+static uint8_t ring2IdleRunnerPos = 0;
 
 static constexpr uint8_t RING2_MODE_OFF = 0;
 static constexpr uint8_t RING2_MODE_SHORT_GREEN_FLASH = 1;
 static constexpr uint8_t RING2_MODE_TIMING_STATIC_10 = 2;
 static constexpr uint8_t RING2_MODE_WAIT_EMPTY_RED_BREATHE_5 = 3;
 static constexpr uint8_t RING2_MODE_ERROR_SOLID_RED = 4;
-static constexpr uint8_t RING2_MODE_IDLE_OFF = 5;
+static constexpr uint8_t RING2_MODE_IDLE_RING_CYAN_GREEN = 5;
 static State ring2State = State::BOOT_MSG;
 
 static inline bool ring2Ready() { return ring2Leds != nullptr; }
@@ -47,14 +48,14 @@ static const char* ring2ModeLabel(uint8_t mode) {
   if (mode == RING2_MODE_TIMING_STATIC_10) return "timing-static-10";
   if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) return "wait-empty-red-breathe-5";
   if (mode == RING2_MODE_ERROR_SOLID_RED) return "error-solid-red";
-  if (mode == RING2_MODE_IDLE_OFF) return "idle-off";
+  if (mode == RING2_MODE_IDLE_RING_CYAN_GREEN) return "idle-ring-cyan-green";
   return "unknown";
 }
 static uint8_t ring2ResolveModeFromState() {
   switch (ring2State) {
     case State::BOOT_MSG: return RING2_MODE_OFF;
     case State::BOOT_TARE: return RING2_MODE_OFF;
-    case State::IDLE_WAIT_GLASS: return RING2_MODE_IDLE_OFF;
+    case State::IDLE_WAIT_GLASS: return RING2_MODE_IDLE_RING_CYAN_GREEN;
     case State::GLASS_DETECTED: return RING2_MODE_SHORT_GREEN_FLASH;
     case State::READY_FOR_TIMING: return RING2_MODE_OFF;
     case State::TIMING: return RING2_MODE_TIMING_STATIC_10;
@@ -74,6 +75,10 @@ static void ring2ResetPatternAnimation(uint8_t mode, uint32_t now) {
   if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) {
     ring2BreathingValue = 10;
     ring2BreathingStep = 3;
+    ring2TickMs = now;
+  }
+  if (mode == RING2_MODE_IDLE_RING_CYAN_GREEN) {
+    ring2IdleRunnerPos = 0;
     ring2TickMs = now;
   }
 }
@@ -134,9 +139,29 @@ bool ring2Service(uint32_t now) {
 
   const uint8_t mode = resolvedMode;
   ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
-  if (mode == RING2_MODE_OFF || mode == RING2_MODE_IDLE_OFF) {
+  if (mode == RING2_MODE_OFF) {
     logRenderedState(mode, "off");
     if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; }
+    return false;
+  }
+
+  if (mode == RING2_MODE_IDLE_RING_CYAN_GREEN) {
+    logRenderedState(RING2_MODE_IDLE_RING_CYAN_GREEN, "idle-ring-cyan-green");
+    if (now - ring2TickMs >= 90) {
+      ring2TickMs = now;
+      ring2IdleRunnerPos = (uint8_t)((ring2IdleRunnerPos + 1) % RING2_PIXEL_COUNT);
+      ring2FrameDirty = true;
+    }
+    if (ring2FrameDirty) {
+      ring2Clear();
+      for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+        const uint8_t distance = (uint8_t)((i + RING2_PIXEL_COUNT - ring2IdleRunnerPos) % RING2_PIXEL_COUNT);
+        if (distance == 0) ring2Leds[i] = scaleColor(rgb(0, 70, 45), ring2BrightnessByte);
+        else if (distance == 1 || distance == RING2_PIXEL_COUNT - 1) ring2Leds[i] = scaleColor(rgb(0, 35, 60), ring2BrightnessByte);
+      }
+      ring2FrameDirty = false;
+      return true;
+    }
     return false;
   }
 
