@@ -65,9 +65,9 @@ static uint8_t sharedStandbyBaseValue(uint8_t valueMin, uint8_t valueMax) {
   return base;
 }
 static void applySharedStandbyFrame() {
-  ring1ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyTargetValue, SHARED_PIXELS);
+  ring1ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
   if (RING2_ENABLED) {
-    ring2ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyTargetValue, SHARED_PIXELS);
+    ring2ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
   }
 }
 static void sharedStandbyInit(uint32_t now) {
