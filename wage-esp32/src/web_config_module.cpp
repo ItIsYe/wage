@@ -60,7 +60,7 @@ static String htmlEscape(const String& in) {
 }
 
 static bool isConfigApplyAllowedState() {
-  return (state == State::IDLE_WAIT_GLASS);
+  return (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
 }
 
 static bool parseFloatArg(const char* key, float& out) {
@@ -105,7 +105,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Pending:</b> "); h += (pendingConfigValid ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>Hinweis:</b> "); h += (state==State::IDLE_WAIT_GLASS ? F("Aenderungen werden sofort aktiv") : F("Aenderungen warten bis Idle")); h += F("</p></div>");
+  h += F("<p><b>Hinweis:</b> "); h += ((state==State::IDLE_WAIT_GLASS || state==State::STANDBY) ? F("Aenderungen werden sofort aktiv") : F("Aenderungen warten bis Idle")); h += F("</p></div>");
   if (errorMsg.length()) { h += F("<div class='err'><b>Fehler:</b> "); h += htmlEscape(errorMsg); h += F("</div>"); }
   if (resetRequested) { h += F("<div class='err'><b>Reset:</b> Reset wartet auf sicheren Zustand</div>"); }
   if (state == State::TIMING) { h += F("<div class='err'><b>Info:</b> Reset wird erst nach der Messung ausgefuehrt</div>"); }
