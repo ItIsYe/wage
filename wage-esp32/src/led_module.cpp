@@ -291,11 +291,6 @@ void ledMarkAllDirty() {
   ring1MarkDirty();
   ledMarkRing2Dirty();
 
-  if (sharedStandbyActive) {
-    // Keep current shared standby pattern; only re-render so updated brightness
-    // settings become visible without reseeding twinkle state.
-    applySharedStandbyFrame();
-  }
 }
 
 void ledClear() {
