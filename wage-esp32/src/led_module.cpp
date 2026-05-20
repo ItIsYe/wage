@@ -274,7 +274,12 @@ void ledService(uint32_t now) {
   }
 }
 
-void ledApplyBrightnessForCurrentMode() { ring1ApplyBrightnessForCurrentMode(); }
+void ledApplyBrightnessForCurrentMode() {
+  ring1ApplyBrightnessForCurrentMode();
+  if (sharedStandbyActive) {
+    applySharedStandbyFrame();
+  }
+}
 
 void ledMarkRing2Dirty() {
   if (RING2_ENABLED) ring2MarkDirty();
