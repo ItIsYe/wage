@@ -36,6 +36,7 @@ static inline uint32_t sanitizeSharedStandbyFrameMs(uint32_t frameMs) {
 static inline void sanitizeSharedStandbyChangeRange(uint32_t& minMs, uint32_t& maxMs) {
   if (minMs < 700U) minMs = 700U;
   if (maxMs < 900U) maxMs = 900U;
+  if (maxMs > 4000U) maxMs = 4000U;
   if (maxMs < minMs) maxMs = minMs;
 }
 static inline uint32_t randomInclusiveU32(uint32_t minValue, uint32_t maxValue) {
@@ -98,7 +99,7 @@ static bool sharedStandbyService(uint32_t now) {
     sharedStandbyChangeNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
     const bool needMore = sharedStandbyOnCount < onMin;
     const bool needLess = sharedStandbyOnCount > onMax;
-    const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
+    const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 20);
     if (needMore || needLess || shouldToggle) {
       for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
         const uint16_t i = sharedStandbyCursor;
@@ -120,10 +121,10 @@ static bool sharedStandbyService(uint32_t now) {
     sharedStandbyFrameNextMs = now + sanitizeSharedStandbyFrameMs(activeConfig.standbyFrameMs);
     for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
       const uint8_t target = sharedStandbyTargetValue[i];
-      sharedStandbyHue[i] = (uint16_t)(sharedStandbyHue[i] + (int16_t)random(-2, 3));
+      sharedStandbyHue[i] = (uint16_t)(sharedStandbyHue[i] + (int16_t)random(-1, 2));
       int16_t dynamicTarget = target;
       if (target > 0) {
-        dynamicTarget += (int16_t)random(-3, 4);
+        dynamicTarget += (int16_t)random(-1, 2);
         if (dynamicTarget < valueMin) dynamicTarget = valueMin;
         if (dynamicTarget > valueMax) dynamicTarget = valueMax;
       }
