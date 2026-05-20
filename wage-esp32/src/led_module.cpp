@@ -22,6 +22,16 @@ static uint8_t sharedStandbyValue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyTargetValue[SHARED_PIXELS] = {};
 static uint16_t sharedStandbyOnCount = 0;
 static uint16_t sharedStandbyCursor = 0;
+static uint8_t lastSharedStandbyB1 = 255;
+static uint8_t lastSharedStandbyB2 = 255;
+static uint8_t lastSharedStandbySat = 255;
+static uint8_t lastSharedStandbyValueMin = 255;
+static uint8_t lastSharedStandbyValueMax = 255;
+static uint8_t lastSharedStandbyOnMin = 255;
+static uint8_t lastSharedStandbyOnMax = 255;
+static uint32_t lastSharedStandbyFrameMs = 0xFFFFFFFFUL;
+static uint32_t lastSharedStandbyChangeMinMs = 0xFFFFFFFFUL;
+static uint32_t lastSharedStandbyChangeMaxMs = 0xFFFFFFFFUL;
 
 static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) { return (minValue > maxValue) ? maxValue : minValue; }
 static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
@@ -65,6 +75,34 @@ static uint8_t sharedStandbyBaseValue(uint8_t valueMin, uint8_t valueMax) {
   if (base > valueMax) base = valueMax;
   return base;
 }
+static void sharedStandbyCaptureConfigSnapshot() {
+  lastSharedStandbyB1 = activeConfig.standbyBrightnessPercent;
+  lastSharedStandbyB2 = activeConfig.ring2StandbyBrightnessPercent;
+  lastSharedStandbySat = activeConfig.standbySaturation;
+  lastSharedStandbyValueMin = activeConfig.standbyValueMin;
+  lastSharedStandbyValueMax = activeConfig.standbyValueMax;
+  lastSharedStandbyOnMin = activeConfig.standbyOnMin;
+  lastSharedStandbyOnMax = activeConfig.standbyOnMax;
+  lastSharedStandbyFrameMs = activeConfig.standbyFrameMs;
+  lastSharedStandbyChangeMinMs = activeConfig.standbyChangeMinMs;
+  lastSharedStandbyChangeMaxMs = activeConfig.standbyChangeMaxMs;
+}
+static bool sharedStandbyConfigChanged(bool* needsReinit) {
+  const bool brightnessChanged =
+      (lastSharedStandbyB1 != activeConfig.standbyBrightnessPercent) ||
+      (lastSharedStandbyB2 != activeConfig.ring2StandbyBrightnessPercent) ||
+      (lastSharedStandbySat != activeConfig.standbySaturation);
+  const bool patternChanged =
+      (lastSharedStandbyValueMin != activeConfig.standbyValueMin) ||
+      (lastSharedStandbyValueMax != activeConfig.standbyValueMax) ||
+      (lastSharedStandbyOnMin != activeConfig.standbyOnMin) ||
+      (lastSharedStandbyOnMax != activeConfig.standbyOnMax) ||
+      (lastSharedStandbyFrameMs != activeConfig.standbyFrameMs) ||
+      (lastSharedStandbyChangeMinMs != activeConfig.standbyChangeMinMs) ||
+      (lastSharedStandbyChangeMaxMs != activeConfig.standbyChangeMaxMs);
+  *needsReinit = patternChanged;
+  return brightnessChanged || patternChanged;
+}
 static void applySharedStandbyFrame() {
   ring1ApplySharedStandby(sharedStandbyRenderMask, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
   if (RING2_ENABLED) {
@@ -106,9 +144,19 @@ static void sharedStandbyInit(uint32_t now) {
       ++sharedStandbyOnCount;
     }
   }
+  sharedStandbyCaptureConfigSnapshot();
 }
 static bool sharedStandbyService(uint32_t now) {
   bool changed = false;
+  bool needsReinit = false;
+  if (sharedStandbyConfigChanged(&needsReinit)) {
+    if (needsReinit) {
+      sharedStandbyInit(now);
+    }
+    applySharedStandbyFrame();
+    sharedStandbyCaptureConfigSnapshot();
+    changed = true;
+  }
   if (now >= sharedStandbyChangeNextMs) {
     uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
     uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
