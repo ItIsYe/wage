@@ -20,6 +20,7 @@ static uint16_t sharedStandbyHue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyValue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyTargetValue[SHARED_PIXELS] = {};
 static uint16_t sharedStandbyOnCount = 0;
+static uint16_t sharedStandbyCursor = 0;
 
 static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) { return (minValue > maxValue) ? maxValue : minValue; }
 static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
@@ -82,6 +83,7 @@ static void sharedStandbyInit(uint32_t now) {
   sharedStandbyFrameNextMs = now + sanitizeSharedStandbyFrameMs(activeConfig.standbyFrameMs);
   sharedStandbyChangeNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
   sharedStandbyOnCount = 0;
+  sharedStandbyCursor = (uint16_t)random(0, SHARED_PIXELS);
   for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
     sharedStandbyTwinkleOn[i] = false;
     sharedStandbyHue[i] = (uint16_t)random(0, 65536);
@@ -120,13 +122,16 @@ static bool sharedStandbyService(uint32_t now) {
     const bool needLess = sharedStandbyOnCount > onMax;
     const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 20);
     if (needMore || needLess || shouldToggle) {
+      const uint16_t stride = 1U;
+      const uint16_t start = sharedStandbyCursor;
       for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
-        const uint16_t i = (uint16_t)random(0, SHARED_PIXELS);
-        if (needMore && !sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; changed = true; break; }
-        if (needLess && sharedStandbyTwinkleOn[i]) { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; changed = true; break; }
+        const uint16_t i = (uint16_t)((start + (uint32_t)tries * stride) % SHARED_PIXELS);
+        if (needMore && !sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; sharedStandbyCursor = (uint16_t)((i + stride) % SHARED_PIXELS); changed = true; break; }
+        if (needLess && sharedStandbyTwinkleOn[i]) { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; sharedStandbyCursor = (uint16_t)((i + stride) % SHARED_PIXELS); changed = true; break; }
         if (!needMore && !needLess) {
           if (!sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
           else { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; }
+          sharedStandbyCursor = (uint16_t)((i + stride) % SHARED_PIXELS);
           changed = true;
           break;
         }
