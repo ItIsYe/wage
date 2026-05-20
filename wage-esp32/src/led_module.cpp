@@ -16,6 +16,7 @@ static uint32_t sharedStandbyFrameNextMs = 0;
 static uint32_t sharedStandbyChangeNextMs = 0;
 static constexpr uint16_t SHARED_PIXELS = PIXEL_COUNT + RING2_PIXEL_COUNT;
 static bool sharedStandbyTwinkleOn[SHARED_PIXELS] = {};
+static bool sharedStandbyRenderMask[SHARED_PIXELS] = {};
 static uint16_t sharedStandbyHue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyValue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyTargetValue[SHARED_PIXELS] = {};
@@ -65,9 +66,9 @@ static uint8_t sharedStandbyBaseValue(uint8_t valueMin, uint8_t valueMax) {
   return base;
 }
 static void applySharedStandbyFrame() {
-  ring1ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
+  ring1ApplySharedStandby(sharedStandbyRenderMask, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
   if (RING2_ENABLED) {
-    ring2ApplySharedStandby(sharedStandbyTwinkleOn, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
+    ring2ApplySharedStandby(sharedStandbyRenderMask, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
   }
 }
 static void sharedStandbyInit(uint32_t now) {
@@ -86,6 +87,7 @@ static void sharedStandbyInit(uint32_t now) {
   sharedStandbyCursor = (uint16_t)random(0, SHARED_PIXELS);
   for (uint16_t i = 0; i < SHARED_PIXELS; ++i) {
     sharedStandbyTwinkleOn[i] = false;
+    sharedStandbyRenderMask[i] = true;
     sharedStandbyHue[i] = (uint16_t)random(0, 65536);
     sharedStandbyValue[i] = valueBase;
     sharedStandbyTargetValue[i] = valueBase;
