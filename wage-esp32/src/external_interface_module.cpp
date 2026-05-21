@@ -1,6 +1,8 @@
 #include "external_interface_module.h"
 
+#include <cstdio>
 #include <HTTPClient.h>
+#include <cstring>
 
 #include "config.h"
 
@@ -50,12 +52,46 @@ bool bodySignalsAccepted(const String& body) {
   return compact.indexOf("\"accepted\":true") >= 0 || compact.indexOf("\"duplicate\":true") >= 0;
 }
 
+
+String jsonEscape(const char* text) {
+  String out;
+  if (text == nullptr) return out;
+  out.reserve(strlen(text) + 8);
+  for (const char* p = text; *p; ++p) {
+    const char c = *p;
+    switch (c) {
+      case '\\': out += F("\\\\"); break;
+      case '"': out += F("\\\""); break;
+      case '\n': out += F("\\n"); break;
+      case '\r': out += F("\\r"); break;
+      case '\t': out += F("\\t"); break;
+      default:
+        if ((uint8_t)c < 0x20) {
+          char buf[7];
+          snprintf(buf, sizeof(buf), "\\u%04x", (unsigned)c);
+          out += buf;
+        } else {
+          out += c;
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+String buildTargetUrl() {
+  String url = String("http://") + transportCfg.host + ":" + String(transportCfg.port);
+  const bool pathHasLeadingSlash = transportCfg.apiPath[0] == '/';
+  if (!pathHasLeadingSlash) url += '/';
+  url += transportCfg.apiPath;
+  return url;
+}
 String buildPayload(const RunDataSnapshot& run) {
   String payload;
   payload.reserve(360);
   payload += F("{\"protocol_version\":1");
-  payload += F(",\"event_id\":\""); payload += run.eventId; payload += '"';
-  payload += F(",\"device_id\":\""); payload += run.deviceId; payload += '"';
+  payload += F(",\"event_id\":\""); payload += jsonEscape(run.eventId); payload += '"';
+  payload += F(",\"device_id\":\""); payload += jsonEscape(run.deviceId); payload += '"';
   payload += F(",\"boot_id\":"); payload += String(run.bootId);
   payload += F(",\"run_number\":"); payload += String(run.runNumber);
   payload += F(",\"time_ms\":"); payload += String(run.durationMs);
@@ -63,7 +99,7 @@ String buildPayload(const RunDataSnapshot& run) {
   payload += F(",\"min_weight_g\":"); payload += String(run.minWeightG, 3);
   payload += F(",\"start_drop_threshold_g\":"); payload += String(run.startDropThresholdG, 3);
   payload += F(",\"stop_rise_threshold_g\":"); payload += String(run.stopRiseThresholdG, 3);
-  payload += F(",\"firmware_version\":\""); payload += firmwareVersion; payload += '"';
+  payload += F(",\"firmware_version\":\""); payload += jsonEscape(firmwareVersion); payload += '"';
   payload += F(",\"queue_depth\":"); payload += String(queueCount);
   payload += '}';
   return payload;
@@ -72,11 +108,11 @@ String buildPayload(const RunDataSnapshot& run) {
 bool trySendHead() {
   if (queueCount == 0 || !hasValidTarget()) return false;
   const RunDataSnapshot& run = queueBuf[queueHead];
-  String url = String("http://") + transportCfg.host + ":" + String(transportCfg.port) + transportCfg.apiPath;
+  String url = buildTargetUrl();
 
   HTTPClient http;
   if (!http.begin(url)) {
-    setStatus("http begin failed");
+    setStatus("send fail begin");
     return false;
   }
 
@@ -95,12 +131,16 @@ bool trySendHead() {
   if ((code >= 200 && code < 300) || bodySignalsAccepted(responseBody)) {
     queueHead = (queueHead + 1) % EXTERNAL_QUEUE_MAX;
     queueCount--;
-    setStatus("send ok");
+    char statusBuf[96];
+    snprintf(statusBuf, sizeof(statusBuf), "send ok %d", code);
+    setStatus(statusBuf);
     setSendErrorState(false);
     return true;
   }
 
-  setStatus("send fail");
+  char statusBuf[96];
+  snprintf(statusBuf, sizeof(statusBuf), code > 0 ? "send fail http %d" : "send fail code %d", code);
+  setStatus(statusBuf);
   setSendErrorState(true);
   return false;
 }
