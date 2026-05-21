@@ -286,22 +286,38 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
 
 void webConfigSetup() {
   if (!WEB_CONFIG_ENABLED) return;
-  (void)WIFI_STA_ENABLED;
-  (void)WIFI_USE_STATIC_IP;
-  (void)WIFI_SSID;
-  (void)WIFI_PASSWORD;
-  (void)WIFI_CONNECT_TIMEOUT_MS;
-  (void)WIFI_LOCAL_IP;
-  (void)WIFI_GATEWAY;
-  (void)WIFI_SUBNET;
-  (void)WIFI_DNS1;
-  (void)WIFI_DNS2;
-  WiFi.mode(WIFI_AP);
-  const bool apStarted = WiFi.softAP(CONFIG_AP_SSID, CONFIG_AP_PASSWORD);
-  wifiApMode = true;
-  networkInfo = WiFi.softAPIP().toString();
-  if (!apStarted) Serial.println("[NET] Config AP Start fehlgeschlagen");
-  showNetworkStatus("Config AP", networkInfo);
+
+  bool connectedAsSta = false;
+  const bool staConfigured = WIFI_STA_ENABLED && WIFI_SSID && strlen(WIFI_SSID) > 0;
+
+  if (staConfigured) {
+    WiFi.mode(WIFI_STA);
+    if (WIFI_USE_STATIC_IP) {
+      if (!WiFi.config(WIFI_LOCAL_IP, WIFI_GATEWAY, WIFI_SUBNET, WIFI_DNS1, WIFI_DNS2)) {
+        Serial.println("[NET] STA static IP Konfiguration fehlgeschlagen");
+      }
+    }
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    const uint32_t startMs = millis();
+    while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < WIFI_CONNECT_TIMEOUT_MS) {
+      delay(100);
+    }
+    connectedAsSta = (WiFi.status() == WL_CONNECTED);
+  }
+
+  if (connectedAsSta) {
+    wifiApMode = false;
+    networkInfo = WiFi.localIP().toString();
+    showNetworkStatus("WLAN", networkInfo);
+  } else {
+    WiFi.mode(WIFI_AP);
+    const bool apStarted = WiFi.softAP(CONFIG_AP_SSID, CONFIG_AP_PASSWORD);
+    wifiApMode = true;
+    networkInfo = apStarted ? WiFi.softAPIP().toString() : String("0.0.0.0");
+    if (!apStarted) Serial.println("[NET] Config AP Start fehlgeschlagen");
+    showNetworkStatus("Config AP", networkInfo);
+  }
+
   WiFi.setSleep(false);
 
   server.on("/", HTTP_GET, [](){
