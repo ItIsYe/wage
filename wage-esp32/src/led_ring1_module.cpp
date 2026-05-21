@@ -79,8 +79,10 @@ static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) {
   return (minValue > maxValue) ? maxValue : minValue;
 }
 static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
-  if (frameMs < STANDBY_FRAME_MIN_MS) return STANDBY_FRAME_MIN_MS;
-  if (frameMs > STANDBY_FRAME_MAX_MS) return STANDBY_FRAME_MAX_MS;
+  static constexpr uint32_t kStandbyFrameMinMs = 30U;
+  static constexpr uint32_t kStandbyFrameMaxMs = 1000U;
+  if (frameMs < kStandbyFrameMinMs) return kStandbyFrameMinMs;
+  if (frameMs > kStandbyFrameMaxMs) return kStandbyFrameMaxMs;
   return frameMs;
 }
 static inline uint32_t randomInclusiveU32(uint32_t minValue, uint32_t maxValue) {
@@ -245,3 +247,13 @@ void ring1ApplyBrightnessForCurrentMode() { applyBrightnessForLedModeInternal();
 void ring1MarkDirty() { ledFrameDirty = true; }
 void ring1Clear() { if (!ring1Ready()) return; pixelsClear(); }
 void ring1FillDebugAllOn() { if (!ring1Ready()) return; applyBrightnessForLedModeInternal(); pixelsFill(rgb(80, 80, 80)); ledFrameDirty = false; }
+void ring1ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value, uint16_t count) {
+  if (!ring1Ready()) return;
+  setStripBrightnessPercent(activeConfig.standbyBrightnessPercent);
+  pixelsClear();
+  const uint16_t limit = (count < PIXEL_COUNT) ? count : PIXEL_COUNT;
+  for (uint16_t i = 0; i < limit; ++i) {
+    if (!on[i]) continue;
+    primaryLeds[i] = scaleColor(hsvGamma(hue[i], activeConfig.standbySaturation, value[i]), currentBrightnessByte);
+  }
+}

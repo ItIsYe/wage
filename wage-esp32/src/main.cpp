@@ -261,6 +261,7 @@ static void setState(State s) {
     Serial.println(stateToStr(s));
   }
   state = s;
+  ledSetState(s);
   lastActionMs = millis();
 }
 
@@ -278,7 +279,7 @@ static void oledService(uint32_t now) {
 void setup() {
   Serial.begin(115200);
   delay(150);
-  Serial.println("[BOOT] WAGE ESP32 beta ring2-direct-test build");
+  Serial.println("[BOOT] WAGE ESP32 beta led-module-state build");
   Serial.printf("[BOOT] ring1Pin=%u ring2Pin=%u ring2Enabled=%u ring2BootTest=%u ring2ForceTest=%u masterDebug=%u\n",
                 (unsigned)LED_STRIP_PIN,
                 (unsigned)RING2_PIN,
@@ -576,7 +577,7 @@ static void stateMachineService(uint32_t now) {
 
 
 static void applyPendingConfigIfAllowed(){
-  if (!(webHasPendingConfig() && state == State::IDLE_WAIT_GLASS)) return;
+  if (!(webHasPendingConfig() && (state == State::IDLE_WAIT_GLASS || state == State::STANDBY))) return;
   const RuntimeConfig pendingConfig = webGetPendingConfig();
   activeConfig = pendingConfig;
   oledScale = activeConfig.oledScaleValue;
@@ -586,9 +587,8 @@ static void applyPendingConfigIfAllowed(){
   ledMarkAllDirty();
   webConfigSaveToPrefs(activeConfig);
   if (MASTER_DEBUG_LOG) {
-    Serial.printf("[CFG] Ring2 en=%u mode=%u dbg=%u b=%u sb=%u\n",
+    Serial.printf("[CFG] Ring2 en=%u dbg=%u b=%u sb=%u\n",
                   (unsigned)activeConfig.ring2Enabled,
-                  (unsigned)activeConfig.ring2PatternMode,
                   (unsigned)activeConfig.ring2DebugAllOn,
                   (unsigned)activeConfig.ring2BrightnessPercent,
                   (unsigned)activeConfig.ring2StandbyBrightnessPercent);

@@ -60,7 +60,7 @@ static String htmlEscape(const String& in) {
 }
 
 static bool isConfigApplyAllowedState() {
-  return (state == State::IDLE_WAIT_GLASS);
+  return (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
 }
 
 static bool parseFloatArg(const char* key, float& out) {
@@ -105,7 +105,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Pending:</b> "); h += (pendingConfigValid ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>Hinweis:</b> "); h += (state==State::IDLE_WAIT_GLASS ? F("Aenderungen werden sofort aktiv") : F("Aenderungen warten bis Idle")); h += F("</p></div>");
+  h += F("<p><b>Hinweis:</b> "); h += ((state==State::IDLE_WAIT_GLASS || state==State::STANDBY) ? F("Aenderungen werden sofort aktiv") : F("Aenderungen werden automatisch uebernommen, sobald Idle oder Standby erreicht ist")); h += F("</p></div>");
   if (errorMsg.length()) { h += F("<div class='err'><b>Fehler:</b> "); h += htmlEscape(errorMsg); h += F("</div>"); }
   if (resetRequested) { h += F("<div class='err'><b>Reset:</b> Reset wartet auf sicheren Zustand</div>"); }
   if (state == State::TIMING) { h += F("<div class='err'><b>Info:</b> Reset wird erst nach der Messung ausgefuehrt</div>"); }
@@ -114,56 +114,55 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<form method='POST' action='/debug/off'><button type='submit'>Alle Debug-Modi deaktivieren</button></form>");
   h += F("<p><a href='/debug/off'>Alle Debug-Modi per Link deaktivieren</a></p>");
   h += F("<form method='POST' action='/save'>");
-  h += F("<fieldset><legend>System</legend><label>Device-ID</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>1 bis 31 Zeichen</small>");
+  h += F("<fieldset><legend>System & Geraete-Identitaet</legend><label>Geraete-Name / Device-ID (eindeutig)</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>Min: 1, Max: 31 Zeichen. Wird fuer Wiedererkennung, Logs und externe Zuordnung genutzt. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION; h += F("' readonly>");
   h += F("<label>State</label><input value='"); h += stateToStrLocal(state); h += F("' readonly></fieldset>");
-  h += F("<fieldset><legend>Messung</legend>");
-  h += F("<label>startDropPercent (%)</label><input type='number' step='0.1' min='0' max='100' name='startDropPercent' value='"); h += String(c.startDropPercent,2); h += F("'>");
-  h += F("<label>stopRisePercent (%)</label><input type='number' step='0.1' min='0' max='100' name='stopRisePercent' value='"); h += String(c.stopRisePercent,2); h += F("'>");
-  h += F("<label>objectPresentG (g)</label><input type='number' step='0.1' min='0' name='objectPresentG' value='"); h += String(c.objectPresentG,2); h += F("'>");
-  h += F("<label>emptyThresholdG (g)</label><input type='number' step='0.1' min='0' name='emptyThresholdG' value='"); h += String(c.emptyThresholdG,2); h += F("'>");
-  h += F("<label>retareTolG (g)</label><input type='number' step='0.1' min='0' name='retareTolG' value='"); h += String(c.retareTolG,2); h += F("'>");
-  h += F("<label>standbyWakeThresholdG (g)</label><input type='number' step='0.1' min='0' name='standbyWakeThresholdG' value='"); h += String(c.standbyWakeThresholdG,2); h += F("'>");
-  h += F("<label>Standby nach (s)</label><input type='number' min='5' max='300' name='standbyAfterS' value='"); h += String(c.standbyAfterMs / 1000U); h += F("'><small>Nur im Idle ohne Glas: Nach dieser Zeit wird in den Standby-Twinkle gewechselt.</small></fieldset>");
-  h += F("<fieldset><legend>Ring 1 Standby-Twinkle</legend>");
-  h += F("<label>Standby Twinkle Speed / Frame-Zeit (ms)</label><input type='number' min='30' max='1000' name='standbyFrameMs' value='"); h += String(c.standbyFrameMs); h += F("'>");
-  h += F("<label>Standby Change Min (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMinMs' value='"); h += String(c.standbyChangeMinMs); h += F("'>");
-  h += F("<label>Standby Change Max (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMaxMs' value='"); h += String(c.standbyChangeMaxMs); h += F("'>");
-  h += F("<label>Standby Twinkle Anzahl Min</label><input type='number' min='0' max='25' name='standbyOnMin' value='"); h += String(c.standbyOnMin); h += F("'>");
-  h += F("<label>Standby Twinkle Anzahl Max</label><input type='number' min='0' max='25' name='standbyOnMax' value='"); h += String(c.standbyOnMax); h += F("'>");
-  h += F("<label>Standby Value Min</label><input type='number' min='0' max='255' name='standbyValueMin' value='"); h += String(c.standbyValueMin); h += F("'>");
-  h += F("<label>Standby Value Max</label><input type='number' min='0' max='255' name='standbyValueMax' value='"); h += String(c.standbyValueMax); h += F("'>");
-  h += F("<label>Standby Saturation</label><input type='number' min='0' max='255' name='standbySaturation' value='"); h += String(c.standbySaturation); h += F("'></fieldset>");
-  h += F("<fieldset><legend>Performance</legend>");
-  h += F("<label>oledTimingRefreshMs (ms)</label><input type='number' min='50' max='1000' name='oledTimingRefreshMs' value='"); h += String(c.oledTimingRefreshMs); h += F("'>");
-  h += F("<label>scaleReadIntervalMs (ms)</label><input type='number' min='10' max='500' name='scaleReadIntervalMs' value='"); h += String(c.scaleReadIntervalMs); h += F("'>");
-  h += F("<label>scaleReadSamples</label><input type='number' min='1' max='5' name='scaleReadSamples' value='"); h += String(c.scaleReadSamples); h += F("'>");
-  h += F("<label>oledI2cClockHz (Hz)</label><select name='oledI2cClockHz'><option value='100000'");
+  h += F("<fieldset><legend>Messwerte & Schwellwerte</legend>");
+  h += F("<label>Messstart bei Gewichtsabfall (%)</label><input type='number' step='0.1' min='0' max='100' name='startDropPercent' value='"); h += String(c.startDropPercent,2); h += F("'><small>Min: 0, Max: 100. Startet die Messung beim Unterschreiten des Abfalls.</small>");
+  h += F("<label>Messende bei Gewichtsanstieg (%)</label><input type='number' step='0.1' min='0' max='100' name='stopRisePercent' value='"); h += String(c.stopRisePercent,2); h += F("'><small>Min: 0, Max: 100. Beendet die Messung beim Rueckanstieg.</small>");
+  h += F("<label>Glas erkannt ab (g)</label><input type='number' step='0.1' min='0' name='objectPresentG' value='"); h += String(c.objectPresentG,2); h += F("'><small>Min: 0. Schwelle, ab der ein Objekt als vorhanden gilt.</small>");
+  h += F("<label>Leer erkannt bis (g)</label><input type='number' step='0.1' min='0' name='emptyThresholdG' value='"); h += String(c.emptyThresholdG,2); h += F("'><small>Min: 0 g. Werte bis hier gelten als leer / entfernt. Wirkt nach Speichern bei der naechsten Zustandspruefung.</small>");
+  h += F("<label>Auto-Neutarierung Toleranz (g)</label><input type='number' step='0.1' min='0' name='retareTolG' value='"); h += String(c.retareTolG,2); h += F("'><small>Min: 0 g. Innerhalb dieser Abweichung wird der Nullpunkt als stabil akzeptiert. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Standby verlassen ab Gewichtsanstieg (g)</label><input type='number' step='0.1' min='0' name='standbyWakeThresholdG' value='"); h += String(c.standbyWakeThresholdG,2); h += F("'><small>Min: 0 g. Ueberschreiten weckt aus Standby in den aktiven Betrieb. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Standby nach (s)</label><input type='number' min='5' max='300' name='standbyAfterS' value='"); h += String(c.standbyAfterMs / 1000U); h += F("'><small>Min: 5, Max: 300. Wirkt nur im Idle ohne Glas. Wenn die Waage bereits im Standby ist, aendert dieser Wert den aktuellen Standby nicht rueckwirkend.</small></fieldset>");
+  h += F("<fieldset><legend>Standby-Pattern fuer Ring 1 + Ring 2</legend>");
+  h += F("<label>Bildwechsel-Intervall im Standby (ms)</label><input type='number' min='30' max='1000' name='standbyFrameMs' value='"); h += String(c.standbyFrameMs); h += F("'><small>Min: 30, Max: 1000 ms. Kleinere Werte = schnelleres Flackern. Wirkt nach Speichern sofort im Standby.</small>");
+  h += F("<label>Zeit bis Musterwechsel: Minimum (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMinMs' value='"); h += String(c.standbyChangeMinMs); h += F("'><small>Min: 100, Max: 5000 ms. Untere Grenze, wann ein neues Twinkle-Muster gewaehlt wird. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Zeit bis Musterwechsel: Maximum (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMaxMs' value='"); h += String(c.standbyChangeMaxMs); h += F("'><small>Min: 100, Max: 5000 ms. Obere Grenze fuer den zufaelligen Musterwechsel (muss >= Minimum sein). Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Anzahl aktiver LEDs im Twinkle: Minimum</label><input type='number' min='0' max='25' name='standbyOnMin' value='"); h += String(c.standbyOnMin); h += F("'><small>Min: 0, Max: 25. Bezieht sich auf Ring 1. Im gemeinsamen Standby wird der Wert automatisch auf Ring 1 + Ring 2 hochskaliert. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Anzahl aktiver LEDs im Twinkle: Maximum</label><input type='number' min='0' max='25' name='standbyOnMax' value='"); h += String(c.standbyOnMax); h += F("'><small>Min: 0, Max: 25. Muss groesser/gleich Minimum sein. Bezieht sich auf Ring 1 und wird im gemeinsamen Standby auf Ring 1 + Ring 2 hochskaliert. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Standby-Helligkeit Minimum (0-255)</label><input type='number' min='0' max='255' name='standbyValueMin' value='"); h += String(c.standbyValueMin); h += F("'><small>Min: 0, Max: 255. Untere Grenze der LED-Helligkeit im Standby.</small>");
+  h += F("<label>Standby-Helligkeit Maximum (0-255)</label><input type='number' min='0' max='255' name='standbyValueMax' value='"); h += String(c.standbyValueMax); h += F("'><small>Min: 0, Max: 255. Obere Grenze der LED-Helligkeit im Standby (muss >= Minimum sein). Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Standby-Farbsaettigung (0-255)</label><input type='number' min='0' max='255' name='standbySaturation' value='"); h += String(c.standbySaturation); h += F("'><small>Min: 0, Max: 255. 0 = weiss/grau, 255 = volle Farbkraft. Wirkt nach Speichern sofort.</small></fieldset>");
+  h += F("<fieldset><legend>Aktualisierung & Geschwindigkeit</legend>");
+  h += F("<label>OLED-Aktualisierungsintervall (ms)</label><input type='number' min='50' max='1000' name='oledTimingRefreshMs' value='"); h += String(c.oledTimingRefreshMs); h += F("'><small>Min: 50, Max: 1000. Kleinere Werte aktualisieren haeufiger.</small>");
+  h += F("<label>Waagen-Abfrageintervall (ms)</label><input type='number' min='10' max='500' name='scaleReadIntervalMs' value='"); h += String(c.scaleReadIntervalMs); h += F("'><small>Min: 10, Max: 500 ms. Kleinere Werte lesen die Waage haeufiger (reaktiver, aber mehr Last). Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Messproben pro Waagen-Lesung</label><input type='number' min='1' max='5' name='scaleReadSamples' value='"); h += String(c.scaleReadSamples); h += F("'><small>Min: 1, Max: 5. Mehr Proben beruhigen Rauschen, reagieren aber traeger. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>OLED-I2C-Takt (Hz)</label><select name='oledI2cClockHz'><option value='100000'");
   if (c.oledI2cClockHz == 100000) h += F(" selected"); h += F(">100000</option><option value='200000'");
   if (c.oledI2cClockHz == 200000) h += F(" selected"); h += F(">200000</option><option value='400000'");
-  if (c.oledI2cClockHz == 400000) h += F(" selected"); h += F(">400000</option></select></fieldset>");
-  h += F("<fieldset><legend>OLED</legend>");
-  h += F("<label>oledRotation</label><input type='number' min='0' max='3' name='oledRotation' value='"); h += String(c.oledRotation); h += F("'>");
-  h += F("<label>oledScaleValue</label><input type='number' step='0.1' min='0.1' name='oledScaleValue' value='"); h += String(c.oledScaleValue,2); h += F("'>");
+  if (c.oledI2cClockHz == 400000) h += F(" selected"); h += F(">400000</option></select><small>Hoeherer Takt kann die Anzeige schneller machen, braucht aber stabile Verkabelung. Wirkt nach Speichern sofort.</small></fieldset>");
+  h += F("<fieldset><legend>OLED-Anzeige</legend>");
+  h += F("<label>OLED-Drehung</label><input type='number' min='0' max='3' name='oledRotation' value='"); h += String(c.oledRotation); h += F("'><small>Min: 0, Max: 3 (90-Grad-Schritte). 0 = Standardausrichtung. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>OLED-Schriftgroesse / Skalierung</label><input type='number' step='0.1' min='0.1' name='oledScaleValue' value='"); h += String(c.oledScaleValue,2); h += F("'><small>Min: 0.1. Groesserer Wert vergroessert die Anzeigeelemente. Wirkt nach Speichern sofort.</small>");
   h += F("<label><input type='checkbox' name='debugMode' "); if (c.debugMode) h += F("checked"); h += F("> Gewichts-Debug auf OLED anzeigen</label>");
   h += F("<label><input type='checkbox' name='oledDebugMode' "); if (c.oledDebugMode) h += F("checked"); h += F("> OLED-Pixel-Debug anzeigen</label></fieldset>");
   h += F("<fieldset><legend>Ring 1 / Haupt-LED-Ring</legend>");
-  h += F("<label>pixelBrightnessPercent (%)</label><input type='number' min='0' max='100' name='pixelBrightnessPercent' value='"); h += String(c.pixelBrightnessPercent); h += F("'>");
-  h += F("<label>standbyBrightnessPercent (%)</label><input type='number' min='0' max='100' name='standbyBrightnessPercent' value='"); h += String(c.standbyBrightnessPercent); h += F("'>");
+  h += F("<label>Ring 1 Helligkeit im aktiven Betrieb (%)</label><input type='number' min='0' max='100' name='pixelBrightnessPercent' value='"); h += String(c.pixelBrightnessPercent); h += F("'><small>Min: 0, Max: 100. Grundhelligkeit waehrend normalem Betrieb. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Ring 1 Helligkeit im Standby (%)</label><input type='number' min='0' max='100' name='standbyBrightnessPercent' value='"); h += String(c.standbyBrightnessPercent); h += F("'><small>Min: 0, Max: 100. Gesamthelligkeit fuer den Standby-Effekt. Wirkt nach Speichern sofort.</small>");
   h += F("<label><input type='checkbox' name='pixelDebugAllOn' "); if (c.pixelDebugAllOn) h += F("checked"); h += F("> Ring 1 Debug: alle Pixel an</label></fieldset>");
   h += F("<fieldset><legend>Ring 2 / Zusatz-LED-Ring</legend>");
   h += F("<label><input type='checkbox' name='ring2Enabled' "); if (c.ring2Enabled) h += F("checked"); h += F("> Ring 2 aktiv</label>");
-  h += F("<label>Ring 2 Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2BrightnessPercent' value='"); h += String(c.ring2BrightnessPercent); h += F("'>");
-  h += F("<label>Ring 2 Standby-Helligkeit (%)</label><input type='number' min='0' max='100' name='ring2StandbyBrightnessPercent' value='"); h += String(c.ring2StandbyBrightnessPercent); h += F("'>");
-  h += F("<label><input type='checkbox' name='ring2DebugAllOn' "); if (c.ring2DebugAllOn) h += F("checked"); h += F("> Ring 2 Debug alle Pixel an</label>");
-  h += F("<label>Ring 2 Pattern</label><select name='ring2PatternMode'><option value='0'"); if (c.ring2PatternMode == 0) h += F(" selected"); h += F(">Aus</option><option value='1'"); if (c.ring2PatternMode == 1) h += F(" selected"); h += F(">Solid Blau</option><option value='2'"); if (c.ring2PatternMode == 2) h += F(" selected"); h += F(">Pulse Blau</option><option value='3'"); if (c.ring2PatternMode == 3) h += F(" selected"); h += F(">Breathing Weiss</option><option value='4'"); if (c.ring2PatternMode == 4) h += F(" selected"); h += F(">Slow Blue Spinner</option></select></fieldset>");
+  h += F("<label>Ring 2 Helligkeit im aktiven Betrieb (%)</label><input type='number' min='0' max='100' name='ring2BrightnessPercent' value='"); h += String(c.ring2BrightnessPercent); h += F("'><small>Min: 0, Max: 100. Helligkeit des zweiten Rings ausserhalb Standby. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Ring 2 Helligkeit im Standby (%)</label><input type='number' min='0' max='100' name='ring2StandbyBrightnessPercent' value='"); h += String(c.ring2StandbyBrightnessPercent); h += F("'><small>Min: 0, Max: 100. Helligkeit des zweiten Rings waehrend Standby. Wirkt nach Speichern sofort.</small>");
+  h += F("<label><input type='checkbox' name='ring2DebugAllOn' "); if (c.ring2DebugAllOn) h += F("checked"); h += F("> Ring 2 Debug alle Pixel an</label></fieldset>");
 
-  h += F("<fieldset><legend>Externe Schnittstelle</legend>");
-  h += F("<label><input type='checkbox' name='externalEnabled' "); if (c.externalEnabled) h += F("checked"); h += F("> Externe Schnittstelle aktiv</label>");
-  h += F("<label>Ziel-Host / IP</label><input name='externalHost' maxlength='63' value='"); h += htmlEscape(String(c.externalHost)); h += F("'>");
-  h += F("<label>Port</label><input type='number' min='1' max='65535' name='externalPort' value='"); h += String(c.externalPort); h += F("'>");
-  h += F("<label>API-Pfad</label><input name='externalApiPath' maxlength='63' value='"); h += htmlEscape(String(c.externalApiPath)); h += F("'><small>z.B. /api/v1/runs</small>");
-  h += F("<label>API-Key</label><input name='externalApiKey' maxlength='63' value='"); h += htmlEscape(String(c.externalApiKey)); h += F("'>");
+  h += F("<fieldset><legend>Externe Datenuebertragung (API)</legend>");
+  h += F("<label><input type='checkbox' name='externalEnabled' "); if (c.externalEnabled) h += F("checked"); h += F("> Externe Schnittstelle aktiv (Messdaten senden)</label><small>Ein/Aus fuer das Senden an einen externen Server. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Ziel-Host / IP</label><input name='externalHost' maxlength='63' value='"); h += htmlEscape(String(c.externalHost)); h += F("'><small>Hostname oder IP ohne http://, z.B. 192.168.1.116. Wirkt nur, wenn externe Schnittstelle aktiv ist.</small>");
+  h += F("<label>Port</label><input type='number' min='1' max='65535' name='externalPort' value='"); h += String(c.externalPort); h += F("'><small>Min: 1, Max: 65535. Standard-Port der Ziel-API.</small>");
+  h += F("<label>API-Pfad</label><input name='externalApiPath' maxlength='63' value='"); h += htmlEscape(String(c.externalApiPath)); h += F("'><small>z.B. /api/v1/runs. Muss zur Ziel-API auf dem Server passen.</small>");
+  h += F("<label>API-Key</label><input name='externalApiKey' maxlength='63' value='"); h += htmlEscape(String(c.externalApiKey)); h += F("'><small>Optionaler Schluessel fuer die Ziel-API. Leer lassen, wenn nicht benoetigt.</small>");
   h += F("<label>Queue-Tiefe</label><input value='"); h += String(externalInterfaceQueueDepth()); h += F("' readonly>");
   h += F("<label>Letzter Sendestatus</label><input value='"); h += htmlEscape(String(externalInterfaceLastStatus())); h += F("' readonly></fieldset>");
 
@@ -178,7 +177,7 @@ static String renderBusyPage(const String& hint = "") {
   h += F("<title>Waage aktiv</title><style>body{font-family:Arial,sans-serif;max-width:560px;margin:12px auto;padding:0 10px;}button{padding:10px 14px;margin-top:10px;}p{margin:8px 0;}.hint{background:#fff3cd;border:1px solid #d6b656;padding:8px;color:#6b5200;}</style></head><body>");
   h += F("<h2>Waage aktiv</h2>");
   h += F("<p><b>State:</b> "); h += stateToStrLocal(state); h += F("</p>");
-  h += F("<p>Config im Idle bearbeiten</p>");
+  h += F("<p>Config in Idle oder Standby bearbeiten</p>");
   if (hint.length()) { h += F("<p class='hint'>"); h += htmlEscape(hint); h += F("</p>"); }
   if (resetStatusMsg.length()) { h += F("<p class='hint'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</p>"); }
   h += F("<form method='GET' action='/'><button type='submit'>Neu laden</button></form>");
@@ -203,7 +202,7 @@ void webConfigLoadDefaults(RuntimeConfig& cfg) { memset(&cfg,0,sizeof(cfg));
   cfg.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON;
   cfg.ring2Enabled=DEFAULT_RING2_ENABLED; cfg.ring2BrightnessPercent=DEFAULT_RING2_BRIGHTNESS_PERCENT;
   cfg.ring2StandbyBrightnessPercent=DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT; cfg.ring2DebugAllOn=DEFAULT_RING2_DEBUG_ALL_ON;
-  cfg.ring2PatternMode=DEFAULT_RING2_PATTERN_MODE; strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);
+  strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);
   cfg.externalEnabled=EXTERNAL_INTERFACE_ENABLED_DEFAULT;
   strncpy(cfg.externalHost, EXTERNAL_TARGET_HOST_DEFAULT, sizeof(cfg.externalHost)-1);
   cfg.externalPort=EXTERNAL_TARGET_PORT_DEFAULT;
@@ -222,7 +221,7 @@ void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.putFloat("oledScale", c.oledScaleValue); prefs.putBool("dbg", c.debugMode); prefs.putBool("odbg", c.oledDebugMode);
   prefs.putUChar("pixB", c.pixelBrightnessPercent); prefs.putUChar("stbyB", c.standbyBrightnessPercent); prefs.putBool("pixDbg", c.pixelDebugAllOn);
   prefs.putBool("r2en", c.ring2Enabled); prefs.putUChar("r2b", c.ring2BrightnessPercent); prefs.putUChar("r2sb", c.ring2StandbyBrightnessPercent);
-  prefs.putBool("r2dbg", c.ring2DebugAllOn); prefs.putUChar("r2pat", c.ring2PatternMode);
+  prefs.putBool("r2dbg", c.ring2DebugAllOn);
   prefs.putString("dev", c.deviceId);
   prefs.putBool("exEn", c.externalEnabled);
   prefs.putString("exHost", c.externalHost);
@@ -270,10 +269,11 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   cfg.debugMode=prefs.getBool("dbg", cfg.debugMode); cfg.oledDebugMode=prefs.getBool("odbg", cfg.oledDebugMode);
   cfg.pixelBrightnessPercent=prefs.getUChar("pixB", cfg.pixelBrightnessPercent); cfg.standbyBrightnessPercent=prefs.getUChar("stbyB", cfg.standbyBrightnessPercent); cfg.pixelDebugAllOn=prefs.getBool("pixDbg", cfg.pixelDebugAllOn);
   cfg.ring2Enabled=prefs.getBool("r2en", cfg.ring2Enabled); cfg.ring2BrightnessPercent=prefs.getUChar("r2b", cfg.ring2BrightnessPercent); cfg.ring2StandbyBrightnessPercent=prefs.getUChar("r2sb", cfg.ring2StandbyBrightnessPercent);
-  cfg.ring2DebugAllOn=prefs.getBool("r2dbg", cfg.ring2DebugAllOn); cfg.ring2PatternMode=prefs.getUChar("r2pat", cfg.ring2PatternMode);
+  cfg.ring2DebugAllOn=prefs.getBool("r2dbg", cfg.ring2DebugAllOn);
+  if (cfg.pixelBrightnessPercent > 100) cfg.pixelBrightnessPercent = 100;
+  if (cfg.standbyBrightnessPercent > 100) cfg.standbyBrightnessPercent = 100;
   if (cfg.ring2BrightnessPercent > 100) cfg.ring2BrightnessPercent = 100;
   if (cfg.ring2StandbyBrightnessPercent > 100) cfg.ring2StandbyBrightnessPercent = 100;
-  if (cfg.ring2PatternMode > 4) cfg.ring2PatternMode = DEFAULT_RING2_PATTERN_MODE;
   String dev=prefs.getString("dev", cfg.deviceId); strncpy(cfg.deviceId, dev.c_str(), sizeof(cfg.deviceId)-1);
   cfg.externalEnabled=prefs.getBool("exEn", cfg.externalEnabled);
   String exHost=prefs.getString("exHost", cfg.externalHost); strncpy(cfg.externalHost, exHost.c_str(), sizeof(cfg.externalHost)-1);
@@ -310,7 +310,7 @@ void webConfigSetup() {
   });
   server.on("/save", HTTP_POST, [](){
     if (!isConfigApplyAllowedState()) {
-      server.send(409, "text/html", renderBusyPage("Speichern nur im Idle moeglich."));
+      server.send(409, "text/html", renderBusyPage("Speichern nur in Idle oder Standby moeglich."));
       return;
     }
     RuntimeConfig n = activeConfig;
@@ -353,7 +353,6 @@ void webConfigSetup() {
     parseU8Arg("ring2BrightnessPercent", n.ring2BrightnessPercent);
     parseU8Arg("ring2StandbyBrightnessPercent", n.ring2StandbyBrightnessPercent);
     parseBoolArg("ring2DebugAllOn", n.ring2DebugAllOn);
-    parseU8Arg("ring2PatternMode", n.ring2PatternMode);
     parseBoolArg("externalEnabled", n.externalEnabled);
     String extHost = server.arg("externalHost"); extHost.trim(); strncpy(n.externalHost, extHost.c_str(), sizeof(n.externalHost)-1); n.externalHost[sizeof(n.externalHost)-1] = '\0';
     uint32_t extPort = n.externalPort; parseUIntArg("externalPort", extPort); n.externalPort = (uint16_t) extPort;
@@ -363,7 +362,6 @@ void webConfigSetup() {
     if (!errMsg.length() && (n.startDropPercent < 0 || n.startDropPercent > 100 || n.stopRisePercent < 0 || n.stopRisePercent > 100)) errMsg = "Prozentwerte muessen zwischen 0 und 100 liegen.";
     if (!errMsg.length() && (n.pixelBrightnessPercent > 100 || n.standbyBrightnessPercent > 100)) errMsg = "Helligkeit muss 0..100 sein.";
     if (!errMsg.length() && (n.ring2BrightnessPercent > 100 || n.ring2StandbyBrightnessPercent > 100)) errMsg = "Ring-2-Helligkeit muss 0..100 sein.";
-    if (!errMsg.length() && n.ring2PatternMode > 4) errMsg = "Ring-2-Pattern muss 0..4 sein.";
     if (!errMsg.length() && (n.scaleReadSamples < 1 || n.scaleReadSamples > 5)) errMsg = "scaleReadSamples muss 1..5 sein.";
     if (!errMsg.length() && n.oledRotation > 3) errMsg = "oledRotation muss 0..3 sein.";
     if (!errMsg.length() && (n.oledTimingRefreshMs < 50 || n.oledTimingRefreshMs > 1000)) errMsg = "oledTimingRefreshMs muss 50..1000 ms sein.";
