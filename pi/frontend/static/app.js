@@ -163,20 +163,48 @@ async function loadNetworkConfig() {
   } catch (e) { flash(`Konfiguration konnte nicht geladen werden: ${e.message}`); }
 }
 
+async function refreshConfigPage() {
+  await loadNetworkConfig();
+  await loadUpdateStatus();
+  await loadStatus();
+  await loadDashboard();
+}
+
 async function saveNetworkConfig() {
   const mode = document.querySelector('input[name="network-mode"]:checked')?.value || 'ap';
   const payload = {
-    network_mode: mode, ap_ssid: byId('ap-ssid').value, ap_password: byId('ap-password').value, ap_ip: byId('ap-ip').value,
-    ap_dhcp_start: byId('ap-dhcp-start').value, ap_dhcp_end: byId('ap-dhcp-end').value, client_ssid: byId('client-ssid').value,
-    client_password: byId('client-password').value, client_dhcp_enabled: true
+    network_mode: mode, ap_ssid: byId('ap-ssid')?.value || '', ap_password: byId('ap-password')?.value || '', ap_ip: byId('ap-ip')?.value || '',
+    ap_dhcp_start: byId('ap-dhcp-start')?.value || '', ap_dhcp_end: byId('ap-dhcp-end')?.value || '', client_ssid: byId('client-ssid')?.value || '',
+    client_password: byId('client-password')?.value || '', client_dhcp_enabled: true
   };
-  try { await api('/api/v1/config/network', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); byId('ap-password').value=''; byId('client-password').value=''; flash('Netzwerk-Konfiguration gespeichert.', true);}
-  catch (e) { flash(`Speichern fehlgeschlagen: ${e.message}`); }
+  try {
+    await api('/api/v1/config/network', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    if (byId('ap-password')) byId('ap-password').value = '';
+    if (byId('client-password')) byId('client-password').value = '';
+    flash('Netzwerk-Konfiguration gespeichert.', true);
+    await refreshConfigPage();
+  } catch (e) {
+    flash(`Speichern fehlgeschlagen: ${e.message}`);
+  }
 }
 
 async function applyNetworkConfig() {
-  try { const d=await api('/api/v1/config/network/apply', {method:'POST'}); flash(d.status || 'Angewendet.', d.ok); }
-  catch (e) { flash(`Anwenden fehlgeschlagen: ${e.message}`); }
+  try {
+    const d = await api('/api/v1/config/network/apply', {method:'POST'});
+    flash(d.status || 'Angewendet.', d.ok);
+  } catch (e) {
+    const msg = String(e.message || '');
+    if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror') || msg.toLowerCase().includes('network')) {
+      flash('Netzwerk wird angewendet. Verbindung kann kurz abbrechen. Bitte Seite nach einigen Sekunden neu laden.');
+    } else {
+      flash(`Anwenden fehlgeschlagen: ${e.message}`);
+    }
+  } finally {
+    await loadNetworkConfig();
+    await loadStatus();
+    setTimeout(() => { loadNetworkConfig(); loadStatus(); }, 2000);
+    setTimeout(() => { loadNetworkConfig(); loadStatus(); }, 5000);
+  }
 }
 
 loadNetworkConfig();
@@ -215,6 +243,7 @@ async function loadUpdateStatus() {
   try {
     renderUpdateStatus(await api('/api/v1/system/update/status'));
   } catch (e) {
+    setUpdateButtonsDisabled(updateBusy);
     flash(`Update-Status konnte nicht geladen werden: ${e.message}`);
   }
 }
