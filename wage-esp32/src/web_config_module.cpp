@@ -34,7 +34,7 @@ static const uint32_t STANDBY_FRAME_MAX_MS = 1000U;
 static const uint32_t STANDBY_CHANGE_MIN_LIMIT_MS = 100U;
 static const uint32_t STANDBY_CHANGE_MAX_LIMIT_MS = 5000U;
 static const uint32_t WIFI_CONNECT_TIMEOUT_MIN_MS = 3000U;
-static const uint32_t WIFI_CONNECT_TIMEOUT_MAX_MS = 60000U;
+static const uint32_t WIFI_CONNECT_TIMEOUT_MAX_MS = 30000U;
 
 static void disableDebugModesNow() {
   activeConfig.oledDebugMode = false;
@@ -168,13 +168,13 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label><input type='checkbox' name='wifiStaEnabled' "); if (c.wifiStaEnabled) h += F("checked"); h += F("> Pi-WLAN verbinden aktiv</label>");
   h += F("<label>WLAN SSID</label><input name='wifiSsid' maxlength='31' value='"); h += htmlEscape(String(c.wifiSsid)); h += F("'><small>Name des Ziel-WLANs fuer den STA-Modus. Darf bei aktivem STA nicht leer sein.</small>");
   h += F("<label>WLAN Passwort</label><input name='wifiPassword' maxlength='63' value='"); h += htmlEscape(String(c.wifiPassword)); h += F("'><small>Optional je nach WLAN. Leerlassen nur bei offenem Netz. Aenderungen greifen erst nach Neustart.</small>");
-  h += F("<label>Verbindungs-Timeout (ms)</label><input type='number' min='3000' max='60000' name='wifiConnectTimeoutMs' value='"); h += String(c.wifiConnectTimeoutMs); h += F("'><small>Min: 3000, Max: 60000 ms. Zeitraum fuer den WLAN-Verbindungsversuch vor Fallback-AP.</small>");
+  h += F("<label>Verbindungs-Timeout (ms)</label><input type='number' min='3000' max='30000' name='wifiConnectTimeoutMs' value='"); h += String(c.wifiConnectTimeoutMs); h += F("'><small>Min: 3000, Max: 30000 ms. Danach startet der Fallback-AP.</small>");
   h += F("<label><input type='checkbox' name='wifiUseStaticIp' "); if (c.wifiUseStaticIp) h += F("checked"); h += F("> Statische IP verwenden</label>");
-  h += F("<label>ESP statische IP</label><input name='wifiLocalIp' maxlength='15' value='"); h += htmlEscape(String(c.wifiLocalIp)); h += F("'>");
-  h += F("<label>Gateway</label><input name='wifiGateway' maxlength='15' value='"); h += htmlEscape(String(c.wifiGateway)); h += F("'>");
-  h += F("<label>Subnetzmaske</label><input name='wifiSubnet' maxlength='15' value='"); h += htmlEscape(String(c.wifiSubnet)); h += F("'>");
-  h += F("<label>DNS 1</label><input name='wifiDns1' maxlength='15' value='"); h += htmlEscape(String(c.wifiDns1)); h += F("'>");
-  h += F("<label>DNS 2</label><input name='wifiDns2' maxlength='15' value='"); h += htmlEscape(String(c.wifiDns2)); h += F("'>");
+  h += F("<label>ESP statische IP</label><input name='wifiLocalIp' maxlength='15' value='"); h += htmlEscape(String(c.wifiLocalIp)); h += F("'><small>Nur bei statischer IP. Beispiel: 192.168.50.20.</small>");
+  h += F("<label>Gateway</label><input name='wifiGateway' maxlength='15' value='"); h += htmlEscape(String(c.wifiGateway)); h += F("'><small>Meist die Pi-IP, z.B. 192.168.50.1.</small>");
+  h += F("<label>Subnetzmaske</label><input name='wifiSubnet' maxlength='15' value='"); h += htmlEscape(String(c.wifiSubnet)); h += F("'><small>Meist 255.255.255.0.</small>");
+  h += F("<label>DNS 1</label><input name='wifiDns1' maxlength='15' value='"); h += htmlEscape(String(c.wifiDns1)); h += F("'><small>Meist die Pi-IP oder Gateway.</small>");
+  h += F("<label>DNS 2</label><input name='wifiDns2' maxlength='15' value='"); h += htmlEscape(String(c.wifiDns2)); h += F("'><small>Optional, z.B. 8.8.8.8.</small>");
   h += F("<label>Fallback-AP SSID</label><input name='configApSsid' maxlength='31' value='"); h += htmlEscape(String(c.configApSsid)); h += F("'><small>Access-Point Name fuer die Notfall-Konfiguration, wenn STA fehlschlaegt. Darf nicht leer sein.</small>");
   h += F("<label>Fallback-AP Passwort</label><input name='configApPassword' maxlength='63' value='"); h += htmlEscape(String(c.configApPassword)); h += F("'><small>8..63 Zeichen fuer WPA2; leer erlaubt nur offenen AP (nicht empfohlen). Netzwerk-Aenderungen werden gespeichert und erst nach Neustart aktiv.</small></fieldset>");
 
@@ -223,24 +223,24 @@ void webConfigLoadDefaults(RuntimeConfig& cfg) { memset(&cfg,0,sizeof(cfg));
   cfg.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON;
   cfg.ring2Enabled=DEFAULT_RING2_ENABLED; cfg.ring2BrightnessPercent=DEFAULT_RING2_BRIGHTNESS_PERCENT;
   cfg.ring2StandbyBrightnessPercent=DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT; cfg.ring2DebugAllOn=DEFAULT_RING2_DEBUG_ALL_ON;
-  strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1);
+  strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1); cfg.deviceId[sizeof(cfg.deviceId)-1] = '\0';
   cfg.wifiStaEnabled=WIFI_STA_ENABLED;
-  strncpy(cfg.wifiSsid, WIFI_SSID, sizeof(cfg.wifiSsid)-1);
-  strncpy(cfg.wifiPassword, WIFI_PASSWORD, sizeof(cfg.wifiPassword)-1);
+  strncpy(cfg.wifiSsid, WIFI_SSID, sizeof(cfg.wifiSsid)-1); cfg.wifiSsid[sizeof(cfg.wifiSsid)-1] = '\0';
+  strncpy(cfg.wifiPassword, WIFI_PASSWORD, sizeof(cfg.wifiPassword)-1); cfg.wifiPassword[sizeof(cfg.wifiPassword)-1] = '\0';
   cfg.wifiConnectTimeoutMs=WIFI_CONNECT_TIMEOUT_MS;
   cfg.wifiUseStaticIp=WIFI_USE_STATIC_IP;
-  strncpy(cfg.wifiLocalIp, WIFI_LOCAL_IP.toString().c_str(), sizeof(cfg.wifiLocalIp)-1);
-  strncpy(cfg.wifiGateway, WIFI_GATEWAY.toString().c_str(), sizeof(cfg.wifiGateway)-1);
-  strncpy(cfg.wifiSubnet, WIFI_SUBNET.toString().c_str(), sizeof(cfg.wifiSubnet)-1);
-  strncpy(cfg.wifiDns1, WIFI_DNS1.toString().c_str(), sizeof(cfg.wifiDns1)-1);
-  strncpy(cfg.wifiDns2, WIFI_DNS2.toString().c_str(), sizeof(cfg.wifiDns2)-1);
-  strncpy(cfg.configApSsid, CONFIG_AP_SSID, sizeof(cfg.configApSsid)-1);
-  strncpy(cfg.configApPassword, CONFIG_AP_PASSWORD, sizeof(cfg.configApPassword)-1);
+  strncpy(cfg.wifiLocalIp, WIFI_LOCAL_IP.toString().c_str(), sizeof(cfg.wifiLocalIp)-1); cfg.wifiLocalIp[sizeof(cfg.wifiLocalIp)-1] = '\0';
+  strncpy(cfg.wifiGateway, WIFI_GATEWAY.toString().c_str(), sizeof(cfg.wifiGateway)-1); cfg.wifiGateway[sizeof(cfg.wifiGateway)-1] = '\0';
+  strncpy(cfg.wifiSubnet, WIFI_SUBNET.toString().c_str(), sizeof(cfg.wifiSubnet)-1); cfg.wifiSubnet[sizeof(cfg.wifiSubnet)-1] = '\0';
+  strncpy(cfg.wifiDns1, WIFI_DNS1.toString().c_str(), sizeof(cfg.wifiDns1)-1); cfg.wifiDns1[sizeof(cfg.wifiDns1)-1] = '\0';
+  strncpy(cfg.wifiDns2, WIFI_DNS2.toString().c_str(), sizeof(cfg.wifiDns2)-1); cfg.wifiDns2[sizeof(cfg.wifiDns2)-1] = '\0';
+  strncpy(cfg.configApSsid, CONFIG_AP_SSID, sizeof(cfg.configApSsid)-1); cfg.configApSsid[sizeof(cfg.configApSsid)-1] = '\0';
+  strncpy(cfg.configApPassword, CONFIG_AP_PASSWORD, sizeof(cfg.configApPassword)-1); cfg.configApPassword[sizeof(cfg.configApPassword)-1] = '\0';
   cfg.externalEnabled=EXTERNAL_INTERFACE_ENABLED_DEFAULT;
-  strncpy(cfg.externalHost, EXTERNAL_TARGET_HOST_DEFAULT, sizeof(cfg.externalHost)-1);
+  strncpy(cfg.externalHost, EXTERNAL_TARGET_HOST_DEFAULT, sizeof(cfg.externalHost)-1); cfg.externalHost[sizeof(cfg.externalHost)-1] = '\0';
   cfg.externalPort=EXTERNAL_TARGET_PORT_DEFAULT;
-  strncpy(cfg.externalApiPath, EXTERNAL_API_PATH_DEFAULT, sizeof(cfg.externalApiPath)-1);
-  strncpy(cfg.externalApiKey, EXTERNAL_API_KEY_DEFAULT, sizeof(cfg.externalApiKey)-1);}
+  strncpy(cfg.externalApiPath, EXTERNAL_API_PATH_DEFAULT, sizeof(cfg.externalApiPath)-1); cfg.externalApiPath[sizeof(cfg.externalApiPath)-1] = '\0';
+  strncpy(cfg.externalApiKey, EXTERNAL_API_KEY_DEFAULT, sizeof(cfg.externalApiKey)-1); cfg.externalApiKey[sizeof(cfg.externalApiKey)-1] = '\0';}
 
 void webConfigSaveToPrefs(const RuntimeConfig& c){
   prefs.begin("cfg", false);
@@ -324,8 +324,8 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   String wSsid=prefs.getString("wSsid", cfg.wifiSsid); strncpy(cfg.wifiSsid, wSsid.c_str(), sizeof(cfg.wifiSsid)-1); cfg.wifiSsid[sizeof(cfg.wifiSsid)-1] = '\0';
   String wPass=prefs.getString("wPass", cfg.wifiPassword); strncpy(cfg.wifiPassword, wPass.c_str(), sizeof(cfg.wifiPassword)-1); cfg.wifiPassword[sizeof(cfg.wifiPassword)-1] = '\0';
   cfg.wifiConnectTimeoutMs=prefs.getUInt("wTout", cfg.wifiConnectTimeoutMs);
-  if (cfg.wifiConnectTimeoutMs < WIFI_CONNECT_TIMEOUT_MIN_MS) cfg.wifiConnectTimeoutMs = WIFI_CONNECT_TIMEOUT_MIN_MS;
-  if (cfg.wifiConnectTimeoutMs > WIFI_CONNECT_TIMEOUT_MAX_MS) cfg.wifiConnectTimeoutMs = WIFI_CONNECT_TIMEOUT_MAX_MS;
+  if (cfg.wifiConnectTimeoutMs < 3000) cfg.wifiConnectTimeoutMs = 3000;
+  if (cfg.wifiConnectTimeoutMs > 30000) cfg.wifiConnectTimeoutMs = 30000;
   cfg.wifiUseStaticIp=prefs.getBool("wStIp", cfg.wifiUseStaticIp);
   String wLip=prefs.getString("wLip", cfg.wifiLocalIp); strncpy(cfg.wifiLocalIp, wLip.c_str(), sizeof(cfg.wifiLocalIp)-1); cfg.wifiLocalIp[sizeof(cfg.wifiLocalIp)-1] = '\0';
   String wGw=prefs.getString("wGw", cfg.wifiGateway); strncpy(cfg.wifiGateway, wGw.c_str(), sizeof(cfg.wifiGateway)-1); cfg.wifiGateway[sizeof(cfg.wifiGateway)-1] = '\0';
@@ -465,10 +465,15 @@ void webConfigSetup() {
     if (!errMsg.length() && n.standbyValueMin > n.standbyValueMax) errMsg = "Standby Value Min darf nicht groesser als Max sein.";
     if (!errMsg.length() && !(n.oledI2cClockHz == 100000 || n.oledI2cClockHz == 200000 || n.oledI2cClockHz == 400000)) errMsg = "oledI2cClockHz muss 100000, 200000 oder 400000 sein.";
     if (!errMsg.length() && (n.objectPresentG <= 0 || n.emptyThresholdG < 0 || n.retareTolG <= 0 || n.standbyWakeThresholdG <= 0 || n.oledScaleValue <= 0)) errMsg = "Gramm- und OLED-Skalierungswerte muessen positiv und sinnvoll sein.";
-    if (!errMsg.length() && (n.wifiConnectTimeoutMs < WIFI_CONNECT_TIMEOUT_MIN_MS || n.wifiConnectTimeoutMs > WIFI_CONNECT_TIMEOUT_MAX_MS)) errMsg = "wifiConnectTimeoutMs muss 3000..60000 ms sein.";
+    if (!errMsg.length() && (n.wifiConnectTimeoutMs < 3000 || n.wifiConnectTimeoutMs > 30000)) {
+      errMsg = "WLAN Timeout muss 3000..30000 ms sein.";
+    }
     if (!errMsg.length() && strlen(n.configApSsid) == 0) errMsg = "Fallback-AP SSID darf nicht leer sein.";
+    if (!errMsg.length() && strlen(n.configApPassword) > 0 && strlen(n.configApPassword) < 8) {
+      errMsg = "Fallback-AP Passwort muss leer oder mindestens 8 Zeichen lang sein.";
+    }
     const size_t apPassLen = strlen(n.configApPassword);
-    if (!errMsg.length() && apPassLen > 0 && (apPassLen < 8 || apPassLen > 63)) errMsg = "Fallback-AP Passwort muss leer oder 8..63 Zeichen lang sein.";
+    if (!errMsg.length() && apPassLen > 63) errMsg = "Fallback-AP Passwort muss leer oder 8..63 Zeichen lang sein.";
     if (!errMsg.length() && n.wifiStaEnabled && strlen(n.wifiSsid) == 0) errMsg = "WLAN SSID darf bei aktivem STA nicht leer sein.";
     if (!errMsg.length() && n.wifiUseStaticIp) { IPAddress ip; if (!parseIpAddress(n.wifiLocalIp, ip) || !parseIpAddress(n.wifiGateway, ip) || !parseIpAddress(n.wifiSubnet, ip) || !parseIpAddress(n.wifiDns1, ip) || !parseIpAddress(n.wifiDns2, ip)) errMsg = "Ungueltige statische IP-Konfiguration."; }
     if (!errMsg.length() && n.externalPort == 0) errMsg = "externalPort muss 1..65535 sein.";
