@@ -176,3 +176,25 @@ Prüft Health, Personen, Aktivierung, Laufannahme, Duplikaterkennung, Runs, Stat
 8. `GET /api/v1/status` auf Pflichtfelder prüfen
 9. `/`, `/runs`, `/persons`, `/status`, `/docs` im Browser prüfen
 10. `scripts/test_api.sh` erfolgreich ausführen
+
+
+## Netzwerk-Konfiguration (AP oder Haus-WLAN)
+- Neue Seite: `/config` (Navigation: **Konfiguration**)
+- Modus **AP** (Standard): SSID `wage-net`, Pi-IP `192.168.50.1`, DHCP-Range `192.168.50.50-192.168.50.150`
+- API-Ziel für ESP im AP-Modus: `http://192.168.50.1:8000/api/v1/runs`
+- Modus **Client**: Pi verbindet sich mit Haus-WLAN (für Updates/Internet/Administration)
+- Speichern über `POST /api/v1/config/network`, Anwenden über `POST /api/v1/config/network/apply`
+- Status über `GET /api/v1/config/network/status`
+- Passwörter werden in GET-Antworten nie im Klartext ausgegeben, nur `*_password_set`
+- Anwenden benötigt `nmcli` (NetworkManager).
+
+### Risiken beim Anwenden
+- Netzwerkwechsel kann die aktuelle Webverbindung kurzzeitig trennen.
+- Nach Änderungen wird ein Neustart empfohlen.
+
+### Fehlerbehebung Netzwerk
+- `nmcli fehlt`: NetworkManager installieren/aktivieren (`sudo apt install network-manager`).
+- `WLAN-Interface nicht gefunden`: `nmcli device status` prüfen, WLAN-Hardware/Driver prüfen.
+- `AP startet nicht`: `journalctl -u NetworkManager -f` und `pi/logs/network_apply.log` prüfen.
+- `Client verbindet nicht`: SSID/Passwort kontrollieren, Reichweite/Kanal prüfen.
+- `Pi nicht mehr erreichbar`: per LAN einloggen oder lokal am Pi auf `/config` zurückstellen.

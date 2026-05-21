@@ -48,3 +48,15 @@ class PersonUpdate(BaseModel):
         if not value:
             raise ValueError("Name darf nicht leer sein")
         return value
+
+
+class NetworkConfigIn(BaseModel):
+    network_mode: Optional[str] = None
+    ap_ssid: Optional[str] = None
+    ap_password: Optional[str] = None
+    ap_ip: Optional[str] = None
+    ap_dhcp_start: Optional[str] = None
+    ap_dhcp_end: Optional[str] = None
+    client_ssid: Optional[str] = None
+    client_password: Optional[str] = None
+    client_dhcp_enabled: Optional[bool] = None

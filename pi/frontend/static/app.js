@@ -147,3 +147,36 @@ loadDashboard();
 loadStatus();
 loadPersons();
 loadRuns();
+
+
+async function loadNetworkConfig() {
+  if (!byId("ap-ssid")) return;
+  try {
+    const [cfg, status] = await Promise.all([api('/api/v1/config/network'), api('/api/v1/config/network/status')]);
+    (document.querySelector(`input[name="network-mode"][value="${cfg.network_mode}"]`) || {}).checked = true;
+    byId('ap-ssid').value = cfg.ap_ssid || '';
+    byId('ap-ip').value = cfg.ap_ip || '';
+    byId('ap-dhcp-start').value = cfg.ap_dhcp_start || '';
+    byId('ap-dhcp-end').value = cfg.ap_dhcp_end || '';
+    byId('client-ssid').value = cfg.client_ssid || '';
+    byId('network-status-grid').innerHTML = `<div class="card"><h3>Aktuell</h3><div>Modus: ${esc(cfg.network_mode)}</div><div>Pi-IP: ${esc(cfg.current_pi_ip)}</div><div>API-Ziel: ${esc(cfg.api_target)}</div><div>Status: ${esc(status.status)}</div></div>`;
+  } catch (e) { flash(`Konfiguration konnte nicht geladen werden: ${e.message}`); }
+}
+
+async function saveNetworkConfig() {
+  const mode = document.querySelector('input[name="network-mode"]:checked')?.value || 'ap';
+  const payload = {
+    network_mode: mode, ap_ssid: byId('ap-ssid').value, ap_password: byId('ap-password').value, ap_ip: byId('ap-ip').value,
+    ap_dhcp_start: byId('ap-dhcp-start').value, ap_dhcp_end: byId('ap-dhcp-end').value, client_ssid: byId('client-ssid').value,
+    client_password: byId('client-password').value, client_dhcp_enabled: true
+  };
+  try { await api('/api/v1/config/network', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); byId('ap-password').value=''; byId('client-password').value=''; flash('Netzwerk-Konfiguration gespeichert.', true);}
+  catch (e) { flash(`Speichern fehlgeschlagen: ${e.message}`); }
+}
+
+async function applyNetworkConfig() {
+  try { const d=await api('/api/v1/config/network/apply', {method:'POST'}); flash(d.status || 'Angewendet.', d.ok); }
+  catch (e) { flash(`Anwenden fehlgeschlagen: ${e.message}`); }
+}
+
+loadNetworkConfig();

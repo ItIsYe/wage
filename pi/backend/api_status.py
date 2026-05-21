@@ -6,6 +6,7 @@ from fastapi import APIRouter
 
 from .config import OFFLINE_THRESHOLD_SECONDS
 from .database import db_cursor
+from .api_network_config import _read_config
 
 router = APIRouter(prefix="/api/v1/status", tags=["status"])
 
@@ -45,6 +46,9 @@ def status():
             online = False
 
     ip = get_pi_ip()
+    net = _read_config()
+    network_mode = net.get("network_mode", "ap")
+    api_target_for_esp = f"http://{net.get('ap_ip','192.168.50.1')}:8000/api/v1/runs" if network_mode == "ap" else f"http://{ip}:8000/api/v1/runs"
     return {
         "api_status": app.get("api_status", "ok"),
         "database_status": app.get("database_status", "ok"),
@@ -61,4 +65,7 @@ def status():
         "last_run_received_at": app.get("last_run_received_at"),
         "last_event": app.get("last_event"),
         "last_device": dict(last_device) if last_device else None,
+        "network_mode": network_mode,
+        "ap_ssid": net.get("ap_ssid", "wage-net"),
+        "api_target_for_esp": api_target_for_esp,
     }

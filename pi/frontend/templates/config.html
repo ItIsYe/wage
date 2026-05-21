@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Konfiguration / Netzwerk</h1>
+<div id="msg" class="msg"></div>
+<div class="card warn">⚠️ Netzwerkänderungen können die Verbindung kurz trennen.</div>
+<div id="network-status-grid" class="grid"></div>
+<div class="card">
+  <h3>Modus</h3>
+  <div class="toolbar">
+    <label><input type="radio" name="network-mode" value="ap" checked> AP-Modus</label>
+    <label><input type="radio" name="network-mode" value="client"> Haus-WLAN-Client</label>
+  </div>
+  <h3>AP-Einstellungen</h3>
+  <div class="grid two">
+    <input id="ap-ssid" placeholder="AP SSID">
+    <input id="ap-password" type="password" placeholder="AP Passwort (leer = behalten)">
+    <input id="ap-ip" placeholder="AP IP">
+    <input id="ap-dhcp-start" placeholder="DHCP Start">
+    <input id="ap-dhcp-end" placeholder="DHCP Ende">
+  </div>
+  <h3>Haus-WLAN</h3>
+  <div class="grid two">
+    <input id="client-ssid" placeholder="WLAN SSID">
+    <input id="client-password" type="password" placeholder="WLAN Passwort (leer = behalten)">
+  </div>
+  <div class="toolbar"><button onclick="saveNetworkConfig()">Speichern</button><button onclick="applyNetworkConfig()">Jetzt anwenden</button></div>
+  <div class="msg msg-ok">Neustart empfohlen nach Netzwechsel.</div>
+</div>
+{% endblock %}
