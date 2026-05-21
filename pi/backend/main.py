@@ -11,6 +11,7 @@ from .api_persons import router as persons_router
 from .api_runs import router as runs_router
 from .api_status import router as status_router
 from .api_network_config import router as network_config_router
+from .api_update import router as update_router
 from .config import APP_VERSION, PI_ROOT
 from .database import get_connection, init_db
 
@@ -44,6 +45,7 @@ app.include_router(runs_router)
 app.include_router(persons_router)
 app.include_router(status_router)
 app.include_router(network_config_router)
+app.include_router(update_router)
 
 
 @app.get("/", response_class=HTMLResponse)

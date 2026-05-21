@@ -180,3 +180,72 @@ async function applyNetworkConfig() {
 }
 
 loadNetworkConfig();
+
+let updateBusy = false;
+
+function setUpdateButtonsDisabled(disabled) {
+  const checkBtn = byId('btn-update-check');
+  const applyBtn = byId('btn-update-apply');
+  if (checkBtn) checkBtn.disabled = disabled;
+  if (applyBtn) applyBtn.disabled = disabled;
+}
+
+function renderUpdateStatus(data) {
+  const root = byId('update-status-grid');
+  const hint = byId('update-hint');
+  if (!root || !hint) return;
+  const files = (data.changed_pi_files || []).map((f) => `<li>${esc(f)}</li>`).join('') || '<li>-</li>';
+  const allowed = !!data.allowed;
+  root.innerHTML = `<div class="card"><div>Update-Scope: ${esc(data.update_scope || 'pi-only')}</div><div>Netzwerkmodus: ${esc(data.network_mode || '-')}</div><div>Update erlaubt: ${allowed ? 'ja' : 'nein'}</div><div>Branch: ${esc(data.current_branch || '-')}</div><div>Lokaler Commit: ${esc(data.local_commit || '-')}</div><div>Remote Commit: ${esc(data.remote_commit || '-')}</div><div>Pi-Änderungen verfügbar: ${(data.pi_changes_available ? 'ja' : 'nein')}</div><div>Letzter Update-Status: ${esc(data.last_update_status || '-')}</div><div>Letzter Update-Zeitpunkt: ${esc(data.last_update_at || '-')}</div><div>Geänderte Pi-Dateien:<ul>${files}</ul></div></div>`;
+  if (!allowed) {
+    hint.textContent = 'Bitte zuerst auf Haus-WLAN-Client wechseln.';
+    hint.className = 'msg msg-err';
+  } else if (updateBusy) {
+    hint.textContent = 'Update läuft, bitte warten...';
+    hint.className = 'msg msg-ok';
+  } else {
+    hint.textContent = '';
+    hint.className = 'msg';
+  }
+  setUpdateButtonsDisabled(updateBusy || !allowed);
+}
+
+async function loadUpdateStatus() {
+  if (!byId('update-status-grid')) return;
+  try {
+    renderUpdateStatus(await api('/api/v1/system/update/status'));
+  } catch (e) {
+    flash(`Update-Status konnte nicht geladen werden: ${e.message}`);
+  }
+}
+
+async function checkPiUpdates() {
+  updateBusy = true;
+  setUpdateButtonsDisabled(true);
+  try {
+    const data = await api('/api/v1/system/update/check', {method: 'POST'});
+    renderUpdateStatus(data);
+    flash(data.pi_changes_available ? 'Pi-Updates gefunden.' : 'Keine Pi-Updates vorhanden.', true);
+  } catch (e) {
+    flash(`Update-Prüfung fehlgeschlagen: ${e.message}`);
+  } finally {
+    updateBusy = false;
+    await loadUpdateStatus();
+  }
+}
+
+async function applyPiUpdate() {
+  updateBusy = true;
+  setUpdateButtonsDisabled(true);
+  try {
+    const data = await api('/api/v1/system/update/apply', {method: 'POST'});
+    flash(data.status || 'Pi-Update durchgeführt.', true);
+  } catch (e) {
+    flash(`Pi-Update fehlgeschlagen: ${e.message}`);
+  } finally {
+    updateBusy = false;
+    await loadUpdateStatus();
+  }
+}
+
+loadUpdateStatus();
