@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .api_network_config import DEFAULTS
+from .config_defaults import DEFAULTS
 from .database import db_cursor
 
 CONFIG_JSON_PATH = Path(__file__).resolve().parents[1] / "data" / "network_config.json"

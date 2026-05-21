@@ -8,26 +8,13 @@ import subprocess
 
 from fastapi import APIRouter
 
+from .config_defaults import DEFAULTS
 from .config_migration import ensure_config_defaults
 from .database import db_cursor
 from .schemas import NetworkConfigIn
 
 router = APIRouter(prefix="/api/v1/config/network", tags=["network-config"])
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "network_apply.sh"
-DEFAULTS = {
-    "network_mode": "ap",
-    "ap_ssid": "wage-net",
-    "ap_password": "",
-    "ap_ip": "192.168.50.1",
-    "ap_dhcp_start": "192.168.50.50",
-    "ap_dhcp_end": "192.168.50.150",
-    "client_ssid": "",
-    "client_password": "",
-    "client_dhcp_enabled": "true",
-    "last_network_apply_status": "never",
-    "last_network_apply_at": "",
-}
-
 
 def _get_pi_ip() -> str:
     try:

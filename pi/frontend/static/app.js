@@ -222,12 +222,22 @@ function renderUpdateStatus(data) {
   const root = byId('update-status-grid');
   const hint = byId('update-hint');
   if (!root || !hint) return;
-  const files = (data.changed_pi_files || []).map((f) => `<li>${esc(f)}</li>`).join('') || '<li>-</li>';
+  const changed = data.changed_pi_files || [];
+  const ignoredLocal = data.ignored_local_runtime_files || [];
+  const blockingLocal = data.blocking_local_code_files || [];
+  const ignoredRemote = data.ignored_remote_runtime_files || [];
+  const list = (arr) => arr.map((f) => `<li>${esc(f)}</li>`).join('') || '<li>-</li>';
   const allowed = !!data.allowed;
-  root.innerHTML = `<div class="card"><div>Update-Scope: ${esc(data.update_scope || 'pi-only')}</div><div>Netzwerkmodus: ${esc(data.network_mode || '-')}</div><div>Update erlaubt: ${allowed ? 'ja' : 'nein'}</div><div>Branch: ${esc(data.current_branch || '-')}</div><div>Lokaler Commit: ${esc(data.local_commit || '-')}</div><div>Remote Commit: ${esc(data.remote_commit || '-')}</div><div>Pi-Änderungen verfügbar: ${(data.pi_changes_available ? 'ja' : 'nein')}</div><div>Letzter Update-Status: ${esc(data.last_update_status || '-')}</div><div>Letzter Update-Zeitpunkt: ${esc(data.last_update_at || '-')}</div><div>Geänderte Pi-Dateien:<ul>${files}</ul></div></div>`;
+  root.innerHTML = `<div class="card"><div>Update-Scope: ${esc(data.update_scope || 'pi-only')}</div><div>Netzwerkmodus: ${esc(data.network_mode || '-')}</div><div>Update erlaubt: ${allowed ? 'ja' : 'nein'}</div><div>Branch: ${esc(data.current_branch || '-')}</div><div>Lokaler Commit: ${esc(data.local_commit || '-')}</div><div>Remote Commit: ${esc(data.remote_commit || '-')}</div><div>Pi-Änderungen verfügbar: ${(data.pi_changes_available ? 'ja' : 'nein')}</div><div>Letzter Update-Status: ${esc(data.last_update_status || '-')}</div><div>Letzter Update-Zeitpunkt: ${esc(data.last_update_at || '-')}</div><div>Geänderte Pi-Dateien:<ul>${list(changed)}</ul></div><div>Ignorierte lokale Runtime-Dateien:<ul>${list(ignoredLocal)}</ul></div><div>Blockierende lokale Code-Dateien:<ul>${list(blockingLocal)}</ul></div><div>Ignorierte Remote-Runtime-Dateien:<ul>${list(ignoredRemote)}</ul></div></div>`;
   if (!allowed) {
     hint.textContent = 'Bitte zuerst auf Haus-WLAN-Client wechseln.';
     hint.className = 'msg msg-err';
+  } else if (blockingLocal.length > 0) {
+    hint.textContent = 'Lokale Code-Änderungen blockieren das Update.';
+    hint.className = 'msg msg-err';
+  } else if (ignoredLocal.length > 0) {
+    hint.textContent = 'Lokale Betriebsdaten werden geschützt und beim Update ignoriert.';
+    hint.className = 'msg msg-ok';
   } else if (updateBusy) {
     hint.textContent = 'Update läuft, bitte warten...';
     hint.className = 'msg msg-ok';
@@ -235,7 +245,7 @@ function renderUpdateStatus(data) {
     hint.textContent = '';
     hint.className = 'msg';
   }
-  setUpdateButtonsDisabled(updateBusy || !allowed);
+  setUpdateButtonsDisabled(updateBusy || !allowed || blockingLocal.length > 0);
 }
 
 async function loadUpdateStatus() {
