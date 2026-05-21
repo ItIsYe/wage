@@ -198,3 +198,35 @@ Prüft Health, Personen, Aktivierung, Laufannahme, Duplikaterkennung, Runs, Stat
 - `AP startet nicht`: `journalctl -u NetworkManager -f` und `pi/logs/network_apply.log` prüfen.
 - `Client verbindet nicht`: SSID/Passwort kontrollieren, Reichweite/Kanal prüfen.
 - `Pi nicht mehr erreichbar`: per LAN einloggen oder lokal am Pi auf `/config` zurückstellen.
+
+## Pi-Updates (nur `/pi`)
+
+### Manuelles Update nur für `/pi`
+```bash
+git fetch origin beta
+git checkout origin/beta -- pi
+cd pi
+source .venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart wage-pi-backend wage-pi-oled wage-pi-leds
+```
+
+### Web-Update im `/config`-Bereich
+- Der Web-Updater aktualisiert **ausschließlich** Dateien unter `/pi`.
+- Waagen-/ESP32-Dateien (z. B. `wage-esp32/`) werden nicht aktualisiert.
+- Es wird **kein** vollständiges `git pull` für das gesamte Repository ausgeführt.
+- Update ist nur erlaubt, wenn der Pi im Haus-WLAN-Client-Modus läuft (`network_mode=client`).
+- Im AP-Modus ist das Update gesperrt, damit der Pi während des WLAN-Wechsels/Internetzugriffs nicht in einen instabilen Zustand gerät.
+
+### API-Endpunkte für Update
+- `GET /api/v1/system/update/status`
+- `POST /api/v1/system/update/check`
+- `POST /api/v1/system/update/apply`
+
+### Fehlerbehebung Update
+- `git fehlt`: Git installieren und im PATH verfügbar machen.
+- `kein Internet`: Verbindung im Client-Modus prüfen.
+- `AP-Modus aktiv`: auf Haus-WLAN-Client wechseln, dann erneut prüfen.
+- `lokale Änderungen unter /pi`: Änderungen committen oder verwerfen.
+- `systemctl restart braucht Rechte`: Benutzerrechte/Sudoers für Services prüfen.
+- `Backend startet nach Update neu`: kurz warten und Seite neu laden.

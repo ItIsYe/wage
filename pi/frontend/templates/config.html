@@ -26,4 +26,14 @@
   <div class="toolbar"><button onclick="saveNetworkConfig()">Speichern</button><button onclick="applyNetworkConfig()">Jetzt anwenden</button></div>
   <div class="msg msg-ok">Neustart empfohlen nach Netzwechsel.</div>
 </div>
+
+<div class="card">
+  <h2>Pi-System-Update</h2>
+  <div id="update-hint" class="msg"></div>
+  <div id="update-status-grid" class="grid"></div>
+  <div class="toolbar">
+    <button id="btn-update-check" onclick="checkPiUpdates()">Nach Pi-Updates suchen</button>
+    <button id="btn-update-apply" onclick="applyPiUpdate()">Pi-Update installieren</button>
+  </div>
+</div>
 {% endblock %}
