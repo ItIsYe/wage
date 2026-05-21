@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from .api_persons import router as persons_router
 from .api_runs import router as runs_router
 from .api_status import router as status_router
+from .api_network_config import router as network_config_router
 from .config import APP_VERSION, PI_ROOT
 from .database import get_connection, init_db
 
@@ -42,6 +43,7 @@ def health():
 app.include_router(runs_router)
 app.include_router(persons_router)
 app.include_router(status_router)
+app.include_router(network_config_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -62,3 +64,8 @@ def persons_page(request: Request):
 @app.get("/status", response_class=HTMLResponse)
 def status_page(request: Request):
     return templates.TemplateResponse("status.html", {"request": request})
+
+
+@app.get("/config", response_class=HTMLResponse)
+def config_page(request: Request):
+    return templates.TemplateResponse("config.html", {"request": request})
