@@ -230,3 +230,15 @@ sudo systemctl restart wage-pi-backend wage-pi-oled wage-pi-leds
 - `lokale Änderungen unter /pi`: Änderungen committen oder verwerfen.
 - `systemctl restart braucht Rechte`: Benutzerrechte/Sudoers für Services prüfen.
 - `Backend startet nach Update neu`: kurz warten und Seite neu laden.
+
+### Schutz lokaler Runtime-Daten
+- Geschützte Pfade werden **nie** durch den Updater überschrieben/zurückgesetzt: `pi/data/`, `pi/logs/`, `pi/**/__pycache__/`, `pi/**/*.pyc`.
+- Insbesondere bleiben `pi/data/wage_pi.sqlite3`, `pi/data/network_config.json` und `pi/logs/network_apply.log` erhalten.
+- Runtime-Dateien blockieren Updates nicht mehr; nur echte lokale Code-Änderungen unter den Update-Pfaden blockieren weiterhin.
+- Update-Reichweite bleibt auf: `pi/backend/`, `pi/frontend/`, `pi/oled/`, `pi/leds/`, `pi/scripts/`, `pi/systemd/`, `pi/requirements.txt`, `pi/README.md`.
+
+### Config-Migration (sicher, ohne Überschreiben)
+- Beim Backend-Start, nach `POST /api/v1/config/network` und nach erfolgreichem Pi-Update wird `ensure_config_defaults()` ausgeführt.
+- Fehlende Konfigurations-Keys werden aus Code-Defaults ergänzt, vorhandene lokale Werte bleiben unverändert.
+- `network_config.json` wird lokal aus `app_state` neu erzeugt (ohne Klartext-Passwörter, nur `*_password_set` Flags).
+- Damit bleiben bestehende WLAN-/AP-/Client-Einstellungen erhalten, neue Variablen werden automatisch ergänzt.
