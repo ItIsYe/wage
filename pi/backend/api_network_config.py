@@ -2,20 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-import json
 import shutil
 import socket
 import subprocess
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
+from .config_migration import ensure_config_defaults
 from .database import db_cursor
 from .schemas import NetworkConfigIn
 
 router = APIRouter(prefix="/api/v1/config/network", tags=["network-config"])
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "network_apply.sh"
-CONFIG_JSON_PATH = Path(__file__).resolve().parents[1] / "data" / "network_config.json"
-
 DEFAULTS = {
     "network_mode": "ap",
     "ap_ssid": "wage-net",
@@ -73,16 +71,9 @@ def _read_config() -> dict[str, str]:
         return cfg
 
 
-def _store_json(cfg: dict[str, str]) -> None:
-    CONFIG_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {k: v for k, v in cfg.items() if k not in {"ap_password", "client_password"}}
-    payload["ap_password_set"] = bool(cfg.get("ap_password"))
-    payload["client_password_set"] = bool(cfg.get("client_password"))
-    CONFIG_JSON_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
 @router.get("")
 def get_network_config():
+    ensure_config_defaults()
     return _to_public(_read_config())
 
 
@@ -102,8 +93,8 @@ def set_network_config(payload: NetworkConfigIn):
             cur.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES (?, ?)", (k, default))
             cur.execute("UPDATE app_state SET value=? WHERE key=?", (cfg.get(k, default), k))
 
-    _store_json(cfg)
-    return {"ok": True, "config": _to_public(cfg), "restart_recommended": True}
+    ensure_config_defaults()
+    return {"ok": True, "config": _to_public(_read_config()), "restart_recommended": True}
 
 
 @router.post("/apply")

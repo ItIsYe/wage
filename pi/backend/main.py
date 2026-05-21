@@ -13,6 +13,7 @@ from .api_status import router as status_router
 from .api_network_config import router as network_config_router
 from .api_update import router as update_router
 from .config import APP_VERSION, PI_ROOT
+from .config_migration import ensure_config_defaults
 from .database import get_connection, init_db
 
 app = FastAPI(title="wage-pi", version=APP_VERSION)
@@ -23,6 +24,7 @@ templates = Jinja2Templates(directory=str(PI_ROOT / "frontend" / "templates"))
 @app.on_event("startup")
 def startup():
     init_db()
+    ensure_config_defaults()
 
 
 @app.get("/api/v1/health")

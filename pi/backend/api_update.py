@@ -7,6 +7,7 @@ import subprocess
 
 from fastapi import APIRouter, HTTPException
 
+from .config_migration import ensure_config_defaults
 from .database import db_cursor
 
 router = APIRouter(prefix="/api/v1/system/update", tags=["system-update"])
@@ -78,6 +79,19 @@ def _changed_pi_files(local_commit: str, remote_commit: str) -> list[str]:
     return [line.strip() for line in proc.stdout.splitlines() if line.strip().startswith("pi/")]
 
 
+def _is_protected_runtime_path(path: str) -> bool:
+    protected_exact = {"pi/data/wage_pi.sqlite3", "pi/data/network_config.json"}
+    if path in protected_exact:
+        return True
+    if path.startswith("pi/logs/"):
+        return True
+    return path.startswith("pi/data/") and (path.endswith(".sqlite3-shm") or path.endswith(".sqlite3-wal"))
+
+
+def _filter_update_paths(paths: list[str]) -> list[str]:
+    return [p for p in paths if not _is_protected_runtime_path(p)]
+
+
 def _persist_update_state(status: str, local_commit: str, remote_commit: str, changed: list[str]) -> str:
     now = datetime.now(timezone.utc).isoformat()
     with db_cursor() as (_, cur):
@@ -103,7 +117,7 @@ def update_status():
     local_commit = _git_value(["rev-parse", "HEAD"])
     remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
     branch = _git_value(["rev-parse", "--abbrev-ref", "HEAD"], fallback="unknown")
-    changed = _changed_pi_files(local_commit, remote_commit)
+    changed = _filter_update_paths(_changed_pi_files(local_commit, remote_commit))
     return {
         "ok": True,
         "allowed": True,
@@ -129,7 +143,7 @@ def update_check():
     local_commit = _git_value(["rev-parse", "HEAD"])
     remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
     branch = _git_value(["rev-parse", "--abbrev-ref", "HEAD"], fallback="unknown")
-    changed = _changed_pi_files(local_commit, remote_commit)
+    changed = _filter_update_paths(_changed_pi_files(local_commit, remote_commit))
     return {
         "ok": True,
         "allowed": True,
@@ -152,7 +166,7 @@ def update_apply():
     _fetch_origin_beta()
     local_commit = _git_value(["rev-parse", "HEAD"])
     remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
-    changed = _changed_pi_files(local_commit, remote_commit)
+    changed = _filter_update_paths(_changed_pi_files(local_commit, remote_commit))
     if not changed:
         at = _persist_update_state("kein update nötig", local_commit, remote_commit, [])
         return {"ok": True, "status": "kein update nötig", "applied_at": at, "pi_changes_available": False, "changed_pi_files": []}
@@ -163,9 +177,11 @@ def update_apply():
     if local_changes.stdout.strip():
         raise HTTPException(status_code=400, detail="Lokale Änderungen unter /pi vorhanden. Bitte zuerst committen oder verwerfen.")
 
-    checkout = _run(["git", "checkout", f"origin/{TARGET_BRANCH}", "--", "pi"], cwd=REPO_PATH)
+    checkout = _run(["git", "checkout", f"origin/{TARGET_BRANCH}", "--", *changed], cwd=REPO_PATH)
     if checkout.returncode != 0:
         raise HTTPException(status_code=500, detail=f"pi checkout fehlgeschlagen: {checkout.stderr.strip() or checkout.stdout.strip()}")
+
+    ensure_config_defaults()
 
     pip_proc = _run([str(REPO_PATH / "pi" / ".venv" / "bin" / "pip"), "install", "-r", "requirements.txt"], cwd=REPO_PATH / "pi", timeout=PIP_TIMEOUT_SECONDS)
     if pip_proc.returncode != 0:
