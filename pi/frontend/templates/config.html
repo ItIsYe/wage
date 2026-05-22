@@ -2,42 +2,76 @@
 {% block content %}
 <h1>Konfiguration / Netzwerk</h1>
 <div id="msg" class="msg"></div>
-<div id="network-action-msg" class="msg"></div>
-<div class="card warn">⚠️ Netzwerkänderungen können die Verbindung kurz trennen.</div>
-<div id="network-status-grid" class="grid"></div>
-<div class="card">
-  <h3>Modus</h3>
-  <div class="toolbar">
-    <label><input type="radio" name="network-mode" value="ap" checked> AP-Modus</label>
-    <label><input type="radio" name="network-mode" value="client"> Haus-WLAN-Client</label>
-  </div>
-  <h3>AP-Einstellungen</h3>
-  <div id="ap-password-hint" class="msg msg-warn" style="display:none"></div>
-  <div class="grid two">
-    <input id="ap-ssid" placeholder="AP SSID">
-    <div class="pw-field"><input id="ap-password" type="password" placeholder="AP Passwort (leer = behalten)"><button type="button" id="toggle-ap-password">anzeigen</button><button type="button" id="load-ap-password">gespeichertes anzeigen</button></div>
-    <input id="ap-ip" placeholder="AP IP">
-    <input id="ap-dhcp-start" placeholder="DHCP Start">
-    <input id="ap-dhcp-end" placeholder="DHCP Ende">
-  </div>
-  <h3>Haus-WLAN</h3>
-  <div class="grid two">
-    <input id="client-ssid" placeholder="WLAN SSID">
-    <div class="pw-field"><input id="client-password" type="password" placeholder="WLAN Passwort (leer = behalten)"><button type="button" id="toggle-client-password">anzeigen</button><button type="button" id="load-client-password">gespeichertes anzeigen</button></div>
-  </div>
-  <div class="toolbar"><button id="btn-network-save" onclick="saveNetworkConfig()">Speichern</button><button id="btn-network-apply" onclick="applyNetworkConfig()">Jetzt anwenden</button><button onclick="refreshConfigPage()">Status neu laden</button></div>
-  <div class="msg msg-info">Gespeichertes Passwort wird nur auf Knopfdruck angezeigt.</div>
-  <div class="msg msg-ok">Neustart empfohlen nach Netzwechsel.</div>
-</div>
+<section class="config-section">
+  <h2>1) Netzwerk-Status</h2>
+  <div class="card warn">⚠️ Netzwerkänderungen können die Verbindung kurz trennen.</div>
+  <div id="network-status-grid" class="grid"></div>
+</section>
 
-<div class="card">
-  <h2>Pi-System-Update</h2>
-  <div id="update-hint" class="msg"></div>
-  <div id="update-status-grid" class="grid"></div>
-  <div class="toolbar">
-    <button id="btn-update-check" onclick="checkPiUpdates()">Nach Updates prüfen</button>
-    <button id="btn-update-apply" onclick="applyPiUpdate()" style="display:none">Jetzt updaten</button>
-    <button id="btn-update-refresh" onclick="loadUpdateStatus()">Status neu laden</button>
+<section class="config-section">
+  <h2>2) Netzwerk-Konfiguration</h2>
+  <div class="card">
+    <h3>Modus</h3>
+    <div class="toolbar mode-toolbar">
+      <label><input type="radio" name="network-mode" value="ap" checked> AP-Modus</label>
+      <label><input type="radio" name="network-mode" value="client"> Haus-WLAN-Client</label>
+    </div>
   </div>
-</div>
+
+  <div class="card">
+    <h3>AP-Einstellungen</h3>
+    <div id="ap-password-hint" class="msg msg-warn" style="display:none"></div>
+    <div class="grid two">
+      <input id="ap-ssid" placeholder="AP SSID">
+      <div class="pw-field">
+        <input id="ap-password" type="password" placeholder="AP Passwort (leer = behalten)">
+        <button type="button" id="toggle-ap-password">anzeigen</button>
+        <button type="button" id="load-ap-password">gespeichertes laden</button>
+      </div>
+      <div class="hint-line">Hinweis: mindestens 8 Zeichen.</div>
+      <input id="ap-ip" placeholder="AP IP">
+      <input id="ap-dhcp-start" placeholder="DHCP Start">
+      <input id="ap-dhcp-end" placeholder="DHCP Ende">
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Haus-WLAN</h3>
+    <div class="grid two">
+      <input id="client-ssid" placeholder="WLAN SSID">
+      <div class="pw-field">
+        <input id="client-password" type="password" placeholder="WLAN Passwort (leer = behalten)">
+        <button type="button" id="toggle-client-password">anzeigen</button>
+        <button type="button" id="load-client-password">gespeichertes laden</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="config-section">
+  <h2>3) Netzwerk-Aktionen</h2>
+  <div class="card">
+    <div class="toolbar">
+      <button id="btn-network-save" onclick="saveNetworkConfig()">Speichern</button>
+      <button id="btn-network-apply" onclick="applyNetworkConfig()">Jetzt anwenden</button>
+      <button onclick="refreshConfigPage()">Status neu laden</button>
+    </div>
+    <div id="network-action-msg" class="msg msg-info"></div>
+    <div class="msg msg-info">Gespeichertes Passwort wird nur auf Knopfdruck angezeigt.</div>
+    <div class="msg msg-ok">Neustart empfohlen nach Netzwechsel.</div>
+  </div>
+</section>
+
+<section class="config-section">
+  <h2>4) Pi-System-Update</h2>
+  <div class="card">
+    <div id="update-hint" class="msg"></div>
+    <div id="update-status-grid" class="grid"></div>
+    <div class="toolbar">
+      <button id="btn-update-check" onclick="checkPiUpdates()">Nach Updates prüfen</button>
+      <button id="btn-update-apply" onclick="applyPiUpdate()" style="display:none">Jetzt updaten</button>
+      <button id="btn-update-refresh" onclick="loadUpdateStatus()">Status neu laden</button>
+    </div>
+  </div>
+</section>
 {% endblock %}
