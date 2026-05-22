@@ -257,3 +257,25 @@ Danach wird das Backend zuletzt neu gestartet.
 - `POST /api/v1/system/update/check`
 - `POST /api/v1/system/update/apply`
 
+
+### AP/Client-Passwort-Handling
+- Pi-AP nutzt WPA/WPA2-PSK; AP-Passwort muss mindestens 8 Zeichen haben.
+- Passwörter werden in `app_state` der SQLite-DB `pi/data/wage_pi.sqlite3` gespeichert.
+- `pi/data/network_config.json` enthält keine Klartext-Passwörter, nur `*_password_set`.
+- `pi/scripts/network_apply.sh` liest Secrets direkt aus SQLite (nicht aus JSON).
+
+### nmcli-Debug-Befehle
+```bash
+nmcli connection show
+nmcli connection show wage-net-ap
+journalctl -u NetworkManager -f
+tail -f pi/logs/network_apply.log
+```
+
+### Netzwerk-Fehlerbehebung (AP/Client)
+- ESP verbindet nicht: SSID/Passwort prüfen, `network_apply.log` und NetworkManager-Logs prüfen.
+- Passwort zu kurz: AP-Passwort muss mind. 8 Zeichen haben, sonst wird Apply abgebrochen.
+- `nmcli` fehlt: `sudo apt install network-manager` und NetworkManager aktivieren.
+- `sqlite3` fehlt: `sudo apt install sqlite3`.
+- AP aktiv, aber kein DHCP: `ipv4.method shared` in Connection prüfen und Connection neu anwenden.
+- Falsche SSID/Passwort: Konfiguration auf `/config` korrigieren und neu anwenden.

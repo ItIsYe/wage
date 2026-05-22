@@ -6,7 +6,7 @@ import shutil
 import socket
 import subprocess
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from .config_defaults import DEFAULTS
 from .config_migration import ensure_config_defaults
@@ -15,6 +15,7 @@ from .schemas import NetworkConfigIn
 
 router = APIRouter(prefix="/api/v1/config/network", tags=["network-config"])
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "network_apply.sh"
+
 
 def _get_pi_ip() -> str:
     try:
@@ -30,10 +31,12 @@ def _get_pi_ip() -> str:
 def _to_public(cfg: dict[str, str]) -> dict:
     mode = cfg.get("network_mode", "ap")
     api_target = f"http://{cfg.get('ap_ip','192.168.50.1')}:8000" if mode == "ap" else f"http://{_get_pi_ip()}:8000"
+    ap_password_set = bool(cfg.get("ap_password"))
     return {
         "network_mode": mode,
         "ap_ssid": cfg.get("ap_ssid", "wage-net"),
-        "ap_password_set": bool(cfg.get("ap_password")),
+        "ap_password_set": ap_password_set,
+        "ap_security": "wpa-psk" if ap_password_set else "open",
         "ap_ip": cfg.get("ap_ip", "192.168.50.1"),
         "ap_dhcp_start": cfg.get("ap_dhcp_start", "192.168.50.50"),
         "ap_dhcp_end": cfg.get("ap_dhcp_end", "192.168.50.150"),
@@ -58,6 +61,21 @@ def _read_config() -> dict[str, str]:
         return cfg
 
 
+def _validate_network_config(cfg: dict[str, str]) -> None:
+    mode = cfg.get("network_mode", "ap")
+    if mode not in {"ap", "client"}:
+        raise HTTPException(status_code=400, detail="Ungültiger Netzwerkmodus. Erlaubt: ap oder client.")
+    if not cfg.get("ap_ssid", "").strip():
+        raise HTTPException(status_code=400, detail="AP-SSID darf nicht leer sein.")
+    if not cfg.get("ap_ip", "").strip():
+        raise HTTPException(status_code=400, detail="AP-IP darf nicht leer sein.")
+    ap_password = cfg.get("ap_password", "")
+    if ap_password and len(ap_password) < 8:
+        raise HTTPException(status_code=400, detail="AP-Passwort muss mindestens 8 Zeichen lang sein.")
+    if mode == "client" and not cfg.get("client_ssid", "").strip():
+        raise HTTPException(status_code=400, detail="Client-SSID darf im Client-Modus nicht leer sein.")
+
+
 @router.get("")
 def get_network_config():
     ensure_config_defaults()
@@ -75,6 +93,8 @@ def set_network_config(payload: NetworkConfigIn):
         elif v is not None:
             cfg[k] = str(v).lower() if isinstance(v, bool) else str(v)
 
+    _validate_network_config(cfg)
+
     with db_cursor() as (_, cur):
         for k, default in DEFAULTS.items():
             cur.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES (?, ?)", (k, default))
@@ -86,8 +106,11 @@ def set_network_config(payload: NetworkConfigIn):
 
 @router.post("/apply")
 def apply_network_config():
-    cfg = _read_config()
     now = datetime.now(timezone.utc).isoformat()
+    with db_cursor() as (_, cur):
+        cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?,?)", ("last_network_apply_status", "applying"))
+        cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?,?)", ("last_network_apply_at", now))
+
     status_msg = "applied"
     ok = True
     if not SCRIPT_PATH.exists():
@@ -96,14 +119,18 @@ def apply_network_config():
     elif shutil.which("nmcli") is None:
         ok = False
         status_msg = "error: nmcli not available"
+    elif shutil.which("sqlite3") is None:
+        ok = False
+        status_msg = "error: sqlite3 not available"
     else:
         try:
             proc = subprocess.run([str(SCRIPT_PATH)], check=False, capture_output=True, text=True, timeout=90)
             if proc.returncode != 0:
                 ok = False
-                status_msg = f"error: rc={proc.returncode} {proc.stderr.strip() or proc.stdout.strip()}"
-            elif proc.stdout.strip():
-                status_msg = f"applied: {proc.stdout.strip()}"
+                status_msg = f"error: rc={proc.returncode} {(proc.stderr.strip() or proc.stdout.strip())}"
+            else:
+                out = proc.stdout.strip()
+                status_msg = f"applied: {out}" if out else "applied: Netzwerk-Konfiguration angewendet"
         except Exception as exc:
             ok = False
             status_msg = f"error: {exc}"
@@ -111,18 +138,27 @@ def apply_network_config():
     with db_cursor() as (_, cur):
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?,?)", ("last_network_apply_status", status_msg))
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?,?)", ("last_network_apply_at", now))
-    return {"ok": ok, "status": status_msg, "applied_at": now}
+    return {
+        "ok": ok,
+        "status": status_msg,
+        "applied_at": now,
+        "message": "Netzwerk-Konfiguration angewendet" if ok else status_msg,
+    }
 
 
 @router.get("/status")
 def network_status():
     cfg = _to_public(_read_config())
     active = "unbekannt"
+    current_connection = ""
     if shutil.which("nmcli"):
         try:
+            current_connection = subprocess.check_output(
+                ["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], text=True, timeout=5
+            ).strip()
             out = subprocess.check_output(["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"], text=True, timeout=5)
             if "wifi:connected" in out:
                 active = "Client aktiv" if cfg["network_mode"] == "client" else "AP aktiv"
         except Exception:
             active = "unbekannt"
-    return {"status": active, **cfg}
+    return {"status": active, "current_nmcli_connection": current_connection, **cfg}

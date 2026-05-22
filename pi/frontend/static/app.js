@@ -14,6 +14,26 @@ function flash(msg, ok = false) {
   el.className = ok ? "msg msg-ok" : "msg msg-err";
 }
 
+
+function networkActionMsg(msg, tone = "info") {
+  const el = byId("network-action-msg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = `msg msg-${tone}`;
+}
+function setNetworkButtonsDisabled(disabled) {
+  ["btn-network-save", "btn-network-apply"].forEach((id) => { const btn = byId(id); if (btn) btn.disabled = disabled; });
+}
+function setupPasswordToggle(inputId, btnId) {
+  const input = byId(inputId); const btn = byId(btnId);
+  if (!input || !btn) return;
+  btn.addEventListener('click', () => {
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'verbergen' : 'anzeigen';
+  });
+}
+
 function statusTone(v) {
   const s = String(v ?? "").toLowerCase();
   if (s === "ok" || s.includes("green") || s === "true") return "status-ok";
@@ -41,7 +61,6 @@ async function loadDashboard() {
     flash("", true);
   } catch (e) {
     flash(`Dashboard konnte nicht geladen werden: ${e.message}`);
-  }
 }
 
 async function loadStatus() {
@@ -159,7 +178,9 @@ async function loadNetworkConfig() {
     byId('ap-dhcp-start').value = cfg.ap_dhcp_start || '';
     byId('ap-dhcp-end').value = cfg.ap_dhcp_end || '';
     byId('client-ssid').value = cfg.client_ssid || '';
-    byId('network-status-grid').innerHTML = `<div class="card"><h3>Aktuell</h3><div>Modus: ${esc(cfg.network_mode)}</div><div>Pi-IP: ${esc(cfg.current_pi_ip)}</div><div>API-Ziel: ${esc(cfg.api_target)}</div><div>Status: ${esc(status.status)}</div></div>`;
+    if (byId('ap-password')) byId('ap-password').placeholder = cfg.ap_password_set ? 'AP Passwort gesetzt – leer lassen = behalten' : 'AP Passwort (mindestens 8 Zeichen)';
+    if (byId('client-password')) byId('client-password').placeholder = cfg.client_password_set ? 'WLAN Passwort gesetzt – leer lassen = behalten' : 'WLAN Passwort (optional)';
+    byId('network-status-grid').innerHTML = `<div class="card"><h3>Netzwerkstatus</h3><div>Gespeicherter Modus: ${esc(cfg.network_mode)}</div><div>AP-Sicherheit: ${esc(cfg.ap_security)}</div><div>Aktiver Status: ${esc(status.status)}</div><div>Letzte Anwendung: ${esc(status.last_network_apply_at || '-')}</div><div>Letzter Apply-Status: ${esc(status.last_network_apply_status || '-')}</div><div>Aktive NM-Connection: <pre>${esc(status.current_nmcli_connection || '-')}</pre></div><div>Pi-IP: ${esc(cfg.current_pi_ip)}</div><div>API-Ziel: ${esc(cfg.api_target)}</div></div>`;
   } catch (e) { flash(`Konfiguration konnte nicht geladen werden: ${e.message}`); }
 }
 
@@ -171,6 +192,8 @@ async function refreshConfigPage() {
 }
 
 async function saveNetworkConfig() {
+  setNetworkButtonsDisabled(true);
+  networkActionMsg("Speichere...", "info");
   const mode = document.querySelector('input[name="network-mode"]:checked')?.value || 'ap';
   const payload = {
     network_mode: mode, ap_ssid: byId('ap-ssid')?.value || '', ap_password: byId('ap-password')?.value || '', ap_ip: byId('ap-ip')?.value || '',
@@ -182,24 +205,34 @@ async function saveNetworkConfig() {
     if (byId('ap-password')) byId('ap-password').value = '';
     if (byId('client-password')) byId('client-password').value = '';
     flash('Netzwerk-Konfiguration gespeichert.', true);
+    networkActionMsg('Gespeichert', 'ok');
     await refreshConfigPage();
   } catch (e) {
     flash(`Speichern fehlgeschlagen: ${e.message}`);
+    networkActionMsg(`Speichern fehlgeschlagen: ${e.message}`, 'err');
+  } finally {
+    setNetworkButtonsDisabled(false);
   }
 }
 
 async function applyNetworkConfig() {
+  setNetworkButtonsDisabled(true);
+  networkActionMsg("Wende Netzwerkeinstellungen an...", "info");
   try {
     const d = await api('/api/v1/config/network/apply', {method:'POST'});
     flash(d.status || 'Angewendet.', d.ok);
+    networkActionMsg('Netzwerkeinstellungen angewendet', 'ok');
   } catch (e) {
     const msg = String(e.message || '');
     if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror') || msg.toLowerCase().includes('network')) {
       flash('Netzwerk wird angewendet. Verbindung kann kurz abbrechen. Bitte Seite nach einigen Sekunden neu laden.');
+      networkActionMsg('Netzwerk wird angewendet. Verbindung kann kurz abbrechen.', 'warn');
     } else {
       flash(`Anwenden fehlgeschlagen: ${e.message}`);
+      networkActionMsg(`Anwenden fehlgeschlagen: ${e.message}`, 'err');
     }
   } finally {
+    setNetworkButtonsDisabled(false);
     await loadNetworkConfig();
     await loadStatus();
     setTimeout(() => { loadNetworkConfig(); loadStatus(); }, 2000);
@@ -545,3 +578,7 @@ startConfigAutoRefresh();
   });
 
 })();
+
+setupPasswordToggle('ap-password', 'toggle-ap-password');
+setupPasswordToggle('client-password', 'toggle-client-password');
+}
