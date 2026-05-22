@@ -36,6 +36,33 @@ static const uint32_t STANDBY_CHANGE_MAX_LIMIT_MS = 5000U;
 static const uint32_t WIFI_CONNECT_TIMEOUT_MIN_MS = 3000U;
 static const uint32_t WIFI_CONNECT_TIMEOUT_MAX_MS = 30000U;
 
+static String wifiDiagSsid;
+static String wifiDiagStatusText = "not attempted";
+static int wifiDiagStatusCode = -1;
+static bool wifiDiagStaAttempted = false;
+static bool wifiDiagStaConnected = false;
+static bool wifiDiagStaticIpRequested = false;
+static bool wifiDiagStaticIpConfigOk = false;
+static bool wifiDiagFallbackApStarted = false;
+static uint32_t wifiDiagAttemptAtMs = 0;
+static uint32_t wifiDiagAttemptDurationMs = 0;
+static String wifiDiagLocalIp;
+static String wifiDiagGatewayIp;
+static String wifiDiagDnsIp;
+
+static const char* wifiStatusToText(wl_status_t status) {
+  switch (status) {
+    case WL_IDLE_STATUS: return "WL_IDLE_STATUS";
+    case WL_NO_SSID_AVAIL: return "WL_NO_SSID_AVAIL";
+    case WL_SCAN_COMPLETED: return "WL_SCAN_COMPLETED";
+    case WL_CONNECTED: return "WL_CONNECTED";
+    case WL_CONNECT_FAILED: return "WL_CONNECT_FAILED";
+    case WL_CONNECTION_LOST: return "WL_CONNECTION_LOST";
+    case WL_DISCONNECTED: return "WL_DISCONNECTED";
+    default: return "WL_UNKNOWN";
+  }
+}
+
 static void disableDebugModesNow() {
   activeConfig.oledDebugMode = false;
   activeConfig.debugMode = false;
@@ -111,6 +138,20 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Pending:</b> "); h += (pendingConfigValid ? F("ja") : F("nein")); h += F("</p>");
+  h += F("<hr><p><b>WLAN-Diagnose:</b></p>");
+  h += F("<p><b>STA versucht:</b> "); h += (wifiDiagStaAttempted ? F("ja") : F("nein")); h += F("</p>");
+  h += F("<p><b>STA verbunden:</b> "); h += (wifiDiagStaConnected ? F("ja") : F("nein")); h += F("</p>");
+  h += F("<p><b>SSID (letzter Versuch):</b> "); h += htmlEscape(wifiDiagSsid.length() ? wifiDiagSsid : String("-")); h += F("</p>");
+  h += F("<p><b>WiFi.status:</b> "); h += htmlEscape(wifiDiagStatusText); h += F(" ("); h += String(wifiDiagStatusCode); h += F(")</p>");
+  h += F("<p><b>Statische IP angefordert:</b> "); h += (wifiDiagStaticIpRequested ? F("ja") : F("nein")); h += F("</p>");
+  h += F("<p><b>Statische IP gesetzt:</b> "); h += (wifiDiagStaticIpConfigOk ? F("ja") : F("nein")); h += F("</p>");
+  h += F("<p><b>DHCP genutzt:</b> "); h += (wifiDiagStaticIpRequested ? F("nein") : F("ja")); h += F("</p>");
+  h += F("<p><b>Letzter Versuch bei millis:</b> "); h += String(wifiDiagAttemptAtMs); h += F("</p>");
+  h += F("<p><b>Versuchsdauer (ms):</b> "); h += String(wifiDiagAttemptDurationMs); h += F("</p>");
+  h += F("<p><b>Lokale IP:</b> "); h += htmlEscape(wifiDiagLocalIp.length() ? wifiDiagLocalIp : String("-")); h += F("</p>");
+  h += F("<p><b>Gateway:</b> "); h += htmlEscape(wifiDiagGatewayIp.length() ? wifiDiagGatewayIp : String("-")); h += F("</p>");
+  h += F("<p><b>DNS:</b> "); h += htmlEscape(wifiDiagDnsIp.length() ? wifiDiagDnsIp : String("-")); h += F("</p>");
+  h += F("<p><b>Fallback-AP aktiv:</b> "); h += (wifiDiagFallbackApStarted ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Hinweis:</b> Netzwerk / WLAN-Aenderungen werden gespeichert und erst nach Neustart aktiv.</p></div>");
   if (errorMsg.length()) { h += F("<div class='err'><b>Fehler:</b> "); h += htmlEscape(errorMsg); h += F("</div>"); }
   if (resetRequested) { h += F("<div class='err'><b>Reset:</b> Reset wartet auf sicheren Zustand</div>"); }
@@ -349,11 +390,36 @@ void webConfigSetup() {
   bool connectedAsSta = false;
   const bool staConfigured = activeConfig.wifiStaEnabled && strlen(activeConfig.wifiSsid) > 0;
 
+  wifiDiagSsid = "";
+  wifiDiagStatusText = "not attempted";
+  wifiDiagStatusCode = -1;
+  wifiDiagStaAttempted = false;
+  wifiDiagStaConnected = false;
+  wifiDiagStaticIpRequested = false;
+  wifiDiagStaticIpConfigOk = false;
+  wifiDiagFallbackApStarted = false;
+  wifiDiagAttemptAtMs = 0;
+  wifiDiagAttemptDurationMs = 0;
+  wifiDiagLocalIp = "";
+  wifiDiagGatewayIp = "";
+  wifiDiagDnsIp = "";
+
   if (staConfigured) {
+    wifiDiagStaAttempted = true;
+    wifiDiagSsid = String(activeConfig.wifiSsid);
+    wifiDiagAttemptAtMs = millis();
+    wifiDiagStaticIpRequested = activeConfig.wifiUseStaticIp;
+
     WiFi.mode(WIFI_STA);
     if (activeConfig.wifiUseStaticIp) {
       IPAddress ip, gw, sn, d1, d2;
-      if (!parseIpAddress(activeConfig.wifiLocalIp, ip) || !parseIpAddress(activeConfig.wifiGateway, gw) || !parseIpAddress(activeConfig.wifiSubnet, sn) || !parseIpAddress(activeConfig.wifiDns1, d1) || !parseIpAddress(activeConfig.wifiDns2, d2) || !WiFi.config(ip, gw, sn, d1, d2)) {
+      wifiDiagStaticIpConfigOk = parseIpAddress(activeConfig.wifiLocalIp, ip)
+        && parseIpAddress(activeConfig.wifiGateway, gw)
+        && parseIpAddress(activeConfig.wifiSubnet, sn)
+        && parseIpAddress(activeConfig.wifiDns1, d1)
+        && parseIpAddress(activeConfig.wifiDns2, d2)
+        && WiFi.config(ip, gw, sn, d1, d2);
+      if (!wifiDiagStaticIpConfigOk) {
         Serial.println("[NET] STA static IP Konfiguration fehlgeschlagen");
       }
     }
@@ -362,7 +428,15 @@ void webConfigSetup() {
     while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < activeConfig.wifiConnectTimeoutMs) {
       delay(100);
     }
-    connectedAsSta = (WiFi.status() == WL_CONNECTED);
+    wifiDiagAttemptDurationMs = millis() - startMs;
+    const wl_status_t finalStatus = WiFi.status();
+    wifiDiagStatusCode = (int) finalStatus;
+    wifiDiagStatusText = wifiStatusToText(finalStatus);
+    connectedAsSta = (finalStatus == WL_CONNECTED);
+    wifiDiagStaConnected = connectedAsSta;
+    wifiDiagLocalIp = WiFi.localIP().toString();
+    wifiDiagGatewayIp = WiFi.gatewayIP().toString();
+    wifiDiagDnsIp = WiFi.dnsIP().toString();
   }
 
   if (connectedAsSta) {
@@ -372,6 +446,7 @@ void webConfigSetup() {
   } else {
     WiFi.mode(WIFI_AP);
     const bool apStarted = WiFi.softAP(activeConfig.configApSsid, activeConfig.configApPassword);
+    wifiDiagFallbackApStarted = apStarted;
     wifiApMode = true;
     networkInfo = apStarted ? WiFi.softAPIP().toString() : String("0.0.0.0");
     if (!apStarted) Serial.println("[NET] Config AP Start fehlgeschlagen");
