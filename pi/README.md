@@ -208,46 +208,52 @@ Prüft Health, Personen, Aktivierung, Laufannahme, Duplikaterkennung, Runs, Stat
 
 ## Pi-Updates (nur `/pi`)
 
-### Manuelles Update nur für `/pi`
-```bash
-git fetch origin beta
-git checkout origin/beta -- pi
-cd pi
-source .venv/bin/activate
-pip install -r requirements.txt
-sudo systemctl restart wage-pi-backend wage-pi-oled wage-pi-leds
-```
+Der Web-Updater ist ein **Pi-Code-Sync** mit Migrationsschritten.
+Quelle der Wahrheit für Pi-Code ist **`origin/beta:/pi`**.
+
+### Sync-Verhalten
+- Beim Prüfen (`POST /api/v1/system/update/check`) wird `origin/beta` gefetched und ein Dateivergleich auf Pi-Code-Pfaden durchgeführt.
+- Lokale Pi-Code-Abweichungen blockieren nicht mehr; sie werden beim Update durch den Repo-Stand ersetzt.
+- Nicht mehr im Remote vorhandene Pi-Code-Dateien werden lokal entfernt.
+- Geschützte Runtime-Daten bleiben immer unangetastet:
+  - `pi/data/`
+  - `pi/logs/`
+  - Datenbank (`pi/data/wage_pi.sqlite3`, `-shm`, `-wal`)
+  - Netzwerk-Konfiguration (`pi/data/network_config.json`)
+  - Logs (`pi/logs/network_apply.log`)
+  - `pi/**/__pycache__/`, `pi/**/*.pyc`
 
 ### Web-Update im `/config`-Bereich
-- Im Bereich **Pi-System-Update** startet der Ablauf mit Statuskarte + **„Nach Updates prüfen“**.
-- Bei der Prüfung zeigt die UI klar „Suche nach Updates…“ inkl. Ladeanzeige.
-- Ergebnis ohne Update: **„Keine Pi-Updates verfügbar“** (grün), kein Update-Button.
-- Ergebnis mit Update: **„Pi-Update verfügbar“** (gelb/blau), Liste **„Geänderte Pi-Dateien“**, Button **„Jetzt updaten“**.
-- Updates bleiben im AP-Modus gesperrt: **nur im Haus-WLAN-Client-Modus**.
-- Beim Update zeigt die UI Schrittstatus und Fortschrittsbalken; bei Backend-Neustart wird automatisch Healthcheck gemacht und der Status danach neu geladen.
-- Lokale Runtime-Daten bleiben geschützt und werden nicht als Hauptfehler hervorgehoben.
+- Standardansicht: Statuskarte + **„Nach Updates prüfen“**.
+- Ohne Sync-Bedarf: **„Keine Pi-Updates verfügbar“**.
+- Mit Sync-Bedarf: **„Pi-Code-Sync verfügbar“** mit Listen für:
+  - neue/geänderte Dateien
+  - Dateien, die entfernt werden
+- Hinweise in der UI:
+  - „Lokale Betriebsdaten bleiben geschützt.“
+  - „Lokale Pi-Code-Abweichungen werden durch den Repo-Stand ersetzt.“
+- Update bleibt im AP-Modus gesperrt: nur im Haus-WLAN-Client-Modus.
+
+### Update-Ablauf (`POST /api/v1/system/update/apply`)
+1. Update wird vorbereitet
+2. Pi-Code wird synchronisiert
+3. Alte Pi-Code-Dateien werden entfernt
+4. Konfiguration wird migriert
+5. Abhängigkeiten werden geprüft
+6. Services werden neu gestartet
+7. Update abgeschlossen
+
+Danach wird das Backend zuletzt neu gestartet.
+
+### Config-Migration
+- Nach Code-Sync läuft `ensure_config_defaults()`.
+- Neue Config-Keys werden ergänzt.
+- Bestehende lokale Werte (WLAN/AP/Client) bleiben erhalten.
+- `network_config.json` wird sicher aus `app_state` neu erzeugt.
+- Passwörter werden nicht im Klartext ausgegeben.
 
 ### API-Endpunkte für Update
 - `GET /api/v1/system/update/status`
 - `POST /api/v1/system/update/check`
 - `POST /api/v1/system/update/apply`
 
-### Fehlerbehebung Update
-- `git fehlt`: Git installieren und im PATH verfügbar machen.
-- `kein Internet`: Verbindung im Client-Modus prüfen.
-- `AP-Modus aktiv`: auf Haus-WLAN-Client wechseln, dann erneut prüfen.
-- `lokale Änderungen unter /pi`: Änderungen committen oder verwerfen.
-- `systemctl restart braucht Rechte`: Benutzerrechte/Sudoers für Services prüfen.
-- `Backend startet nach Update neu`: kurz warten und Seite neu laden.
-
-### Schutz lokaler Runtime-Daten
-- Geschützte Pfade werden **nie** durch den Updater überschrieben/zurückgesetzt: `pi/data/`, `pi/logs/`, `pi/**/__pycache__/`, `pi/**/*.pyc`.
-- Insbesondere bleiben `pi/data/wage_pi.sqlite3`, `pi/data/network_config.json` und `pi/logs/network_apply.log` erhalten.
-- Runtime-Dateien blockieren Updates nicht mehr; nur echte lokale Code-Änderungen unter den Update-Pfaden blockieren weiterhin.
-- Update-Reichweite bleibt auf: `pi/backend/`, `pi/frontend/`, `pi/oled/`, `pi/leds/`, `pi/scripts/`, `pi/systemd/`, `pi/requirements.txt`, `pi/README.md`.
-
-### Config-Migration (sicher, ohne Überschreiben)
-- Beim Backend-Start, nach `POST /api/v1/config/network` und nach erfolgreichem Pi-Update wird `ensure_config_defaults()` ausgeführt.
-- Fehlende Konfigurations-Keys werden aus Code-Defaults ergänzt, vorhandene lokale Werte bleiben unverändert.
-- `network_config.json` wird lokal aus `app_state` neu erzeugt (ohne Klartext-Passwörter, nur `*_password_set` Flags).
-- Damit bleiben bestehende WLAN-/AP-/Client-Einstellungen erhalten, neue Variablen werden automatisch ergänzt.

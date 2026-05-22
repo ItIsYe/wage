@@ -239,18 +239,17 @@ function renderUpdateStatus(data) {
   const root = byId('update-status-grid');
   if (!root) return;
   const changed = data.changed_pi_files || [];
-  const blocking = data.blocking_local_code_files || [];
+  const obsolete = data.obsolete_pi_files || [];
+  const protectedRuntime = data.protected_runtime_files || [];
   const canApply = !!data.can_apply || data.ui_state === 'update_available';
-  const runtimeHint = (data.ignored_local_runtime_files || []).length > 0 || (data.ignored_remote_runtime_files || []).length > 0;
   const progress = Number(data.progress_percent || 0);
   const details = `
     <details class="update-details"><summary>Technische Details</summary>
       <div><strong>local_commit:</strong> ${esc(data.local_commit || '-')}</div>
       <div><strong>remote_commit:</strong> ${esc(data.remote_commit || '-')}</div>
       <div><strong>changed_pi_files:</strong><ul>${(data.changed_pi_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
-      <div><strong>synced_with_remote_files:</strong><ul>${(data.synced_with_remote_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
-      <div><strong>ignored_runtime_files:</strong><ul>${(data.ignored_local_runtime_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
-      <div><strong>blocking_local_code_files:</strong><ul>${blocking.map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+      <div><strong>obsolete_pi_files:</strong><ul>${obsolete.map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+      <div><strong>protected_runtime_files:</strong><ul>${protectedRuntime.map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
     </details>`;
 
   root.innerHTML = `
@@ -263,9 +262,10 @@ function renderUpdateStatus(data) {
       <div>Letztes Update: ${esc(data.last_update_status || '-')}</div>
       ${(data.ui_state === 'checking' || data.ui_state === 'updating') ? `<div class="update-progress-head">${spinnerLabel(esc(data.progress_step || 'Bitte warten...'))}</div>
       <div class="progress"><div class="progress-bar" style="width:${Math.max(0,Math.min(100,progress))}%"></div></div>` : ''}
-      ${(changed.length > 0 && canApply) ? `<h4>Geänderte Pi-Dateien</h4><ul>${changed.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
-      ${(blocking.length > 0) ? `<h4>Blockierende Dateien</h4><ul>${blocking.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
-      ${runtimeHint ? '<small>Lokale Betriebsdaten bleiben geschützt.</small>' : ''}
+      ${(changed.length > 0) ? `<h4>Neue/geänderte Dateien</h4><ul>${changed.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      ${(obsolete.length > 0) ? `<h4>Dateien, die entfernt werden</h4><ul>${obsolete.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      <small>Lokale Betriebsdaten bleiben geschützt.</small><br>
+      <small>Lokale Pi-Code-Abweichungen werden durch den Repo-Stand ersetzt.</small>
       ${details}
     </div>`;
 
