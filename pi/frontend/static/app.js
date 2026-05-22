@@ -210,57 +210,71 @@ async function applyNetworkConfig() {
 loadNetworkConfig();
 
 let updateBusy = false;
+let configAutoRefreshTimer = null;
 
 function setUpdateButtonsDisabled(disabled) {
-  const checkBtn = byId('btn-update-check');
-  const applyBtn = byId('btn-update-apply');
-  if (checkBtn) checkBtn.disabled = disabled;
-  if (applyBtn) applyBtn.disabled = disabled;
+  ['btn-update-check', 'btn-update-apply', 'btn-update-refresh'].forEach((id) => {
+    const btn = byId(id);
+    if (btn) btn.disabled = disabled;
+  });
+}
+
+function setUpdateHint(message, tone = 'info') {
+  const hint = byId('update-hint');
+  if (!hint) return;
+  hint.innerHTML = message || '';
+  hint.className = `msg msg-${tone}`;
+}
+
+function spinnerLabel(text) {
+  return `<span class="busy-dot" aria-hidden="true"></span>${esc(text)}`;
 }
 
 function renderUpdateStatus(data) {
   const root = byId('update-status-grid');
-  const hint = byId('update-hint');
-  if (!root || !hint) return;
+  if (!root) return;
   const changed = data.changed_pi_files || [];
   const ignoredLocal = data.ignored_local_runtime_files || [];
   const blockingLocal = data.blocking_local_code_files || [];
-  const ignoredRemote = data.ignored_remote_runtime_files || [];
+  const syncedRemote = data.synced_with_remote_files || [];
   const list = (arr) => arr.map((f) => `<li>${esc(f)}</li>`).join('') || '<li>-</li>';
   const allowed = !!data.allowed;
-  root.innerHTML = `<div class="card"><div>Update-Scope: ${esc(data.update_scope || 'pi-only')}</div><div>Netzwerkmodus: ${esc(data.network_mode || '-')}</div><div>Update erlaubt: ${allowed ? 'ja' : 'nein'}</div><div>Branch: ${esc(data.current_branch || '-')}</div><div>Lokaler Commit: ${esc(data.local_commit || '-')}</div><div>Remote Commit: ${esc(data.remote_commit || '-')}</div><div>Pi-Änderungen verfügbar: ${(data.pi_changes_available ? 'ja' : 'nein')}</div><div>Letzter Update-Status: ${esc(data.last_update_status || '-')}</div><div>Letzter Update-Zeitpunkt: ${esc(data.last_update_at || '-')}</div><div>Geänderte Pi-Dateien:<ul>${list(changed)}</ul></div><div>Ignorierte lokale Runtime-Dateien:<ul>${list(ignoredLocal)}</ul></div><div>Blockierende lokale Code-Dateien:<ul>${list(blockingLocal)}</ul></div><div>Ignorierte Remote-Runtime-Dateien:<ul>${list(ignoredRemote)}</ul></div></div>`;
-  if (!allowed) {
-    hint.textContent = 'Bitte zuerst auf Haus-WLAN-Client wechseln.';
-    hint.className = 'msg msg-err';
-  } else if (blockingLocal.length > 0) {
-    hint.textContent = 'Lokale Code-Änderungen blockieren das Update.';
-    hint.className = 'msg msg-err';
-  } else if (ignoredLocal.length > 0) {
-    hint.textContent = 'Lokale Betriebsdaten werden geschützt und beim Update ignoriert.';
-    hint.className = 'msg msg-ok';
-  } else if (updateBusy) {
-    hint.textContent = 'Update läuft, bitte warten...';
-    hint.className = 'msg msg-ok';
-  } else {
-    hint.textContent = '';
-    hint.className = 'msg';
-  }
+  const running = updateBusy;
+  root.innerHTML = `
+    <div class="card ${running ? 'status-info' : 'status-ok'}"><h3>Update-Status</h3><div class="kpi">${running ? 'Läuft' : (data.last_update_status || '-')}</div><div>Zuletzt: ${esc(data.last_update_at || '-')}</div></div>
+    <div class="card ${data.network_mode === 'client' ? 'status-ok' : 'status-err'}"><h3>Netzwerkmodus</h3><div class="kpi">${esc(data.network_mode || '-')}</div></div>
+    <div class="card ${allowed ? 'status-ok' : 'status-err'}"><h3>Update erlaubt</h3><div class="kpi">${allowed ? 'ja' : 'nein'}</div></div>
+    <div class="card ${data.pi_changes_available ? 'status-warn' : 'status-ok'}"><h3>Update verfügbar</h3><div class="kpi">${data.pi_changes_available ? 'ja' : 'nein'}</div></div>
+    <div class="card"><h3>Letzter Update-Status</h3><div>${esc(data.last_update_status || '-')}</div></div>
+    <div class="card"><h3>Geänderte Pi-Dateien</h3><ul>${list(changed)}</ul></div>
+    <div class="card status-warn"><h3>Ignorierte Runtime-Dateien</h3><ul>${list(ignoredLocal)}</ul></div>
+    <div class="card status-info"><h3>Mit Remote synchronisiert</h3><ul>${list(syncedRemote)}</ul></div>
+    <div class="card ${blockingLocal.length > 0 ? 'status-err' : 'status-ok'}"><h3>Blockierende lokale Code-Dateien</h3><ul>${list(blockingLocal)}</ul></div>
+  `;
+
+  if (!allowed) setUpdateHint('Bitte zuerst auf Haus-WLAN-Client wechseln.', 'err');
+  else if (blockingLocal.length > 0) setUpdateHint('Lokale Code-Änderungen blockieren das Update.', 'err');
+  else if (running) setUpdateHint(spinnerLabel('Update läuft...'), 'info');
+  else if (ignoredLocal.length > 0) setUpdateHint('Lokale Betriebsdaten werden geschützt und ignoriert.', 'ok');
+  else setUpdateHint('', 'ok');
+
   setUpdateButtonsDisabled(updateBusy || !allowed || blockingLocal.length > 0);
 }
 
-async function loadUpdateStatus() {
+async function loadUpdateStatus(silent = false) {
   if (!byId('update-status-grid')) return;
   try {
     renderUpdateStatus(await api('/api/v1/system/update/status'));
   } catch (e) {
     setUpdateButtonsDisabled(updateBusy);
-    flash(`Update-Status konnte nicht geladen werden: ${e.message}`);
+    if (!silent) flash(`Update-Status konnte nicht geladen werden: ${e.message}`);
   }
 }
 
 async function checkPiUpdates() {
   updateBusy = true;
   setUpdateButtonsDisabled(true);
+  setUpdateHint(spinnerLabel('Suche nach Pi-Updates...'), 'info');
   try {
     const data = await api('/api/v1/system/update/check', {method: 'POST'});
     renderUpdateStatus(data);
@@ -269,22 +283,44 @@ async function checkPiUpdates() {
     flash(`Update-Prüfung fehlgeschlagen: ${e.message}`);
   } finally {
     updateBusy = false;
-    await loadUpdateStatus();
+    await loadUpdateStatus(true);
+    await refreshConfigPage();
   }
 }
 
 async function applyPiUpdate() {
   updateBusy = true;
   setUpdateButtonsDisabled(true);
+  setUpdateHint(`${spinnerLabel('Pi-Update wird installiert...')}<br><small>Backend kann kurz neu starten.</small>`, 'info');
   try {
     const data = await api('/api/v1/system/update/apply', {method: 'POST'});
     flash(data.status || 'Pi-Update durchgeführt.', true);
+    await loadUpdateStatus(true);
   } catch (e) {
-    flash(`Pi-Update fehlgeschlagen: ${e.message}`);
+    const msg = String(e.message || '').toLowerCase();
+    if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
+      flash('Update gestartet. Backend startet neu. Seite wird automatisch neu geladen.', true);
+      [3000, 6000, 10000].forEach((delay) => setTimeout(() => { loadUpdateStatus(true); refreshConfigPage(); }, delay));
+    } else {
+      flash(`Pi-Update fehlgeschlagen: ${e.message}`);
+    }
   } finally {
     updateBusy = false;
-    await loadUpdateStatus();
+    await loadUpdateStatus(true);
   }
 }
 
+function startConfigAutoRefresh() {
+  if (!byId('update-status-grid') && !byId('network-status-grid')) return;
+  if (configAutoRefreshTimer) clearInterval(configAutoRefreshTimer);
+  let ticks = 0;
+  configAutoRefreshTimer = setInterval(() => {
+    ticks += 1;
+    const due = updateBusy ? true : (ticks % 5 === 0);
+    if (due) refreshConfigPage().catch(() => {});
+  }, 2000);
+}
+
 loadUpdateStatus();
+startConfigAutoRefresh();
+

@@ -118,17 +118,29 @@ def _changed_pi_files(local_commit: str, remote_commit: str) -> tuple[list[str],
     return changed, ignored_runtime
 
 
-def _local_pi_changes() -> tuple[list[str], list[str]]:
+def _is_file_synced_with_remote(path: str) -> bool:
+    proc = _run(_git_cmd("diff", "--quiet", f"origin/{TARGET_BRANCH}", "--", path), cwd=REPO_PATH)
+    return proc.returncode == 0
+
+
+def _local_pi_changes() -> tuple[list[str], list[str], list[str]]:
     proc = _run(_git_cmd("status", "--porcelain", "--", "pi"), cwd=REPO_PATH)
     if proc.returncode != 0:
         raise HTTPException(status_code=500, detail=f"git status fehlgeschlagen: {proc.stderr.strip() or proc.stdout.strip()}")
     paths = _parse_status_paths(proc.stdout)
     ignored = sorted({p for p in paths if is_protected_pi_runtime_path(p)})
-    blocking = sorted({p for p in paths if not is_protected_pi_runtime_path(p) and _is_update_relevant_pi_path(p)})
-    return ignored, blocking
+    relevant = sorted({p for p in paths if not is_protected_pi_runtime_path(p) and _is_update_relevant_pi_path(p)})
+    synced: list[str] = []
+    blocking: list[str] = []
+    for path in relevant:
+        if _is_file_synced_with_remote(path):
+            synced.append(path)
+        else:
+            blocking.append(path)
+    return ignored, sorted(blocking), sorted(synced)
 
 
-def _persist_update_state(status: str, local_commit: str, remote_commit: str, changed: list[str], ignored_runtime: list[str], blocking_code: list[str]) -> str:
+def _persist_update_state(status: str, local_commit: str, remote_commit: str, changed: list[str], ignored_runtime: list[str], blocking_code: list[str], synced_with_remote: list[str]) -> str:
     now = datetime.now(timezone.utc).isoformat()
     with db_cursor() as (_, cur):
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", ("last_update_status", status))
@@ -139,25 +151,26 @@ def _persist_update_state(status: str, local_commit: str, remote_commit: str, ch
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", ("last_update_ignored_runtime_files", "\n".join(ignored_runtime)))
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", ("last_update_blocking_code_files", "\n".join(blocking_code)))
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", ("last_update_scope", UPDATE_SCOPE))
+        cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", ("last_update_synced_with_remote_files", "\n".join(synced_with_remote)))
     return now
 
 
 @router.get("/status")
 def update_status():
     mode = _network_mode()
-    ignored_runtime, blocking_code = ([], [])
+    ignored_runtime, blocking_code, synced_with_remote = ([], [], [])
     state = _read_state([
-        "last_update_status", "last_update_at", "last_update_local_commit", "last_update_remote_commit", "last_update_changed_pi_files", "last_update_scope"
+        "last_update_status", "last_update_at", "last_update_local_commit", "last_update_remote_commit", "last_update_changed_pi_files", "last_update_scope", "last_update_synced_with_remote_files"
     ])
     if mode == "ap":
-        return {"ok": True, "allowed": False, "reason": "Update nicht möglich im AP-Modus", "network_mode": "ap", "update_scope": UPDATE_SCOPE, "pi_changes_available": False, "ignored_local_runtime_files": ignored_runtime, "blocking_local_code_files": blocking_code}
+        return {"ok": True, "allowed": False, "reason": "Update nicht möglich im AP-Modus", "network_mode": "ap", "update_scope": UPDATE_SCOPE, "pi_changes_available": False, "ignored_local_runtime_files": ignored_runtime, "blocking_local_code_files": blocking_code, "synced_with_remote_files": synced_with_remote}
 
     _ensure_repo_and_git()
     local_commit = _git_value(["rev-parse", "HEAD"])
     remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
     branch = _git_value(["rev-parse", "--abbrev-ref", "HEAD"], fallback="unknown")
     changed, ignored_remote_runtime = _changed_pi_files(local_commit, remote_commit)
-    ignored_runtime, blocking_code = _local_pi_changes()
+    ignored_runtime, blocking_code, synced_with_remote = _local_pi_changes()
     return {
         "ok": True,
         "allowed": True,
@@ -173,21 +186,24 @@ def update_status():
         "ignored_remote_runtime_files": ignored_remote_runtime,
         "ignored_local_runtime_files": ignored_runtime,
         "blocking_local_code_files": blocking_code,
+        "synced_with_remote_files": synced_with_remote,
         "last_update_status": state.get("last_update_status", ""),
         "last_update_at": state.get("last_update_at", ""),
+        "last_update_synced_with_remote_files": state.get("last_update_synced_with_remote_files", "").splitlines() if state.get("last_update_synced_with_remote_files", "") else [],
     }
 
 
 @router.post("/check")
 def update_check():
     mode = _require_client_mode()
+    _persist_update_state("prüfe updates...", "", "", [], [], [], [])
     _ensure_repo_and_git()
     _fetch_origin_target()
     local_commit = _git_value(["rev-parse", "HEAD"])
     remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
     branch = _git_value(["rev-parse", "--abbrev-ref", "HEAD"], fallback="unknown")
     changed, ignored_remote_runtime = _changed_pi_files(local_commit, remote_commit)
-    ignored_runtime, blocking_code = _local_pi_changes()
+    ignored_runtime, blocking_code, synced_with_remote = _local_pi_changes()
     return {
         "ok": True,
         "allowed": True,
@@ -202,6 +218,7 @@ def update_check():
         "changed_pi_files": changed,
         "ignored_local_runtime_files": ignored_runtime,
         "blocking_local_code_files": blocking_code,
+        "synced_with_remote_files": synced_with_remote,
         "ignored_remote_runtime_files": ignored_remote_runtime,
     }
 
@@ -209,20 +226,22 @@ def update_check():
 @router.post("/apply")
 def update_apply():
     mode = _require_client_mode()
+    _persist_update_state("installiere update...", "", "", [], [], [], [])
     _ensure_repo_and_git()
     _fetch_origin_target()
     local_commit = _git_value(["rev-parse", "HEAD"])
     remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
     changed, ignored_remote_runtime = _changed_pi_files(local_commit, remote_commit)
-    ignored_runtime, blocking_code = _local_pi_changes()
+    ignored_runtime, blocking_code, synced_with_remote = _local_pi_changes()
 
     if blocking_code:
-        _persist_update_state("lokale code-änderungen", local_commit, remote_commit, changed, ignored_runtime, blocking_code)
+        _persist_update_state("update blockiert", local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote)
         raise HTTPException(status_code=400, detail={"message": "Lokale Code-Änderungen unter /pi vorhanden. Update abgebrochen.", "blocking_local_code_files": blocking_code})
 
     if not changed:
-        at = _persist_update_state("kein update nötig", local_commit, remote_commit, [], ignored_runtime + ignored_remote_runtime, [])
-        return {"ok": True, "status": "kein update nötig", "applied_at": at, "pi_changes_available": False, "changed_pi_files": [], "ignored_local_runtime_files": ignored_runtime, "blocking_local_code_files": [], "ignored_remote_runtime_files": ignored_remote_runtime}
+        status = "Pi-Code ist bereits auf Remote-Stand" if synced_with_remote else "kein update nötig"
+        at = _persist_update_state(status, local_commit, remote_commit, [], ignored_runtime + ignored_remote_runtime, [], synced_with_remote)
+        return {"ok": True, "status": status, "applied_at": at, "pi_changes_available": False, "changed_pi_files": [], "ignored_local_runtime_files": ignored_runtime, "blocking_local_code_files": [], "ignored_remote_runtime_files": ignored_remote_runtime, "synced_with_remote_files": synced_with_remote}
 
     checkout = _run(_git_cmd("checkout", f"origin/{TARGET_BRANCH}", "--", *changed), cwd=REPO_PATH)
     if checkout.returncode != 0:
@@ -238,7 +257,7 @@ def update_apply():
         if proc.returncode != 0:
             raise HTTPException(status_code=500, detail=f"Service-Neustart fehlgeschlagen ({service}): {proc.stderr.strip() or proc.stdout.strip()}")
 
-    at = _persist_update_state("update erfolgreich", local_commit, remote_commit, changed, ignored_runtime + ignored_remote_runtime, [])
+    at = _persist_update_state("update erfolgreich", local_commit, remote_commit, changed, ignored_runtime + ignored_remote_runtime, [], synced_with_remote)
     return {
         "ok": True,
         "status": "update erfolgreich",
@@ -251,5 +270,6 @@ def update_apply():
         "changed_pi_files": changed,
         "ignored_local_runtime_files": ignored_runtime,
         "blocking_local_code_files": [],
+        "synced_with_remote_files": synced_with_remote,
         "ignored_remote_runtime_files": ignored_remote_runtime,
     }
