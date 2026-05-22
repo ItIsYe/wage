@@ -30,14 +30,37 @@ function setApPasswordHint(visible, msg = "") {
   hint.style.display = visible ? "block" : "none";
   hint.textContent = msg;
 }
-function setupPasswordToggle(inputId, btnId) {
-  const input = byId(inputId); const btn = byId(btnId);
+async function fetchSecretIntoField(inputId, endpoint, toggleBtnId, loadBtnId) {
+  const input = byId(inputId);
+  const toggleBtn = byId(toggleBtnId);
+  const loadBtn = byId(loadBtnId);
+  if (!input) return;
+  try {
+    const data = await api(endpoint);
+    input.value = data.value || '';
+    input.type = 'text';
+    if (toggleBtn) toggleBtn.textContent = 'verbergen';
+    if (loadBtn) loadBtn.textContent = 'neu laden';
+  } catch (e) {
+    flash(`Gespeichertes Passwort konnte nicht geladen werden: ${e.message}`);
+  }
+}
+
+function setupPasswordToggle(inputId, btnId, loadBtnId, secretEndpoint) {
+  const input = byId(inputId); const btn = byId(btnId); const loadBtn = byId(loadBtnId);
   if (!input || !btn) return;
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
+    if (!input.value && loadBtn && secretEndpoint) {
+      await fetchSecretIntoField(inputId, secretEndpoint, btnId, loadBtnId);
+      return;
+    }
     const show = input.type === 'password';
     input.type = show ? 'text' : 'password';
     btn.textContent = show ? 'verbergen' : 'anzeigen';
   });
+  if (loadBtn && secretEndpoint) {
+    loadBtn.addEventListener('click', () => fetchSecretIntoField(inputId, secretEndpoint, btnId, loadBtnId));
+  }
 }
 
 function statusTone(v) {
@@ -586,6 +609,6 @@ startConfigAutoRefresh();
 
 })();
 
-setupPasswordToggle('ap-password', 'toggle-ap-password');
-setupPasswordToggle('client-password', 'toggle-client-password');
+setupPasswordToggle('ap-password', 'toggle-ap-password', 'load-ap-password', '/api/v1/config/network/secret/ap-password');
+setupPasswordToggle('client-password', 'toggle-client-password', 'load-client-password', '/api/v1/config/network/secret/client-password');
 }

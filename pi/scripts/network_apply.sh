@@ -24,7 +24,6 @@ AP_PASSWORD="$(get_state ap_password)"
 AP_IP="$(get_state ap_ip)"; AP_IP="${AP_IP:-192.168.50.1}"
 CLIENT_SSID="$(get_state client_ssid)"
 CLIENT_PASSWORD="$(get_state client_password)"
-OPEN_AP_ALLOWED="$(get_state open_ap_allowed)"; OPEN_AP_ALLOWED="${OPEN_AP_ALLOWED:-false}"
 
 WLAN_IFACE="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1; exit}')"
 [[ -n "$WLAN_IFACE" ]] || fail "Kein WLAN-Interface gefunden"
@@ -35,22 +34,19 @@ if [[ "$MODE" == "ap" ]]; then
   [[ -n "$AP_IP" ]] || fail "AP-IP darf nicht leer sein"
 
   if [[ -z "$AP_PASSWORD" ]]; then
-    if [[ "${OPEN_AP_ALLOWED,,}" != "true" ]]; then
-      fail "AP-Passwort fehlt. Bitte im Webinterface ein AP-Passwort mit mindestens 8 Zeichen setzen."
-    fi
+    fail "AP-Passwort fehlt. Bitte im Webinterface ein AP-Passwort mit mindestens 8 Zeichen setzen."
   elif [[ ${#AP_PASSWORD} -lt 8 ]]; then
     fail "AP-Passwort zu kurz (mindestens 8 Zeichen erforderlich)"
   fi
 
   nmcli connection delete wage-net-ap >/dev/null 2>&1 || true
   nmcli connection add type wifi ifname "$WLAN_IFACE" con-name wage-net-ap autoconnect yes ssid "$AP_SSID" >/dev/null
-  nmcli connection modify wage-net-ap 802-11-wireless.mode ap ipv4.method shared ipv4.addresses "$AP_IP/24"
-
-  if [[ -n "$AP_PASSWORD" ]]; then
-    nmcli connection modify wage-net-ap wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$AP_PASSWORD"
-  else
-    nmcli connection modify wage-net-ap -wifi-sec.key-mgmt -wifi-sec.psk
-  fi
+  nmcli connection modify wage-net-ap \
+    802-11-wireless.mode ap \
+    ipv4.method shared \
+    ipv4.addresses "$AP_IP/24" \
+    wifi-sec.key-mgmt wpa-psk \
+    wifi-sec.psk "$AP_PASSWORD"
 
   nmcli connection up wage-net-ap >/dev/null
   log "AP-Modus erfolgreich aktiviert"

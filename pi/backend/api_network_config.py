@@ -36,7 +36,7 @@ def _to_public(cfg: dict[str, str]) -> dict:
         "network_mode": mode,
         "ap_ssid": cfg.get("ap_ssid", "wage-net"),
         "ap_password_set": ap_password_set,
-        "ap_security": "wpa-psk" if ap_password_set else "open",
+        "ap_security": "wpa-psk",
         "ap_ip": cfg.get("ap_ip", "192.168.50.1"),
         "ap_dhcp_start": cfg.get("ap_dhcp_start", "192.168.50.50"),
         "ap_dhcp_end": cfg.get("ap_dhcp_end", "192.168.50.150"),
@@ -72,8 +72,7 @@ def _validate_network_config(cfg: dict[str, str]) -> None:
     ap_password = cfg.get("ap_password", "")
     if ap_password and len(ap_password) < 8:
         raise HTTPException(status_code=400, detail="AP-Passwort muss mindestens 8 Zeichen lang sein.")
-    open_ap_allowed = str(cfg.get("open_ap_allowed", "false")).lower() == "true"
-    if mode == "ap" and not open_ap_allowed and len(ap_password) < 8:
+    if mode == "ap" and len(ap_password) < 8:
         raise HTTPException(status_code=400, detail="AP-Passwort muss gesetzt sein und mindestens 8 Zeichen haben.")
     if mode == "client" and not cfg.get("client_ssid", "").strip():
         raise HTTPException(status_code=400, detail="Client-SSID darf im Client-Modus nicht leer sein.")
@@ -105,6 +104,20 @@ def set_network_config(payload: NetworkConfigIn):
 
     ensure_config_defaults()
     return {"ok": True, "config": _to_public(_read_config()), "restart_recommended": True}
+
+
+
+
+@router.get("/secret/ap-password")
+def get_ap_password_secret():
+    cfg = _read_config()
+    return {"ok": True, "value": cfg.get("ap_password", "")}
+
+
+@router.get("/secret/client-password")
+def get_client_password_secret():
+    cfg = _read_config()
+    return {"ok": True, "value": cfg.get("client_password", "")}
 
 
 @router.post("/apply")
