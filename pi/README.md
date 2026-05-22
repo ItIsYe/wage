@@ -52,6 +52,13 @@ bash scripts/kiosk_start.sh
 ```
 Verwendet `WAGE_PI_KIOSK_URL` (Default `http://localhost:8000`).
 
+### Touchscreen-Eingabe
+- `scripts/kiosk_start.sh` startet **keine dauerhaft sichtbare OS-Tastatur** (`squeekboard`, `matchbox-keyboard`, `onboard` werden nicht im Hintergrund erzwungen).
+- Chromium wird mit Touch-/Virtual-Keyboard-freundlichen Flags gestartet (`--touch-events=enabled`, `--enable-features=VirtualKeyboard`, `--disable-features=TranslateUI`).
+- Je nach Raspberry-Pi-OS, X11/Wayland und Chromium-Version kann die native OS-Tastatur automatisch erscheinen – das ist in Ordnung, aber keine harte Abhängigkeit.
+- Zusätzlich gibt es im Pi-Webinterface eine integrierte Fallback-Tastatur: Sie erscheint nur bei aktiven Eingabefeldern und verschwindet nach **OK** oder Klick außerhalb.
+- Falls eine externe/native Tastatur stört, keine OS-Tastatur im `kiosk_start.sh` dauerhaft starten.
+
 ## Installation
 ```bash
 cd pi

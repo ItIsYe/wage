@@ -11,3 +11,14 @@ header{background:#111827;padding:16px;position:sticky;top:0}nav{display:flex;ga
 .progress{width:100%;height:14px;background:#bfdbfe;border-radius:999px;overflow:hidden}
 .progress-bar{height:100%;background:#2563eb;transition:width .25s ease}
 #btn-update-check,#btn-update-apply,#btn-update-refresh{font-size:1.1rem;min-height:52px;padding:12px 16px}
+
+body.touch-keyboard-open{padding-bottom:var(--touch-keyboard-height,0)}
+.touch-keyboard{position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#0f172a;color:#fff;padding:8px;max-height:35vh;overflow-y:auto;box-shadow:0 -8px 22px rgba(0,0,0,.3)}
+.touch-keyboard.hidden{display:none}
+.touch-key-row{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:8px;margin-bottom:8px}
+.touch-key{border:1px solid #334155;background:#1e293b;color:#fff;border-radius:10px;min-height:46px;font-size:1.05rem;padding:8px}
+.touch-key-action{background:#334155}
+.touch-key.is-active{background:#2563eb}
+.touch-key-space{grid-column:span 4}
+.touch-keyboard .touch-key-row:last-child{grid-template-columns:repeat(5,minmax(0,1fr))}
+@media (max-width:900px){.touch-key-row{gap:6px}.touch-key{min-height:42px;font-size:1rem;padding:6px}}

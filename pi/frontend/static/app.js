@@ -363,3 +363,175 @@ function startConfigAutoRefresh() {
 loadUpdateStatus();
 startConfigAutoRefresh();
 
+
+(function initTouchKeyboard() {
+  const textRows = [
+    ['1','2','3','4','5','6','7','8','9','0'],
+    ['q','w','e','r','t','y','u','i','o','p'],
+    ['a','s','d','f','g','h','j','k','l','-'],
+    ['SHIFT','z','x','c','v','b','n','m','_','@'],
+    ['.','SPACE','BACKSPACE','OK','CLOSE']
+  ];
+  const numericRows = [
+    ['1','2','3'],
+    ['4','5','6'],
+    ['7','8','9'],
+    ['.','0','BACKSPACE'],
+    ['OK','CLOSE']
+  ];
+
+  let activeInput = null;
+  let shiftEnabled = false;
+  let hideTimer = null;
+  const keyboard = document.createElement('div');
+  keyboard.id = 'touch-keyboard';
+  keyboard.className = 'touch-keyboard hidden';
+  keyboard.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(keyboard);
+
+  function triggerInputEvents(el) {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function isSupportedInput(el) {
+    if (!el || el.disabled || el.readOnly) return false;
+    if (el.tagName === 'TEXTAREA') return true;
+    if (el.tagName !== 'INPUT') return false;
+    const type = (el.getAttribute('type') || 'text').toLowerCase();
+    return ['text', 'password', 'number', ''].includes(type);
+  }
+
+  function isNumericLayout(el) {
+    if (!el) return false;
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (type === 'number') return true;
+    const probe = `${el.id || ''} ${el.name || ''}`.toLowerCase();
+    return ['ip', 'dhcp', 'port', 'address'].some((k) => probe.includes(k));
+  }
+
+  function resolveKeyLabel(key) {
+    if (key.length !== 1) return key;
+    if (!/[a-z]/i.test(key)) return key;
+    return shiftEnabled ? key.toUpperCase() : key.toLowerCase();
+  }
+
+  function insertAtCursor(el, text) {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const before = el.value.slice(0, start);
+    const after = el.value.slice(end);
+    el.value = `${before}${text}${after}`;
+    const pos = start + text.length;
+    el.setSelectionRange(pos, pos);
+    triggerInputEvents(el);
+  }
+
+  function backspaceAtCursor(el) {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    if (start === 0 && end === 0) return;
+    if (start !== end) {
+      el.value = `${el.value.slice(0, start)}${el.value.slice(end)}`;
+      el.setSelectionRange(start, start);
+    } else {
+      el.value = `${el.value.slice(0, start - 1)}${el.value.slice(end)}`;
+      el.setSelectionRange(start - 1, start - 1);
+    }
+    triggerInputEvents(el);
+  }
+
+  function keyboardHeight() {
+    return Math.min(window.innerHeight * 0.35, 340);
+  }
+
+  function setBodyPadding(show) {
+    document.body.classList.toggle('touch-keyboard-open', show);
+    document.body.style.setProperty('--touch-keyboard-height', show ? `${keyboardHeight()}px` : '0px');
+  }
+
+  function hideKeyboard(blur = false) {
+    keyboard.classList.add('hidden');
+    keyboard.setAttribute('aria-hidden', 'true');
+    setBodyPadding(false);
+    const target = activeInput;
+    activeInput = null;
+    if (blur && target) target.blur();
+  }
+
+  function ensureVisible(el) {
+    if (!el) return;
+    window.setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }, 60);
+  }
+
+  function onKeyPress(key) {
+    if (!activeInput) return;
+    if (key === 'SHIFT') {
+      shiftEnabled = !shiftEnabled;
+      renderKeyboard();
+      return;
+    }
+    if (key === 'SPACE') return insertAtCursor(activeInput, ' ');
+    if (key === 'BACKSPACE') return backspaceAtCursor(activeInput);
+    if (key === 'OK') return hideKeyboard(true);
+    if (key === 'CLOSE') return hideKeyboard(false);
+    insertAtCursor(activeInput, resolveKeyLabel(key));
+    if (shiftEnabled) {
+      shiftEnabled = false;
+      renderKeyboard();
+    }
+  }
+
+  function renderKeyboard() {
+    if (!activeInput) return;
+    const layout = isNumericLayout(activeInput) ? numericRows : textRows;
+    keyboard.innerHTML = layout.map((row) => {
+      const buttons = row.map((key) => {
+        const label = resolveKeyLabel(key);
+        const classes = ['touch-key'];
+        if (['BACKSPACE', 'OK', 'CLOSE', 'SHIFT'].includes(key)) classes.push('touch-key-action');
+        if (key === 'SPACE') classes.push('touch-key-space');
+        if (key === 'SHIFT' && shiftEnabled) classes.push('is-active');
+        return `<button type="button" class="${classes.join(' ')}" data-key="${key}">${esc(label)}</button>`;
+      }).join('');
+      return `<div class="touch-key-row">${buttons}</div>`;
+    }).join('');
+    keyboard.querySelectorAll('button[data-key]').forEach((btn) => {
+      btn.addEventListener('click', () => onKeyPress(btn.dataset.key));
+    });
+  }
+
+  function showKeyboard(el) {
+    clearTimeout(hideTimer);
+    activeInput = el;
+    renderKeyboard();
+    keyboard.classList.remove('hidden');
+    keyboard.setAttribute('aria-hidden', 'false');
+    setBodyPadding(true);
+    ensureVisible(el);
+  }
+
+  document.addEventListener('focusin', (ev) => {
+    const target = ev.target;
+    if (!isSupportedInput(target)) return hideKeyboard(false);
+    showKeyboard(target);
+  });
+
+  document.addEventListener('pointerdown', (ev) => {
+    if (!activeInput) return;
+    const target = ev.target;
+    if (keyboard.contains(target) || target === activeInput) return;
+    if (isSupportedInput(target)) return;
+    hideKeyboard(false);
+  });
+
+  document.addEventListener('focusout', () => {
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      const focused = document.activeElement;
+      if (!keyboard.contains(focused) && focused !== activeInput) hideKeyboard(false);
+    }, 100);
+  });
+})();

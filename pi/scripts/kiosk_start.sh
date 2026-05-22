@@ -6,4 +6,5 @@ if [ -z "$BROWSER" ]; then
   echo "Kein Chromium gefunden" >&2
   exit 1
 fi
-"$BROWSER" --kiosk --incognito --disable-translate --noerrdialogs --disable-infobars "$URL"
+
+exec "$BROWSER"   --kiosk   --incognito   --noerrdialogs   --disable-infobars   --touch-events=enabled   --enable-features=VirtualKeyboard   --disable-features=TranslateUI   "$URL"
