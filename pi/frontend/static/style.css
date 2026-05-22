@@ -22,3 +22,6 @@ body.touch-keyboard-open{padding-bottom:var(--touch-keyboard-height,0)}
 .touch-key-space{grid-column:span 4}
 .touch-keyboard .touch-key-row:last-child{grid-template-columns:repeat(5,minmax(0,1fr))}
 @media (max-width:900px){.touch-key-row{gap:6px}.touch-key{min-height:42px;font-size:1rem;padding:6px}}
+.pw-field{display:flex;gap:8px;align-items:center}
+.pw-field input{flex:1}
+.msg-warn{color:#92400e}

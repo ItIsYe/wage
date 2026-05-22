@@ -8,6 +8,7 @@ DEFAULTS = {
     "client_ssid": "",
     "client_password": "",
     "client_dhcp_enabled": "true",
+    "open_ap_allowed": "false",
     "last_network_apply_status": "never",
     "last_network_apply_at": "",
 }

@@ -2,6 +2,7 @@
 {% block content %}
 <h1>Konfiguration / Netzwerk</h1>
 <div id="msg" class="msg"></div>
+<div id="network-action-msg" class="msg"></div>
 <div class="card warn">⚠️ Netzwerkänderungen können die Verbindung kurz trennen.</div>
 <div id="network-status-grid" class="grid"></div>
 <div class="card">
@@ -13,7 +14,7 @@
   <h3>AP-Einstellungen</h3>
   <div class="grid two">
     <input id="ap-ssid" placeholder="AP SSID">
-    <input id="ap-password" type="password" placeholder="AP Passwort (leer = behalten)">
+    <div class="pw-field"><input id="ap-password" type="password" placeholder="AP Passwort (leer = behalten)"><button type="button" id="toggle-ap-password">anzeigen</button></div>
     <input id="ap-ip" placeholder="AP IP">
     <input id="ap-dhcp-start" placeholder="DHCP Start">
     <input id="ap-dhcp-end" placeholder="DHCP Ende">
@@ -21,9 +22,9 @@
   <h3>Haus-WLAN</h3>
   <div class="grid two">
     <input id="client-ssid" placeholder="WLAN SSID">
-    <input id="client-password" type="password" placeholder="WLAN Passwort (leer = behalten)">
+    <div class="pw-field"><input id="client-password" type="password" placeholder="WLAN Passwort (leer = behalten)"><button type="button" id="toggle-client-password">anzeigen</button></div>
   </div>
-  <div class="toolbar"><button onclick="saveNetworkConfig()">Speichern</button><button onclick="applyNetworkConfig()">Jetzt anwenden</button><button onclick="refreshConfigPage()">Status neu laden</button></div>
+  <div class="toolbar"><button id="btn-network-save" onclick="saveNetworkConfig()">Speichern</button><button id="btn-network-apply" onclick="applyNetworkConfig()">Jetzt anwenden</button><button onclick="refreshConfigPage()">Status neu laden</button></div>
   <div class="msg msg-ok">Neustart empfohlen nach Netzwechsel.</div>
 </div>
 
