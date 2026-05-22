@@ -380,7 +380,7 @@ startConfigAutoRefresh();
     ['OK','CLOSE']
   ];
 
-  let activeInput = null;
+  let activeKeyboardInput = null;
   let shiftEnabled = false;
   let hideTimer = null;
   const keyboard = document.createElement('div');
@@ -388,6 +388,15 @@ startConfigAutoRefresh();
   keyboard.className = 'touch-keyboard hidden';
   keyboard.setAttribute('aria-hidden', 'true');
   document.body.appendChild(keyboard);
+
+  function preventKeyboardPointerBlur(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  ['pointerdown', 'mousedown', 'touchstart'].forEach((eventName) => {
+    keyboard.addEventListener(eventName, preventKeyboardPointerBlur, { passive: false });
+  });
 
   function triggerInputEvents(el) {
     el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -454,8 +463,8 @@ startConfigAutoRefresh();
     keyboard.classList.add('hidden');
     keyboard.setAttribute('aria-hidden', 'true');
     setBodyPadding(false);
-    const target = activeInput;
-    activeInput = null;
+    const target = activeKeyboardInput;
+    activeKeyboardInput = null;
     if (blur && target) target.blur();
   }
 
@@ -467,17 +476,22 @@ startConfigAutoRefresh();
   }
 
   function onKeyPress(key) {
-    if (!activeInput) return;
+    if (!activeKeyboardInput) return;
     if (key === 'SHIFT') {
       shiftEnabled = !shiftEnabled;
       renderKeyboard();
       return;
     }
-    if (key === 'SPACE') return insertAtCursor(activeInput, ' ');
-    if (key === 'BACKSPACE') return backspaceAtCursor(activeInput);
+    const input = activeKeyboardInput;
+    if (key === 'SPACE') return insertAtCursor(input, ' ');
+    if (key === 'BACKSPACE') return backspaceAtCursor(input);
     if (key === 'OK') return hideKeyboard(true);
     if (key === 'CLOSE') return hideKeyboard(false);
-    insertAtCursor(activeInput, resolveKeyLabel(key));
+    if (key === 'ENTER') {
+      if (input.tagName === 'TEXTAREA') return insertAtCursor(input, '\n');
+      return hideKeyboard(true);
+    }
+    insertAtCursor(input, resolveKeyLabel(key));
     if (shiftEnabled) {
       shiftEnabled = false;
       renderKeyboard();
@@ -485,8 +499,8 @@ startConfigAutoRefresh();
   }
 
   function renderKeyboard() {
-    if (!activeInput) return;
-    const layout = isNumericLayout(activeInput) ? numericRows : textRows;
+    if (!activeKeyboardInput) return;
+    const layout = isNumericLayout(activeKeyboardInput) ? numericRows : textRows;
     keyboard.innerHTML = layout.map((row) => {
       const buttons = row.map((key) => {
         const label = resolveKeyLabel(key);
@@ -499,13 +513,16 @@ startConfigAutoRefresh();
       return `<div class="touch-key-row">${buttons}</div>`;
     }).join('');
     keyboard.querySelectorAll('button[data-key]').forEach((btn) => {
+      ['pointerdown', 'mousedown', 'touchstart'].forEach((eventName) => {
+        btn.addEventListener(eventName, preventKeyboardPointerBlur, { passive: false });
+      });
       btn.addEventListener('click', () => onKeyPress(btn.dataset.key));
     });
   }
 
   function showKeyboard(el) {
     clearTimeout(hideTimer);
-    activeInput = el;
+    activeKeyboardInput = el;
     renderKeyboard();
     keyboard.classList.remove('hidden');
     keyboard.setAttribute('aria-hidden', 'false');
@@ -520,18 +537,11 @@ startConfigAutoRefresh();
   });
 
   document.addEventListener('pointerdown', (ev) => {
-    if (!activeInput) return;
+    if (!activeKeyboardInput) return;
     const target = ev.target;
-    if (keyboard.contains(target) || target === activeInput) return;
+    if (keyboard.contains(target) || target === activeKeyboardInput) return;
     if (isSupportedInput(target)) return;
     hideKeyboard(false);
   });
 
-  document.addEventListener('focusout', () => {
-    clearTimeout(hideTimer);
-    hideTimer = setTimeout(() => {
-      const focused = document.activeElement;
-      if (!keyboard.contains(focused) && focused !== activeInput) hideKeyboard(false);
-    }, 100);
-  });
 })();
