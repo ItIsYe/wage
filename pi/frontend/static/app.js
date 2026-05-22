@@ -90,6 +90,7 @@ async function loadDashboard() {
     flash("", true);
   } catch (e) {
     flash(`Dashboard konnte nicht geladen werden: ${e.message}`);
+  }
 }
 
 async function loadStatus() {
@@ -210,7 +211,25 @@ async function loadNetworkConfig() {
     if (byId('ap-password')) byId('ap-password').placeholder = cfg.ap_password_set ? 'AP Passwort gesetzt – leer lassen = behalten' : 'AP Passwort (mindestens 8 Zeichen)';
     setApPasswordHint(!cfg.ap_password_set, 'AP-Passwort erforderlich, mindestens 8 Zeichen');
     if (byId('client-password')) byId('client-password').placeholder = cfg.client_password_set ? 'WLAN Passwort gesetzt – leer lassen = behalten' : 'WLAN Passwort (optional)';
-    byId('network-status-grid').innerHTML = `<div class="card"><h3>Netzwerkstatus</h3><div>Gespeicherter Modus: ${esc(cfg.network_mode)}</div><div>AP-Sicherheit: ${esc(cfg.ap_security)}</div><div>Aktiver Status: ${esc(status.status)}</div><div>Letzte Anwendung: ${esc(status.last_network_apply_at || '-')}</div><div>Letzter Apply-Status: ${esc(status.last_network_apply_status || '-')}</div><div>Aktive NM-Connection: <pre>${esc(status.current_nmcli_connection || '-')}</pre></div><div>Pi-IP: ${esc(cfg.current_pi_ip)}</div><div>API-Ziel: ${esc(cfg.api_target)}</div></div>`;
+    const statusRoot = byId('network-status-grid');
+    if (statusRoot) {
+      const nmConn = String(status.current_nmcli_connection || '-');
+      const shortNmConn = nmConn.length > 140 ? `${nmConn.slice(0, 140)}…` : nmConn;
+      statusRoot.innerHTML = `<div class="card network-status-card">
+        <h3>Netzwerk-Status</h3>
+        <div><strong>Gespeicherter Modus:</strong> ${esc(cfg.network_mode)}</div>
+        <div><strong>Aktiver Status:</strong> ${esc(status.status)}</div>
+        <div><strong>AP-Sicherheit:</strong> ${esc(cfg.ap_security)}</div>
+        <div><strong>Pi-IP:</strong> ${esc(cfg.current_pi_ip)}</div>
+        <div><strong>API-Ziel:</strong> ${esc(cfg.api_target)}</div>
+        <div><strong>Letzte Anwendung:</strong> ${esc(status.last_network_apply_at || '-')}</div>
+        <div><strong>Letzter Apply-Status:</strong> <span class="long-text">${esc(status.last_network_apply_status || '-')}</span></div>
+        <details class="nm-connection-details">
+          <summary>Aktive NM-Connection: ${esc(shortNmConn)}</summary>
+          <div class="long-text">${esc(nmConn)}</div>
+        </details>
+      </div>`;
+    }
   } catch (e) { flash(`Konfiguration konnte nicht geladen werden: ${e.message}`); }
 }
 
@@ -239,7 +258,7 @@ async function saveNetworkConfig() {
     await refreshConfigPage();
   } catch (e) {
     flash(`Speichern fehlgeschlagen: ${e.message}`);
-    networkActionMsg(`Speichern fehlgeschlagen: ${e.message}`, 'err');
+      networkActionMsg(`Speichern fehlgeschlagen: ${e.message}`, 'err');
   } finally {
     setNetworkButtonsDisabled(false);
   }
@@ -259,7 +278,7 @@ async function applyNetworkConfig() {
       networkActionMsg('Netzwerk wird angewendet. Verbindung kann kurz abbrechen.', 'warn');
     } else {
       flash(`Anwenden fehlgeschlagen: ${e.message}`);
-      networkActionMsg(msg, 'err');
+      networkActionMsg(`Anwenden fehlgeschlagen: ${msg}`, 'err');
     }
   } finally {
     setNetworkButtonsDisabled(false);
@@ -611,4 +630,3 @@ startConfigAutoRefresh();
 
 setupPasswordToggle('ap-password', 'toggle-ap-password', 'load-ap-password', '/api/v1/config/network/secret/ap-password');
 setupPasswordToggle('client-password', 'toggle-client-password', 'load-client-password', '/api/v1/config/network/secret/client-password');
-}
