@@ -24,6 +24,12 @@ function networkActionMsg(msg, tone = "info") {
 function setNetworkButtonsDisabled(disabled) {
   ["btn-network-save", "btn-network-apply"].forEach((id) => { const btn = byId(id); if (btn) btn.disabled = disabled; });
 }
+function setApPasswordHint(visible, msg = "") {
+  const hint = byId("ap-password-hint");
+  if (!hint) return;
+  hint.style.display = visible ? "block" : "none";
+  hint.textContent = msg;
+}
 function setupPasswordToggle(inputId, btnId) {
   const input = byId(inputId); const btn = byId(btnId);
   if (!input || !btn) return;
@@ -179,6 +185,7 @@ async function loadNetworkConfig() {
     byId('ap-dhcp-end').value = cfg.ap_dhcp_end || '';
     byId('client-ssid').value = cfg.client_ssid || '';
     if (byId('ap-password')) byId('ap-password').placeholder = cfg.ap_password_set ? 'AP Passwort gesetzt – leer lassen = behalten' : 'AP Passwort (mindestens 8 Zeichen)';
+    setApPasswordHint(!cfg.ap_password_set, 'AP-Passwort erforderlich, mindestens 8 Zeichen');
     if (byId('client-password')) byId('client-password').placeholder = cfg.client_password_set ? 'WLAN Passwort gesetzt – leer lassen = behalten' : 'WLAN Passwort (optional)';
     byId('network-status-grid').innerHTML = `<div class="card"><h3>Netzwerkstatus</h3><div>Gespeicherter Modus: ${esc(cfg.network_mode)}</div><div>AP-Sicherheit: ${esc(cfg.ap_security)}</div><div>Aktiver Status: ${esc(status.status)}</div><div>Letzte Anwendung: ${esc(status.last_network_apply_at || '-')}</div><div>Letzter Apply-Status: ${esc(status.last_network_apply_status || '-')}</div><div>Aktive NM-Connection: <pre>${esc(status.current_nmcli_connection || '-')}</pre></div><div>Pi-IP: ${esc(cfg.current_pi_ip)}</div><div>API-Ziel: ${esc(cfg.api_target)}</div></div>`;
   } catch (e) { flash(`Konfiguration konnte nicht geladen werden: ${e.message}`); }
@@ -221,7 +228,7 @@ async function applyNetworkConfig() {
   try {
     const d = await api('/api/v1/config/network/apply', {method:'POST'});
     flash(d.status || 'Angewendet.', d.ok);
-    networkActionMsg('Netzwerkeinstellungen angewendet', 'ok');
+    networkActionMsg(d.status || 'Netzwerkeinstellungen angewendet', d.ok ? 'ok' : 'err');
   } catch (e) {
     const msg = String(e.message || '');
     if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror') || msg.toLowerCase().includes('network')) {
@@ -229,7 +236,7 @@ async function applyNetworkConfig() {
       networkActionMsg('Netzwerk wird angewendet. Verbindung kann kurz abbrechen.', 'warn');
     } else {
       flash(`Anwenden fehlgeschlagen: ${e.message}`);
-      networkActionMsg(`Anwenden fehlgeschlagen: ${e.message}`, 'err');
+      networkActionMsg(msg, 'err');
     }
   } finally {
     setNetworkButtonsDisabled(false);

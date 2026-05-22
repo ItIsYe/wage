@@ -15,7 +15,7 @@ command -v sqlite3 >/dev/null 2>&1 || fail "sqlite3 CLI fehlt"
 
 get_state() {
   local key="$1"
-  sqlite3 -noheader "$DB_PATH" "SELECT COALESCE(value,'') FROM app_state WHERE key='${key}' LIMIT 1;"
+  sqlite3 -noheader "$DB_PATH" "SELECT COALESCE((SELECT value FROM app_state WHERE key='${key}' LIMIT 1),'');"
 }
 
 MODE="$(get_state network_mode)"; MODE="${MODE:-ap}"
@@ -36,7 +36,7 @@ if [[ "$MODE" == "ap" ]]; then
 
   if [[ -z "$AP_PASSWORD" ]]; then
     if [[ "${OPEN_AP_ALLOWED,,}" != "true" ]]; then
-      fail "AP-Passwort fehlt. Offener AP ist standardmäßig verboten (open_ap_allowed=false)."
+      fail "AP-Passwort fehlt. Bitte im Webinterface ein AP-Passwort mit mindestens 8 Zeichen setzen."
     fi
   elif [[ ${#AP_PASSWORD} -lt 8 ]]; then
     fail "AP-Passwort zu kurz (mindestens 8 Zeichen erforderlich)"
@@ -49,7 +49,7 @@ if [[ "$MODE" == "ap" ]]; then
   if [[ -n "$AP_PASSWORD" ]]; then
     nmcli connection modify wage-net-ap wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$AP_PASSWORD"
   else
-    nmcli connection modify wage-net-ap wifi-sec.key-mgmt "" wifi-sec.psk "" 802-11-wireless-security.key-mgmt ""
+    nmcli connection modify wage-net-ap -wifi-sec.key-mgmt -wifi-sec.psk
   fi
 
   nmcli connection up wage-net-ap >/dev/null

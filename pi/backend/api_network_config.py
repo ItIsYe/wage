@@ -72,6 +72,9 @@ def _validate_network_config(cfg: dict[str, str]) -> None:
     ap_password = cfg.get("ap_password", "")
     if ap_password and len(ap_password) < 8:
         raise HTTPException(status_code=400, detail="AP-Passwort muss mindestens 8 Zeichen lang sein.")
+    open_ap_allowed = str(cfg.get("open_ap_allowed", "false")).lower() == "true"
+    if mode == "ap" and not open_ap_allowed and len(ap_password) < 8:
+        raise HTTPException(status_code=400, detail="AP-Passwort muss gesetzt sein und mindestens 8 Zeichen haben.")
     if mode == "client" and not cfg.get("client_ssid", "").strip():
         raise HTTPException(status_code=400, detail="Client-SSID darf im Client-Modus nicht leer sein.")
 
