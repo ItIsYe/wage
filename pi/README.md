@@ -212,11 +212,13 @@ sudo systemctl restart wage-pi-backend wage-pi-oled wage-pi-leds
 ```
 
 ### Web-Update im `/config`-Bereich
-- Der Web-Updater aktualisiert **ausschließlich** Dateien unter `/pi`.
-- Waagen-/ESP32-Dateien (z. B. `wage-esp32/`) werden nicht aktualisiert.
-- Es wird **kein** vollständiges `git pull` für das gesamte Repository ausgeführt.
-- Update ist nur erlaubt, wenn der Pi im Haus-WLAN-Client-Modus läuft (`network_mode=client`).
-- Im AP-Modus ist das Update gesperrt, damit der Pi während des WLAN-Wechsels/Internetzugriffs nicht in einen instabilen Zustand gerät.
+- Im Bereich **Pi-System-Update** startet der Ablauf mit Statuskarte + **„Nach Updates prüfen“**.
+- Bei der Prüfung zeigt die UI klar „Suche nach Updates…“ inkl. Ladeanzeige.
+- Ergebnis ohne Update: **„Keine Pi-Updates verfügbar“** (grün), kein Update-Button.
+- Ergebnis mit Update: **„Pi-Update verfügbar“** (gelb/blau), Liste **„Geänderte Pi-Dateien“**, Button **„Jetzt updaten“**.
+- Updates bleiben im AP-Modus gesperrt: **nur im Haus-WLAN-Client-Modus**.
+- Beim Update zeigt die UI Schrittstatus und Fortschrittsbalken; bei Backend-Neustart wird automatisch Healthcheck gemacht und der Status danach neu geladen.
+- Lokale Runtime-Daten bleiben geschützt und werden nicht als Hauptfehler hervorgehoben.
 
 ### API-Endpunkte für Update
 - `GET /api/v1/system/update/status`

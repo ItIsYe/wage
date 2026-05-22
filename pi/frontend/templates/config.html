@@ -32,9 +32,9 @@
   <div id="update-hint" class="msg"></div>
   <div id="update-status-grid" class="grid"></div>
   <div class="toolbar">
-    <button id="btn-update-check" onclick="checkPiUpdates()">Nach Pi-Updates suchen</button>
-    <button id="btn-update-apply" onclick="applyPiUpdate()">Pi-Update installieren</button>
-    <button id="btn-update-refresh" onclick="loadUpdateStatus()">Update-Status neu laden</button>
+    <button id="btn-update-check" onclick="checkPiUpdates()">Nach Updates prüfen</button>
+    <button id="btn-update-apply" onclick="applyPiUpdate()" style="display:none">Jetzt updaten</button>
+    <button id="btn-update-refresh" onclick="loadUpdateStatus()">Status neu laden</button>
   </div>
 </div>
 {% endblock %}

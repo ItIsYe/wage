@@ -210,7 +210,7 @@ async function applyNetworkConfig() {
 loadNetworkConfig();
 
 let updateBusy = false;
-let configAutoRefreshTimer = null;
+let updatePollTimer = null;
 
 function setUpdateButtonsDisabled(disabled) {
   ['btn-update-check', 'btn-update-apply', 'btn-update-refresh'].forEach((id) => {
@@ -226,47 +226,68 @@ function setUpdateHint(message, tone = 'info') {
   hint.className = `msg msg-${tone}`;
 }
 
-function spinnerLabel(text) {
-  return `<span class="busy-dot" aria-hidden="true"></span>${esc(text)}`;
+function spinnerLabel(text) { return `<span class="busy-dot" aria-hidden="true"></span>${esc(text)}`; }
+
+function stateTone(uiState) {
+  if (['no_update','success'].includes(uiState)) return 'ok';
+  if (['checking','updating'].includes(uiState)) return 'info';
+  if (uiState === 'update_available') return 'warn';
+  return 'err';
 }
 
 function renderUpdateStatus(data) {
   const root = byId('update-status-grid');
   if (!root) return;
   const changed = data.changed_pi_files || [];
-  const ignoredLocal = data.ignored_local_runtime_files || [];
-  const blockingLocal = data.blocking_local_code_files || [];
-  const syncedRemote = data.synced_with_remote_files || [];
-  const list = (arr) => arr.map((f) => `<li>${esc(f)}</li>`).join('') || '<li>-</li>';
-  const allowed = !!data.allowed;
-  const running = updateBusy;
+  const blocking = data.blocking_local_code_files || [];
+  const canApply = !!data.can_apply || data.ui_state === 'update_available';
+  const runtimeHint = (data.ignored_local_runtime_files || []).length > 0 || (data.ignored_remote_runtime_files || []).length > 0;
+  const progress = Number(data.progress_percent || 0);
+  const details = `
+    <details class="update-details"><summary>Technische Details</summary>
+      <div><strong>local_commit:</strong> ${esc(data.local_commit || '-')}</div>
+      <div><strong>remote_commit:</strong> ${esc(data.remote_commit || '-')}</div>
+      <div><strong>synced_with_remote_files:</strong><ul>${(data.synced_with_remote_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+      <div><strong>ignored_runtime_files:</strong><ul>${(data.ignored_local_runtime_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+      <div><strong>blocking_local_code_files:</strong><ul>${blocking.map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+    </details>`;
+
   root.innerHTML = `
-    <div class="card ${running ? 'status-info' : 'status-ok'}"><h3>Update-Status</h3><div class="kpi">${running ? 'Läuft' : (data.last_update_status || '-')}</div><div>Zuletzt: ${esc(data.last_update_at || '-')}</div></div>
-    <div class="card ${data.network_mode === 'client' ? 'status-ok' : 'status-err'}"><h3>Netzwerkmodus</h3><div class="kpi">${esc(data.network_mode || '-')}</div></div>
-    <div class="card ${allowed ? 'status-ok' : 'status-err'}"><h3>Update erlaubt</h3><div class="kpi">${allowed ? 'ja' : 'nein'}</div></div>
-    <div class="card ${data.pi_changes_available ? 'status-warn' : 'status-ok'}"><h3>Update verfügbar</h3><div class="kpi">${data.pi_changes_available ? 'ja' : 'nein'}</div></div>
-    <div class="card"><h3>Letzter Update-Status</h3><div>${esc(data.last_update_status || '-')}</div></div>
-    <div class="card"><h3>Geänderte Pi-Dateien</h3><ul>${list(changed)}</ul></div>
-    <div class="card status-warn"><h3>Ignorierte Runtime-Dateien</h3><ul>${list(ignoredLocal)}</ul></div>
-    <div class="card status-info"><h3>Mit Remote synchronisiert</h3><ul>${list(syncedRemote)}</ul></div>
-    <div class="card ${blockingLocal.length > 0 ? 'status-err' : 'status-ok'}"><h3>Blockierende lokale Code-Dateien</h3><ul>${list(blockingLocal)}</ul></div>
-  `;
+    <div class="card status-${stateTone(data.ui_state)} update-main-card">
+      <h3>Update-Status</h3>
+      <div class="kpi">${esc(data.ui_message || '-')}</div>
+      <div>Netzwerkmodus: <strong>${esc(data.network_mode || '-')}</strong></div>
+      <div>Update erlaubt: <strong>${data.allowed ? 'ja' : 'nein'}</strong></div>
+      <div>Letzte Prüfung: ${esc(data.last_update_at || '-')}</div>
+      <div>Letztes Update: ${esc(data.last_update_status || '-')}</div>
+      ${(data.ui_state === 'checking' || data.ui_state === 'updating') ? `<div class="update-progress-head">${spinnerLabel(esc(data.progress_step || 'Bitte warten...'))}</div>
+      <div class="progress"><div class="progress-bar" style="width:${Math.max(0,Math.min(100,progress))}%"></div></div>` : ''}
+      ${(changed.length > 0 && canApply) ? `<h4>Geänderte Pi-Dateien</h4><ul>${changed.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      ${(blocking.length > 0) ? `<h4>Blockierende Dateien</h4><ul>${blocking.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      ${runtimeHint ? '<small>Lokale Betriebsdaten bleiben geschützt.</small>' : ''}
+      ${details}
+    </div>`;
 
-  if (!allowed) setUpdateHint('Bitte zuerst auf Haus-WLAN-Client wechseln.', 'err');
-  else if (blockingLocal.length > 0) setUpdateHint('Lokale Code-Änderungen blockieren das Update.', 'err');
-  else if (running) setUpdateHint(spinnerLabel('Update läuft...'), 'info');
-  else if (ignoredLocal.length > 0) setUpdateHint('Lokale Betriebsdaten werden geschützt und ignoriert.', 'ok');
-  else setUpdateHint('', 'ok');
+  const applyBtn = byId('btn-update-apply');
+  if (applyBtn) applyBtn.style.display = canApply && !updateBusy ? 'inline-flex' : 'none';
+  setUpdateHint(data.ui_message || '', stateTone(data.ui_state));
+  setUpdateButtonsDisabled(updateBusy || !data.can_check);
+}
 
-  setUpdateButtonsDisabled(updateBusy || !allowed || blockingLocal.length > 0);
+function setUpdatePolling(active) {
+  if (updatePollTimer) clearInterval(updatePollTimer);
+  updatePollTimer = null;
+  if (!active) return;
+  updatePollTimer = setInterval(() => loadUpdateStatus(true).catch(() => {}), 2000);
 }
 
 async function loadUpdateStatus(silent = false) {
   if (!byId('update-status-grid')) return;
   try {
-    renderUpdateStatus(await api('/api/v1/system/update/status'));
+    const data = await api('/api/v1/system/update/status');
+    renderUpdateStatus(data);
+    setUpdatePolling(data.ui_state === 'checking' || data.ui_state === 'updating' || updateBusy);
   } catch (e) {
-    setUpdateButtonsDisabled(updateBusy);
     if (!silent) flash(`Update-Status konnte nicht geladen werden: ${e.message}`);
   }
 }
@@ -274,53 +295,58 @@ async function loadUpdateStatus(silent = false) {
 async function checkPiUpdates() {
   updateBusy = true;
   setUpdateButtonsDisabled(true);
-  setUpdateHint(spinnerLabel('Suche nach Pi-Updates...'), 'info');
+  setUpdateHint(spinnerLabel('Suche nach Updates...'), 'info');
+  setUpdatePolling(true);
   try {
     const data = await api('/api/v1/system/update/check', {method: 'POST'});
     renderUpdateStatus(data);
-    flash(data.pi_changes_available ? 'Pi-Updates gefunden.' : 'Keine Pi-Updates vorhanden.', true);
   } catch (e) {
     flash(`Update-Prüfung fehlgeschlagen: ${e.message}`);
   } finally {
     updateBusy = false;
     await loadUpdateStatus(true);
-    await refreshConfigPage();
   }
+}
+
+async function waitForBackendAfterUpdate() {
+  setUpdateHint(spinnerLabel('Backend startet neu, bitte warten...'), 'info');
+  for (let i = 0; i < 45; i += 1) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const h = await api('/api/v1/health');
+      if (h && h.ok) return true;
+    } catch (_) {}
+  }
+  return false;
 }
 
 async function applyPiUpdate() {
   updateBusy = true;
   setUpdateButtonsDisabled(true);
-  setUpdateHint(`${spinnerLabel('Pi-Update wird installiert...')}<br><small>Backend kann kurz neu starten.</small>`, 'info');
+  setUpdatePolling(true);
+  setUpdateHint(spinnerLabel('Update wird vorbereitet...'), 'info');
   try {
     const data = await api('/api/v1/system/update/apply', {method: 'POST'});
-    flash(data.status || 'Pi-Update durchgeführt.', true);
-    await loadUpdateStatus(true);
+    renderUpdateStatus(data);
   } catch (e) {
     const msg = String(e.message || '').toLowerCase();
     if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
-      flash('Update gestartet. Backend startet neu. Seite wird automatisch neu geladen.', true);
-      [3000, 6000, 10000].forEach((delay) => setTimeout(() => { loadUpdateStatus(true); refreshConfigPage(); }, delay));
+      const ok = await waitForBackendAfterUpdate();
+      if (ok) await loadUpdateStatus();
+      else flash('Backend war nicht rechtzeitig erreichbar.', false);
     } else {
       flash(`Pi-Update fehlgeschlagen: ${e.message}`);
     }
   } finally {
     updateBusy = false;
     await loadUpdateStatus(true);
+    setUpdatePolling(false);
   }
 }
 
 function startConfigAutoRefresh() {
-  if (!byId('update-status-grid') && !byId('network-status-grid')) return;
-  if (configAutoRefreshTimer) clearInterval(configAutoRefreshTimer);
-  let ticks = 0;
-  configAutoRefreshTimer = setInterval(() => {
-    ticks += 1;
-    const due = updateBusy ? true : (ticks % 5 === 0);
-    if (due) refreshConfigPage().catch(() => {});
-  }, 2000);
+  loadUpdateStatus(true).catch(() => {});
 }
-
 loadUpdateStatus();
 startConfigAutoRefresh();
 
