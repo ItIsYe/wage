@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 from fastapi import APIRouter, HTTPException
 
@@ -106,21 +107,26 @@ def _is_update_relevant_pi_path(path: str) -> bool:
     return path in UPDATE_RELEVANT_FILES or path.startswith(UPDATE_RELEVANT_PREFIXES)
 
 
-def _changed_pi_files(local_commit: str, remote_commit: str) -> tuple[list[str], list[str]]:
-    if not local_commit or not remote_commit:
-        return [], []
-    proc = _run(_git_cmd("diff", "--name-only", local_commit, remote_commit, "--", "pi"), cwd=REPO_PATH)
+def _list_remote_update_files() -> list[str]:
+    pathspecs = list(UPDATE_RELEVANT_PREFIXES) + list(UPDATE_RELEVANT_FILES)
+    proc = _run(_git_cmd("ls-tree", "-r", "--name-only", f"origin/{TARGET_BRANCH}", "--", *pathspecs), cwd=REPO_PATH)
     if proc.returncode != 0:
-        return [], []
-    paths = [line.strip() for line in proc.stdout.splitlines() if line.strip().startswith("pi/")]
-    ignored_runtime = sorted({p for p in paths if is_protected_pi_runtime_path(p)})
-    changed = sorted({p for p in paths if not is_protected_pi_runtime_path(p) and _is_update_relevant_pi_path(p)})
-    return changed, ignored_runtime
+        raise HTTPException(status_code=500, detail=f"Remote-Dateiliste fehlgeschlagen: {proc.stderr.strip() or proc.stdout.strip()}")
+    return sorted({p.strip() for p in proc.stdout.splitlines() if p.strip().startswith("pi/") and _is_update_relevant_pi_path(p.strip())})
 
 
-def _is_file_synced_with_remote(path: str) -> bool:
-    proc = _run(_git_cmd("diff", "--quiet", f"origin/{TARGET_BRANCH}", "--", path), cwd=REPO_PATH)
-    return proc.returncode == 0
+def _changed_pi_files_against_remote() -> tuple[list[str], list[str]]:
+    changed: list[str] = []
+    synced: list[str] = []
+    for path in _list_remote_update_files():
+        proc = _run(_git_cmd("diff", "--quiet", f"origin/{TARGET_BRANCH}", "--", path), cwd=REPO_PATH)
+        if proc.returncode == 0:
+            synced.append(path)
+        elif proc.returncode == 1:
+            changed.append(path)
+        else:
+            raise HTTPException(status_code=500, detail=f"Datei-Vergleich fehlgeschlagen: {path}")
+    return sorted(changed), sorted(synced)
 
 
 def _local_pi_changes() -> tuple[list[str], list[str], list[str]]:
@@ -133,7 +139,8 @@ def _local_pi_changes() -> tuple[list[str], list[str], list[str]]:
     synced: list[str] = []
     blocking: list[str] = []
     for path in relevant:
-        if _is_file_synced_with_remote(path):
+        proc = _run(_git_cmd("diff", "--quiet", f"origin/{TARGET_BRANCH}", "--", path), cwd=REPO_PATH)
+        if proc.returncode == 0:
             synced.append(path)
         else:
             blocking.append(path)
@@ -177,49 +184,49 @@ def _persist_update_state(status: str, local_commit: str, remote_commit: str, ch
     return now
 
 
-def _response_payload(mode: str, state: dict[str, str], local_commit: str, remote_commit: str, changed: list[str], ignored_runtime: list[str], ignored_remote_runtime: list[str], blocking_code: list[str], synced_with_remote: list[str], ui_state: str = "", ui_message: str = "", progress_step: str = "", progress_percent: int = 0) -> dict:
+def _response_payload(mode: str, state: dict[str, str], local_commit: str, remote_commit: str, changed: list[str], ignored_runtime: list[str], blocking_code: list[str], synced_with_remote: list[str], ui_state: str = "", ui_message: str = "", progress_step: str = "", progress_percent: int = 0) -> dict:
     derived_state, derived_msg, can_check, can_apply = _ui_for(mode, changed, blocking_code)
     final_state = ui_state or derived_state
     final_msg = ui_message or derived_msg
-    return {
-        "ok": True,
-        "allowed": mode == "client",
-        "network_mode": mode,
-        "update_scope": UPDATE_SCOPE,
-        "local_commit": local_commit,
-        "remote_commit": remote_commit,
-        "pi_changes_available": len(changed) > 0,
-        "changed_pi_files": changed,
-        "ignored_remote_runtime_files": ignored_remote_runtime,
-        "ignored_local_runtime_files": ignored_runtime,
-        "blocking_local_code_files": blocking_code,
-        "synced_with_remote_files": synced_with_remote,
-        "last_update_status": state.get("last_update_status", ""),
-        "last_update_at": state.get("last_update_at", ""),
-        "ui_state": final_state,
-        "ui_message": final_msg,
-        "can_check": can_check,
-        "can_apply": can_apply,
-        "progress_step": progress_step or state.get("last_update_progress_step", ""),
-        "progress_percent": int(state.get("last_update_progress_percent", "0") or 0) if not progress_percent else progress_percent,
-    }
+    return {"ok": True, "allowed": mode == "client", "network_mode": mode, "update_scope": UPDATE_SCOPE, "local_commit": local_commit, "remote_commit": remote_commit, "pi_changes_available": len(changed) > 0, "changed_pi_files": changed, "ignored_local_runtime_files": ignored_runtime, "blocking_local_code_files": blocking_code, "synced_with_remote_files": synced_with_remote, "last_update_status": state.get("last_update_status", ""), "last_update_at": state.get("last_update_at", ""), "ui_state": final_state, "ui_message": final_msg, "can_check": can_check, "can_apply": can_apply, "progress_step": progress_step or state.get("last_update_progress_step", ""), "progress_percent": int(state.get("last_update_progress_percent", "0") or 0) if not progress_percent else progress_percent}
+
+
+def _calculate_update_status() -> tuple[str, str, list[str], list[str], list[str], list[str]]:
+    local_commit = _git_value(["rev-parse", "HEAD"])
+    remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
+    changed, synced_remote = _changed_pi_files_against_remote()
+    ignored_runtime, blocking_code, synced_local = _local_pi_changes()
+    return local_commit, remote_commit, changed, ignored_runtime, blocking_code, sorted(set(synced_remote + synced_local))
+
+
+def _run_background_update_job() -> None:
+    _ensure_repo_and_git()
+    _fetch_origin_target()
+    local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote = _calculate_update_status()
+    if blocking_code or not changed:
+        return
+    _persist_update_state("installiere update...", local_commit, remote_commit, changed, ignored_runtime, [], synced_with_remote, ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Pi-Dateien wurden geladen", progress_percent=30)
+    _run(_git_cmd("checkout", f"origin/{TARGET_BRANCH}", "--", *changed), cwd=REPO_PATH)
+    ensure_config_defaults()
+    _persist_update_state("installiere update...", local_commit, remote_commit, changed, ignored_runtime, [], synced_with_remote, ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Abhängigkeiten geprüft", progress_percent=60)
+    _run([str(REPO_PATH / "pi" / ".venv" / "bin" / "pip"), "install", "-r", "requirements.txt"], cwd=REPO_PATH / "pi", timeout=PIP_TIMEOUT_SECONDS)
+    _persist_update_state("installiere update...", local_commit, remote_commit, changed, ignored_runtime, [], synced_with_remote, ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Services werden neu gestartet", progress_percent=80)
+    for service in ["wage-pi-oled", "wage-pi-leds"]:
+        _run(["sudo", "systemctl", "restart", service], timeout=SYSTEMCTL_TIMEOUT_SECONDS)
+    _persist_update_state("update erfolgreich", local_commit, remote_commit, changed, ignored_runtime, [], synced_with_remote, ui_state="success", ui_message="Update abgeschlossen", progress_step="Update abgeschlossen", progress_percent=100)
+    _run(["sudo", "systemctl", "restart", "wage-pi-backend"], timeout=SYSTEMCTL_TIMEOUT_SECONDS)
 
 
 @router.get("/status")
 def update_status():
-    state = _read_state([
-        "last_update_status", "last_update_at", "last_update_local_commit", "last_update_remote_commit", "last_update_changed_pi_files", "last_update_scope", "last_update_synced_with_remote_files", "last_update_ui_state", "last_update_ui_message", "last_update_progress_step", "last_update_progress_percent"
-    ])
+    state = _read_state(["last_update_status", "last_update_at", "last_update_ui_state", "last_update_ui_message", "last_update_progress_step", "last_update_progress_percent"])
     mode = _network_mode()
     if mode == "ap":
-        return _response_payload(mode, state, "", "", [], [], [], [], [], ui_state="blocked", ui_message=AP_BLOCK_REASON)
-
+        return _response_payload(mode, state, "", "", [], [], [], [], ui_state="blocked", ui_message=AP_BLOCK_REASON)
     _ensure_repo_and_git()
-    local_commit = _git_value(["rev-parse", "HEAD"])
-    remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
-    changed, ignored_remote_runtime = _changed_pi_files(local_commit, remote_commit)
-    ignored_runtime, blocking_code, synced_with_remote = _local_pi_changes()
-    return _response_payload(mode, state, local_commit, remote_commit, changed, ignored_runtime, ignored_remote_runtime, blocking_code, synced_with_remote)
+    _fetch_origin_target()
+    local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote = _calculate_update_status()
+    return _response_payload(mode, state, local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote, ui_state=state.get("last_update_ui_state", ""), ui_message=state.get("last_update_ui_message", ""))
 
 
 @router.post("/check")
@@ -228,52 +235,30 @@ def update_check():
     _persist_update_state("prüfe updates...", "", "", [], [], [], [], ui_state="checking", ui_message="Suche nach Updates...", progress_step="Suche nach Updates...", progress_percent=10)
     _ensure_repo_and_git()
     _fetch_origin_target()
-    local_commit = _git_value(["rev-parse", "HEAD"])
-    remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
-    changed, ignored_remote_runtime = _changed_pi_files(local_commit, remote_commit)
-    ignored_runtime, blocking_code, synced_with_remote = _local_pi_changes()
+    local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote = _calculate_update_status()
     ui_state, ui_message, _, _ = _ui_for(mode, changed, blocking_code)
-    _persist_update_state(ui_message, local_commit, remote_commit, changed, ignored_runtime + ignored_remote_runtime, blocking_code, synced_with_remote, ui_state=ui_state, ui_message=ui_message, progress_step="Prüfung abgeschlossen", progress_percent=100)
+    _persist_update_state(ui_message, local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote, ui_state=ui_state, ui_message=ui_message, progress_step="Prüfung abgeschlossen", progress_percent=100)
     state = _read_state(["last_update_status", "last_update_at", "last_update_progress_step", "last_update_progress_percent"])
-    return _response_payload(mode, state, local_commit, remote_commit, changed, ignored_runtime, ignored_remote_runtime, blocking_code, synced_with_remote, ui_state=ui_state, ui_message=ui_message, progress_step="Prüfung abgeschlossen", progress_percent=100)
+    return _response_payload(mode, state, local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote, ui_state=ui_state, ui_message=ui_message, progress_step="Prüfung abgeschlossen", progress_percent=100)
 
 
 @router.post("/apply")
 def update_apply():
-    mode = _require_client_mode()
-    _persist_update_state("installiere update...", "", "", [], [], [], [], ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Update wird vorbereitet...", progress_percent=5)
+    _require_client_mode()
     _ensure_repo_and_git()
     _fetch_origin_target()
-    local_commit = _git_value(["rev-parse", "HEAD"])
-    remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
-    changed, ignored_remote_runtime = _changed_pi_files(local_commit, remote_commit)
-    ignored_runtime, blocking_code, synced_with_remote = _local_pi_changes()
-
+    local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote = _calculate_update_status()
     if blocking_code:
         _persist_update_state("update blockiert", local_commit, remote_commit, changed, ignored_runtime, blocking_code, synced_with_remote, ui_state="blocked", ui_message="Lokale Code-Änderungen blockieren das Update", progress_step="Update blockiert", progress_percent=100)
         raise HTTPException(status_code=400, detail={"message": "Lokale Code-Änderungen unter /pi vorhanden. Update abgebrochen.", "blocking_local_code_files": blocking_code})
-
     if not changed:
-        status = "Pi-Code ist bereits auf Remote-Stand" if synced_with_remote else "kein update nötig"
-        at = _persist_update_state(status, local_commit, remote_commit, [], ignored_runtime + ignored_remote_runtime, [], synced_with_remote, ui_state="no_update", ui_message="Keine Pi-Updates verfügbar", progress_step="Prüfung abgeschlossen", progress_percent=100)
-        return {"ok": True, "status": status, "applied_at": at, "pi_changes_available": False, "ui_state": "no_update", "ui_message": "Keine Pi-Updates verfügbar", "can_check": True, "can_apply": False, "progress_step": "Prüfung abgeschlossen", "progress_percent": 100}
+        _persist_update_state("kein update nötig", local_commit, remote_commit, [], ignored_runtime, [], synced_with_remote, ui_state="no_update", ui_message="Keine Pi-Updates verfügbar", progress_step="Prüfung abgeschlossen", progress_percent=100)
+        return {"ok": True, "ui_state": "no_update", "ui_message": "Keine Pi-Updates verfügbar", "progress_percent": 100, "can_apply": False}
+    _persist_update_state("installiere update...", local_commit, remote_commit, changed, ignored_runtime, [], synced_with_remote, ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Update gestartet...", progress_percent=5)
+    python_bin = str(REPO_PATH / "pi" / ".venv" / "bin" / "python")
+    subprocess.Popen([python_bin, "-m", "backend.api_update", "--run-update-job"], cwd=str(REPO_PATH / "pi"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return {"ok": True, "ui_state": "updating", "ui_message": "Update gestartet", "progress_percent": 5}
 
-    _persist_update_state("installiere update...", local_commit, remote_commit, changed, ignored_runtime + ignored_remote_runtime, [], synced_with_remote, ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Pi-Dateien werden geladen...", progress_percent=30)
-    checkout = _run(_git_cmd("checkout", f"origin/{TARGET_BRANCH}", "--", *changed), cwd=REPO_PATH)
-    if checkout.returncode != 0:
-        raise HTTPException(status_code=500, detail=f"pi checkout fehlgeschlagen: {checkout.stderr.strip() or checkout.stdout.strip()}")
 
-    ensure_config_defaults()
-    _persist_update_state("installiere update...", local_commit, remote_commit, changed, ignored_runtime + ignored_remote_runtime, [], synced_with_remote, ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Abhängigkeiten werden geprüft...", progress_percent=60)
-    pip_proc = _run([str(REPO_PATH / "pi" / ".venv" / "bin" / "pip"), "install", "-r", "requirements.txt"], cwd=REPO_PATH / "pi", timeout=PIP_TIMEOUT_SECONDS)
-    if pip_proc.returncode != 0:
-        raise HTTPException(status_code=500, detail=f"requirements update fehlgeschlagen: {pip_proc.stderr.strip() or pip_proc.stdout.strip()}")
-
-    _persist_update_state("installiere update...", local_commit, remote_commit, changed, ignored_runtime + ignored_remote_runtime, [], synced_with_remote, ui_state="updating", ui_message="Pi-Update wird installiert...", progress_step="Services werden neu gestartet...", progress_percent=80)
-    for service in ["wage-pi-backend", "wage-pi-oled", "wage-pi-leds"]:
-        proc = _run(["sudo", "systemctl", "restart", service], timeout=SYSTEMCTL_TIMEOUT_SECONDS)
-        if proc.returncode != 0:
-            raise HTTPException(status_code=500, detail=f"Service-Neustart fehlgeschlagen ({service}): {proc.stderr.strip() or proc.stdout.strip()}")
-
-    at = _persist_update_state("update erfolgreich", local_commit, remote_commit, changed, ignored_runtime + ignored_remote_runtime, [], synced_with_remote, ui_state="success", ui_message="Update abgeschlossen", progress_step="Update abgeschlossen", progress_percent=100)
-    return {"ok": True, "status": "update erfolgreich", "applied_at": at, "ui_state": "success", "ui_message": "Update abgeschlossen", "can_check": True, "can_apply": False, "progress_step": "Update abgeschlossen", "progress_percent": 100}
+if __name__ == "__main__" and "--run-update-job" in sys.argv:
+    _run_background_update_job()

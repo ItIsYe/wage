@@ -247,6 +247,7 @@ function renderUpdateStatus(data) {
     <details class="update-details"><summary>Technische Details</summary>
       <div><strong>local_commit:</strong> ${esc(data.local_commit || '-')}</div>
       <div><strong>remote_commit:</strong> ${esc(data.remote_commit || '-')}</div>
+      <div><strong>changed_pi_files:</strong><ul>${(data.changed_pi_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
       <div><strong>synced_with_remote_files:</strong><ul>${(data.synced_with_remote_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
       <div><strong>ignored_runtime_files:</strong><ul>${(data.ignored_local_runtime_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
       <div><strong>blocking_local_code_files:</strong><ul>${blocking.map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
@@ -269,7 +270,8 @@ function renderUpdateStatus(data) {
     </div>`;
 
   const applyBtn = byId('btn-update-apply');
-  if (applyBtn) applyBtn.style.display = canApply && !updateBusy ? 'inline-flex' : 'none';
+  if (applyBtn) applyBtn.style.display = canApply ? 'inline-flex' : 'none';
+  if (applyBtn) applyBtn.disabled = updateBusy || !canApply;
   setUpdateHint(data.ui_message || '', stateTone(data.ui_state));
   setUpdateButtonsDisabled(updateBusy || !data.can_check);
 }
@@ -286,11 +288,21 @@ async function loadUpdateStatus(silent = false) {
   try {
     const data = await api('/api/v1/system/update/status');
     renderUpdateStatus(data);
+    if (data.ui_state === 'success' && !updateBusy) {
+      await api('/api/v1/system/update/check', {method: 'POST'});
+      return loadUpdateStatus(true);
+    }
     setUpdatePolling(data.ui_state === 'checking' || data.ui_state === 'updating' || updateBusy);
   } catch (e) {
+    const inProgress = updateBusy;
+    if (inProgress) {
+      setUpdatePolling(true);
+      return;
+    }
     if (!silent) flash(`Update-Status konnte nicht geladen werden: ${e.message}`);
   }
 }
+
 
 async function checkPiUpdates() {
   updateBusy = true;
@@ -300,6 +312,7 @@ async function checkPiUpdates() {
   try {
     const data = await api('/api/v1/system/update/check', {method: 'POST'});
     renderUpdateStatus(data);
+    setUpdatePolling(true);
   } catch (e) {
     flash(`Update-Prüfung fehlgeschlagen: ${e.message}`);
   } finally {
@@ -328,6 +341,7 @@ async function applyPiUpdate() {
   try {
     const data = await api('/api/v1/system/update/apply', {method: 'POST'});
     renderUpdateStatus(data);
+    setUpdatePolling(true);
   } catch (e) {
     const msg = String(e.message || '').toLowerCase();
     if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
@@ -340,7 +354,6 @@ async function applyPiUpdate() {
   } finally {
     updateBusy = false;
     await loadUpdateStatus(true);
-    setUpdatePolling(false);
   }
 }
 
