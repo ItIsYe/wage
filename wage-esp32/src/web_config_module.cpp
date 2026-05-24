@@ -412,6 +412,36 @@ void webConfigSetup() {
     wifiDiagStaticIpRequested = activeConfig.wifiUseStaticIp;
 
     WiFi.mode(WIFI_STA);
+    Serial.println("[NET] STA scan start");
+    const int networkCount = WiFi.scanNetworks();
+    Serial.print("[NET] STA scan found=");
+    Serial.println(networkCount);
+    bool targetSsidSeen = false;
+    if (networkCount < 0) {
+      Serial.print("[NET] STA scan error=");
+      Serial.println(networkCount);
+    } else {
+      for (int i = 0; i < networkCount; ++i) {
+        const String foundSsid = WiFi.SSID(i);
+        const bool isTarget = (foundSsid == String(activeConfig.wifiSsid));
+        if (isTarget) targetSsidSeen = true;
+        Serial.print("[NET] STA scan[");
+        Serial.print(i);
+        Serial.print("] ssid=");
+        Serial.print(foundSsid);
+        Serial.print(" rssi=");
+        Serial.print(WiFi.RSSI(i));
+        Serial.print(" ch=");
+        Serial.print(WiFi.channel(i));
+        Serial.print(" enc=");
+        Serial.print(WiFi.encryptionType(i));
+        if (isTarget) Serial.print(" <- target");
+        Serial.println();
+      }
+      Serial.print("[NET] STA target visible=");
+      Serial.println(targetSsidSeen ? 1 : 0);
+    }
+    WiFi.scanDelete();
     if (activeConfig.wifiUseStaticIp) {
       IPAddress ip, gw, sn, d1, d2;
       wifiDiagStaticIpConfigOk = parseIpAddress(activeConfig.wifiLocalIp, ip)
