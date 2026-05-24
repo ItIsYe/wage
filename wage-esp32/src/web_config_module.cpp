@@ -126,7 +126,7 @@ static bool parseIpAddress(const String& input, IPAddress& out) {
 
 static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = "") {
   String h;
-  h.reserve(9000);
+  h.reserve(11000);
   h += F("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>");
   h += F("<title>Waage Config</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:12px auto;padding:0 10px;}fieldset{margin:12px 0;padding:10px;}label{display:block;margin:7px 0 3px;}input[type=text],input[type=number],select{width:100%;padding:8px;box-sizing:border-box;}small{color:#666;}button{padding:10px 14px;margin-top:10px;}.meta p{margin:4px 0;}.err{background:#ffdede;border:1px solid #cc3a3a;padding:8px;margin:10px 0;color:#7a0000;}</style></head><body>");
   h += F("<h2>Waage Config</h2><div class='meta'>");
@@ -138,20 +138,6 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Pending:</b> "); h += (pendingConfigValid ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<hr><p><b>WLAN-Diagnose:</b></p>");
-  h += F("<p><b>STA versucht:</b> "); h += (wifiDiagStaAttempted ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>STA verbunden:</b> "); h += (wifiDiagStaConnected ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>SSID (letzter Versuch):</b> "); h += htmlEscape(wifiDiagSsid.length() ? wifiDiagSsid : String("-")); h += F("</p>");
-  h += F("<p><b>WiFi.status:</b> "); h += htmlEscape(wifiDiagStatusText); h += F(" ("); h += String(wifiDiagStatusCode); h += F(")</p>");
-  h += F("<p><b>Statische IP angefordert:</b> "); h += (wifiDiagStaticIpRequested ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>Statische IP gesetzt:</b> "); h += (wifiDiagStaticIpConfigOk ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>DHCP genutzt:</b> "); h += (wifiDiagStaticIpRequested ? F("nein") : F("ja")); h += F("</p>");
-  h += F("<p><b>Letzter Versuch bei millis:</b> "); h += String(wifiDiagAttemptAtMs); h += F("</p>");
-  h += F("<p><b>Versuchsdauer (ms):</b> "); h += String(wifiDiagAttemptDurationMs); h += F("</p>");
-  h += F("<p><b>Lokale IP:</b> "); h += htmlEscape(wifiDiagLocalIp.length() ? wifiDiagLocalIp : String("-")); h += F("</p>");
-  h += F("<p><b>Gateway:</b> "); h += htmlEscape(wifiDiagGatewayIp.length() ? wifiDiagGatewayIp : String("-")); h += F("</p>");
-  h += F("<p><b>DNS:</b> "); h += htmlEscape(wifiDiagDnsIp.length() ? wifiDiagDnsIp : String("-")); h += F("</p>");
-  h += F("<p><b>Fallback-AP aktiv:</b> "); h += (wifiDiagFallbackApStarted ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Hinweis:</b> Netzwerk / WLAN-Aenderungen werden gespeichert und erst nach Neustart aktiv.</p></div>");
   if (errorMsg.length()) { h += F("<div class='err'><b>Fehler:</b> "); h += htmlEscape(errorMsg); h += F("</div>"); }
   if (resetRequested) { h += F("<div class='err'><b>Reset:</b> Reset wartet auf sicheren Zustand</div>"); }
@@ -210,7 +196,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>WLAN SSID</label><input name='wifiSsid' maxlength='31' value='"); h += htmlEscape(String(c.wifiSsid)); h += F("'><small>Name des Ziel-WLANs fuer den STA-Modus. Darf bei aktivem STA nicht leer sein.</small>");
   h += F("<label>WLAN Passwort</label><input name='wifiPassword' maxlength='63' value='"); h += htmlEscape(String(c.wifiPassword)); h += F("'><small>Optional je nach WLAN. Leerlassen nur bei offenem Netz. Aenderungen greifen erst nach Neustart.</small>");
   h += F("<label>Verbindungs-Timeout (ms)</label><input type='number' min='3000' max='30000' name='wifiConnectTimeoutMs' value='"); h += String(c.wifiConnectTimeoutMs); h += F("'><small>Min: 3000, Max: 30000 ms. Zeitraum fuer den WLAN-Verbindungsversuch vor Fallback-AP.</small>");
-  h += F("<label><input type='checkbox' name='wifiUseStaticIp' "); if (c.wifiUseStaticIp) h += F("checked"); h += F("> Statische IP verwenden</label>");
+  h += F("<label><input type='checkbox' name='wifiUseStaticIp' "); if (c.wifiUseStaticIp) h += F("checked"); h += F("> Statische IP verwenden</label><small>Empfehlung fuer Pi-AP-Test: aus lassen und DHCP vom Pi nutzen. Falsche Static-IP verhindert oft die Verbindung.</small>");
   h += F("<label>ESP statische IP</label><input name='wifiLocalIp' maxlength='15' value='"); h += htmlEscape(String(c.wifiLocalIp)); h += F("'><small>Nur bei statischer IP. Beispiel: 192.168.50.20.</small>");
   h += F("<label>Gateway</label><input name='wifiGateway' maxlength='15' value='"); h += htmlEscape(String(c.wifiGateway)); h += F("'><small>Meist die Pi-IP, z.B. 192.168.50.1.</small>");
   h += F("<label>Subnetzmaske</label><input name='wifiSubnet' maxlength='15' value='"); h += htmlEscape(String(c.wifiSubnet)); h += F("'><small>Meist 255.255.255.0.</small>");
@@ -218,6 +204,21 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>DNS 2</label><input name='wifiDns2' maxlength='15' value='"); h += htmlEscape(String(c.wifiDns2)); h += F("'><small>Optional, z.B. 8.8.8.8.</small>");
   h += F("<label>Fallback-AP SSID</label><input name='configApSsid' maxlength='31' value='"); h += htmlEscape(String(c.configApSsid)); h += F("'><small>Access-Point Name fuer die Notfall-Konfiguration, wenn STA fehlschlaegt. Darf nicht leer sein.</small>");
   h += F("<label>Fallback-AP Passwort</label><input name='configApPassword' maxlength='63' value='"); h += htmlEscape(String(c.configApPassword)); h += F("'><small>8..63 Zeichen fuer WPA2; leer erlaubt nur offenen AP (nicht empfohlen). Netzwerk-Aenderungen werden gespeichert und erst nach Neustart aktiv.</small></fieldset>");
+
+  h += F("<fieldset><legend>Netzwerk Diagnose</legend>");
+  h += F("<label>STA versucht</label><input value='"); h += (wifiDiagStaAttempted ? F("ja") : F("nein")); h += F("' readonly>");
+  h += F("<label>Ziel-SSID</label><input value='"); h += htmlEscape(wifiDiagSsid.length() ? wifiDiagSsid : String("-")); h += F("' readonly>");
+  h += F("<label>WiFi.status</label><input value='"); h += htmlEscape(String(wifiDiagStatusCode) + " / " + wifiDiagStatusText); h += F("' readonly>");
+  h += F("<label>STA verbunden</label><input value='"); h += (wifiDiagStaConnected ? F("ja") : F("nein")); h += F("' readonly>");
+  h += F("<label>Static-IP angefordert</label><input value='"); h += (wifiDiagStaticIpRequested ? F("ja") : F("nein")); h += F("' readonly>");
+  h += F("<label>Static-IP Config OK</label><input value='"); h += (wifiDiagStaticIpConfigOk ? F("ja") : F("nein")); h += F("' readonly>");
+  h += F("<label>Fallback-AP aktiv</label><input value='"); h += (wifiDiagFallbackApStarted ? F("ja") : F("nein")); h += F("' readonly>");
+  h += F("<label>Verbindungsdauer ms</label><input value='"); h += String(wifiDiagAttemptDurationMs); h += F("' readonly>");
+  h += F("<label>Lokale IP</label><input value='"); h += htmlEscape(wifiDiagLocalIp.length() ? wifiDiagLocalIp : String("-")); h += F("' readonly>");
+  h += F("<label>Gateway</label><input value='"); h += htmlEscape(wifiDiagGatewayIp.length() ? wifiDiagGatewayIp : String("-")); h += F("' readonly>");
+  h += F("<label>DNS</label><input value='"); h += htmlEscape(wifiDiagDnsIp.length() ? wifiDiagDnsIp : String("-")); h += F("' readonly>");
+  h += F("<small>Diese Werte stammen vom letzten Boot. Netzwerk-Aenderungen werden erst nach Neustart aktiv.</small>");
+  h += F("</fieldset>");
 
   h += F("<fieldset><legend>Externe Datenuebertragung (API)</legend>");
   h += F("<label><input type='checkbox' name='externalEnabled' "); if (c.externalEnabled) h += F("checked"); h += F("> Externe Schnittstelle aktiv (Messdaten senden)</label><small>Ein/Aus fuer das Senden an einen externen Server. Wirkt nach Speichern sofort.</small>");
@@ -423,6 +424,12 @@ void webConfigSetup() {
         Serial.println("[NET] STA static IP Konfiguration fehlgeschlagen");
       }
     }
+    Serial.print("[NET] STA connect ssid=");
+    Serial.print(activeConfig.wifiSsid);
+    Serial.print(" static=");
+    Serial.print(activeConfig.wifiUseStaticIp ? 1 : 0);
+    Serial.print(" timeout=");
+    Serial.println(activeConfig.wifiConnectTimeoutMs);
     WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
     const uint32_t startMs = millis();
     while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < activeConfig.wifiConnectTimeoutMs) {
@@ -437,6 +444,14 @@ void webConfigSetup() {
     wifiDiagLocalIp = WiFi.localIP().toString();
     wifiDiagGatewayIp = WiFi.gatewayIP().toString();
     wifiDiagDnsIp = WiFi.dnsIP().toString();
+    Serial.print("[NET] STA result status=");
+    Serial.print(wifiDiagStatusCode);
+    Serial.print(" ");
+    Serial.print(wifiDiagStatusText);
+    Serial.print(" connected=");
+    Serial.print(wifiDiagStaConnected ? 1 : 0);
+    Serial.print(" ip=");
+    Serial.println(wifiDiagLocalIp);
   }
 
   if (connectedAsSta) {
@@ -446,6 +461,10 @@ void webConfigSetup() {
   } else {
     WiFi.mode(WIFI_AP);
     const bool apStarted = WiFi.softAP(activeConfig.configApSsid, activeConfig.configApPassword);
+    Serial.print("[NET] Fallback AP ssid=");
+    Serial.print(activeConfig.configApSsid);
+    Serial.print(" started=");
+    Serial.println(apStarted ? 1 : 0);
     wifiDiagFallbackApStarted = apStarted;
     wifiApMode = true;
     networkInfo = apStarted ? WiFi.softAPIP().toString() : String("0.0.0.0");
