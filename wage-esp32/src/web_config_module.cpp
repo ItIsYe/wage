@@ -417,6 +417,9 @@ void webConfigSetup() {
     Serial.print("[NET] STA scan found=");
     Serial.println(networkCount);
     bool targetSsidSeen = false;
+    bool targetSeen = false;
+    int32_t targetChannel = 0;
+    uint8_t targetBssid[6] = {0};
     if (networkCount < 0) {
       Serial.print("[NET] STA scan error=");
       Serial.println(networkCount);
@@ -424,7 +427,15 @@ void webConfigSetup() {
       for (int i = 0; i < networkCount; ++i) {
         const String foundSsid = WiFi.SSID(i);
         const bool isTarget = (foundSsid == String(activeConfig.wifiSsid));
-        if (isTarget) targetSsidSeen = true;
+        if (isTarget) {
+          targetSsidSeen = true;
+          if (!targetSeen) {
+            targetSeen = true;
+            targetChannel = WiFi.channel(i);
+            const uint8_t* bssid = WiFi.BSSID(i);
+            if (bssid != nullptr) memcpy(targetBssid, bssid, sizeof(targetBssid));
+          }
+        }
         Serial.print("[NET] STA scan[");
         Serial.print(i);
         Serial.print("] ssid=");
@@ -440,6 +451,14 @@ void webConfigSetup() {
       }
       Serial.print("[NET] STA target visible=");
       Serial.println(targetSsidSeen ? 1 : 0);
+      if (targetSeen) {
+        Serial.print("[NET] STA target lock ch=");
+        Serial.print(targetChannel);
+        Serial.print(" bssid=");
+        Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
+                      targetBssid[0], targetBssid[1], targetBssid[2],
+                      targetBssid[3], targetBssid[4], targetBssid[5]);
+      }
     }
     WiFi.scanDelete();
     if (activeConfig.wifiUseStaticIp) {
@@ -460,7 +479,11 @@ void webConfigSetup() {
     Serial.print(activeConfig.wifiUseStaticIp ? 1 : 0);
     Serial.print(" timeout=");
     Serial.println(activeConfig.wifiConnectTimeoutMs);
-    WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
+    if (targetSeen && targetChannel > 0) {
+      WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword, targetChannel, targetBssid, true);
+    } else {
+      WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
+    }
     const uint32_t startMs = millis();
     while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < activeConfig.wifiConnectTimeoutMs) {
       delay(100);
