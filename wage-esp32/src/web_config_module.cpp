@@ -411,6 +411,9 @@ void webConfigSetup() {
     wifiDiagAttemptAtMs = millis();
     wifiDiagStaticIpRequested = activeConfig.wifiUseStaticIp;
 
+    Serial.println("[NET] STA reset state before scan/connect");
+    WiFi.disconnect(true, true);
+    delay(50);
     WiFi.mode(WIFI_STA);
     Serial.println("[NET] STA scan start");
     const int networkCount = WiFi.scanNetworks();
@@ -480,12 +483,31 @@ void webConfigSetup() {
     Serial.print(" timeout=");
     Serial.println(activeConfig.wifiConnectTimeoutMs);
     if (targetSeen && targetChannel > 0) {
+      Serial.print("[NET] STA connect pinned ch=");
+      Serial.print(targetChannel);
+      Serial.print(" bssid=");
+      Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
+                    targetBssid[0], targetBssid[1], targetBssid[2],
+                    targetBssid[3], targetBssid[4], targetBssid[5]);
       WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword, targetChannel, targetBssid, true);
     } else {
+      Serial.println("[NET] STA connect unpinned (no target channel/bssid)");
       WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
     }
     const uint32_t startMs = millis();
+    uint32_t lastStatusLogMs = startMs - 1000U;
     while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < activeConfig.wifiConnectTimeoutMs) {
+      const uint32_t nowMs = millis();
+      if ((nowMs - lastStatusLogMs) >= 1000U) {
+        const wl_status_t loopStatus = WiFi.status();
+        Serial.print("[NET] STA wait t=");
+        Serial.print((nowMs - startMs) / 1000U);
+        Serial.print("s status=");
+        Serial.print((int) loopStatus);
+        Serial.print(" ");
+        Serial.println(wifiStatusToText(loopStatus));
+        lastStatusLogMs = nowMs;
+      }
       delay(100);
     }
     wifiDiagAttemptDurationMs = millis() - startMs;
