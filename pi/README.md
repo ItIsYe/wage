@@ -188,6 +188,9 @@ Prüft Health, Personen, Aktivierung, Laufannahme, Duplikaterkennung, Runs, Stat
 ## Netzwerk-Konfiguration (AP oder Haus-WLAN)
 - Neue Seite: `/config` (Navigation: **Konfiguration**)
 - Modus **AP** (Standard): SSID `wage-net`, Pi-IP `192.168.50.1`, DHCP-Range `192.168.50.50-192.168.50.150`
+- Pi-AP ist für ESP32-Kompatibilität fest auf **2.4 GHz** mit `band=bg` und `channel=6` konfiguriert.
+- AP-Security ist fest auf **WPA2-PSK / RSN / CCMP** gesetzt (kein WPA3/SAE, kein TKIP, kein Mischmodus).
+- PMF ist standardmäßig **optional** (`pmf=1`); falls ein ESP32 weiterhin nicht verbindet, kann testweise `pmf=0` gesetzt werden.
 - API-Ziel für ESP im AP-Modus: `http://192.168.50.1:8000/api/v1/runs`
 - Modus **Client**: Pi verbindet sich mit Haus-WLAN (für Updates/Internet/Administration)
 - Speichern über `POST /api/v1/config/network`, Anwenden über `POST /api/v1/config/network/apply`
