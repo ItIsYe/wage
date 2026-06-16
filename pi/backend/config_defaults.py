@@ -3,7 +3,7 @@ DEFAULTS = {
     "ap_ssid": "wage-net",
     "ap_password": "",
     "ap_ip": "192.168.50.1",
-    "ap_pmf": "1",
+    "ap_pmf": "0",
     "ap_band": "bg",
     "ap_channel": "6",
     "ap_dhcp_start": "192.168.50.50",

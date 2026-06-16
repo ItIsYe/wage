@@ -25,6 +25,8 @@ static Preferences prefs;
 static bool resetRequested = false;
 static String resetStatusMsg;
 static uint32_t lastWebServiceMs = 0;
+static uint32_t lastReconnectAttemptMs = 0;
+static constexpr uint32_t RECONNECT_INTERVAL_MS = 10000;
 static const uint32_t STANDBY_MIN_S = 5U;
 static const uint32_t STANDBY_MAX_S = 300U;
 static const uint32_t STANDBY_MIN_MS = STANDBY_MIN_S * 1000U;
@@ -678,6 +680,42 @@ void webConfigSetup() {
 
 void webService(uint32_t now){
   if (!WEB_CONFIG_ENABLED) return;
+
+  // Reconnect-Logik: nur im STA-Modus, nicht im Fallback-AP
+  if (!wifiApMode && activeConfig.wifiStaEnabled) {
+    if (WiFi.status() != WL_CONNECTED) {
+      if ((now - lastReconnectAttemptMs) >= RECONNECT_INTERVAL_MS) {
+        lastReconnectAttemptMs = now;
+        const wl_status_t s = WiFi.status();
+        Serial.print("[NET] Verbindung verloren (status=");
+        Serial.print((int)s);
+        Serial.print(" ");
+        Serial.print(wifiStatusToText(s));
+        Serial.println("), reconnect...");
+        WiFi.disconnect(false);
+        delay(50);
+        if (activeConfig.wifiUseStaticIp) {
+          IPAddress ip, gw, sn, d1, d2;
+          if (parseIpAddress(activeConfig.wifiLocalIp, ip)
+              && parseIpAddress(activeConfig.wifiGateway, gw)
+              && parseIpAddress(activeConfig.wifiSubnet, sn)
+              && parseIpAddress(activeConfig.wifiDns1, d1)
+              && parseIpAddress(activeConfig.wifiDns2, d2)) {
+            WiFi.config(ip, gw, sn, d1, d2);
+          }
+        }
+        WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
+        Serial.println("[NET] reconnect begin gesendet");
+      }
+    } else if (lastReconnectAttemptMs != 0) {
+      // Verbindung wieder da
+      Serial.print("[NET] reconnect erfolgreich, IP=");
+      Serial.println(WiFi.localIP().toString());
+      networkInfo = WiFi.localIP().toString();
+      lastReconnectAttemptMs = 0;
+    }
+  }
+
   const bool isIdleState = (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
   const uint32_t interval = isIdleState ? WEB_SERVICE_INTERVAL_IDLE_MS : WEB_SERVICE_INTERVAL_BUSY_MS;
   if (now - lastWebServiceMs < interval) return;
