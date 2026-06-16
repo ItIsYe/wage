@@ -484,18 +484,9 @@ void webConfigSetup() {
     Serial.print(activeConfig.wifiUseStaticIp ? 1 : 0);
     Serial.print(" timeout=");
     Serial.println(activeConfig.wifiConnectTimeoutMs);
-    if (targetSeen && targetChannel > 0) {
-      Serial.print("[NET] STA connect pinned ch=");
-      Serial.print(targetChannel);
-      Serial.print(" bssid=");
-      Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
-                    targetBssid[0], targetBssid[1], targetBssid[2],
-                    targetBssid[3], targetBssid[4], targetBssid[5]);
-      WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword, targetChannel, targetBssid, true);
-    } else {
-      Serial.println("[NET] STA connect unpinned (no target channel/bssid)");
-      WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
-    }
+    // Kein Channel/BSSID-Pinning: Pi-AP kann nach Neustart auf anderem Kanal sein
+    Serial.println("[NET] STA connect unpinned");
+    WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
     const uint32_t startMs = millis();
     uint32_t lastStatusLogMs = startMs - 1000U;
     while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < activeConfig.wifiConnectTimeoutMs) {
