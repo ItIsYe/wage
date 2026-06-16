@@ -99,6 +99,7 @@ String buildPayload(const RunDataSnapshot& run) {
   payload += F(",\"min_weight_g\":"); payload += String(run.minWeightG, 3);
   payload += F(",\"start_drop_threshold_g\":"); payload += String(run.startDropThresholdG, 3);
   payload += F(",\"stop_rise_threshold_g\":"); payload += String(run.stopRiseThresholdG, 3);
+  payload += F(",\"status\":\"ok\"");
   payload += F(",\"firmware_version\":\""); payload += jsonEscape(firmwareVersion); payload += '"';
   payload += F(",\"queue_depth\":"); payload += String(queueCount);
   payload += '}';

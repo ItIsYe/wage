@@ -32,7 +32,7 @@ def init_db() -> None:
                 device_id TEXT NOT NULL UNIQUE,
                 firmware_version TEXT,
                 last_seen_at TEXT,
-                last_boot_id TEXT,
+                last_boot_id INTEGER,
                 last_queue_depth INTEGER
             );
 

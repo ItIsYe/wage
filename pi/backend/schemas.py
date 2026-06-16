@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator
 class RunIn(BaseModel):
     protocol_version: int = Field(default=1)
     device_id: str
-    boot_id: str
+    boot_id: int
     run_number: int
     event_id: str
     time_ms: int
@@ -14,7 +14,7 @@ class RunIn(BaseModel):
     min_weight_g: Optional[float] = None
     start_drop_threshold_g: Optional[float] = None
     stop_rise_threshold_g: Optional[float] = None
-    status: str
+    status: str = Field(default="ok")
     firmware_version: str
     queue_depth: Optional[int] = None
 
