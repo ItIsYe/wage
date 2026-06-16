@@ -666,7 +666,7 @@ void webService(uint32_t now){
         Serial.print(wifiStatusToText(s));
         Serial.println("), reconnect...");
         WiFi.disconnect(false);
-        delay(50);
+        // kein delay() im Loop – WiFi-Stack braucht keinen harten Pause hier
         if (activeConfig.wifiUseStaticIp) {
           IPAddress ip, gw, sn, d1, d2;
           if (parseIpAddress(activeConfig.wifiLocalIp, ip)
