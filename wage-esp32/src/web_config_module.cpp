@@ -417,30 +417,21 @@ void webConfigSetup() {
     WiFi.disconnect(true, true);
     delay(50);
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+
     Serial.println("[NET] STA scan start");
     const int networkCount = WiFi.scanNetworks();
     Serial.print("[NET] STA scan found=");
     Serial.println(networkCount);
-    bool targetSsidSeen = false;
-    bool targetSeen = false;
-    int32_t targetChannel = 0;
-    uint8_t targetBssid[6] = {0};
     if (networkCount < 0) {
       Serial.print("[NET] STA scan error=");
       Serial.println(networkCount);
     } else {
+      bool targetSsidSeen = false;
       for (int i = 0; i < networkCount; ++i) {
         const String foundSsid = WiFi.SSID(i);
         const bool isTarget = (foundSsid == String(activeConfig.wifiSsid));
-        if (isTarget) {
-          targetSsidSeen = true;
-          if (!targetSeen) {
-            targetSeen = true;
-            targetChannel = WiFi.channel(i);
-            const uint8_t* bssid = WiFi.BSSID(i);
-            if (bssid != nullptr) memcpy(targetBssid, bssid, sizeof(targetBssid));
-          }
-        }
+        if (isTarget) targetSsidSeen = true;
         Serial.print("[NET] STA scan[");
         Serial.print(i);
         Serial.print("] ssid=");
@@ -456,16 +447,10 @@ void webConfigSetup() {
       }
       Serial.print("[NET] STA target visible=");
       Serial.println(targetSsidSeen ? 1 : 0);
-      if (targetSeen) {
-        Serial.print("[NET] STA target lock ch=");
-        Serial.print(targetChannel);
-        Serial.print(" bssid=");
-        Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
-                      targetBssid[0], targetBssid[1], targetBssid[2],
-                      targetBssid[3], targetBssid[4], targetBssid[5]);
-      }
     }
     WiFi.scanDelete();
+
+    // Static-IP nach Scan setzen, direkt vor WiFi.begin()
     if (activeConfig.wifiUseStaticIp) {
       IPAddress ip, gw, sn, d1, d2;
       wifiDiagStaticIpConfigOk = parseIpAddress(activeConfig.wifiLocalIp, ip)
@@ -478,14 +463,13 @@ void webConfigSetup() {
         Serial.println("[NET] STA static IP Konfiguration fehlgeschlagen");
       }
     }
+
     Serial.print("[NET] STA connect ssid=");
     Serial.print(activeConfig.wifiSsid);
     Serial.print(" static=");
     Serial.print(activeConfig.wifiUseStaticIp ? 1 : 0);
     Serial.print(" timeout=");
     Serial.println(activeConfig.wifiConnectTimeoutMs);
-    // Kein Channel/BSSID-Pinning: Pi-AP kann nach Neustart auf anderem Kanal sein
-    Serial.println("[NET] STA connect unpinned");
     WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
     const uint32_t startMs = millis();
     uint32_t lastStatusLogMs = startMs - 1000U;
@@ -539,8 +523,6 @@ void webConfigSetup() {
     if (!apStarted) Serial.println("[NET] Config AP Start fehlgeschlagen");
     showNetworkStatus("Config AP", networkInfo);
   }
-
-  WiFi.setSleep(false);
 
   server.on("/", HTTP_GET, [](){
     if (isConfigApplyAllowedState()) server.send(200, "text/html", renderConfigPage(activeConfig));
