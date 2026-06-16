@@ -6,7 +6,7 @@ import shutil
 import socket
 import subprocess
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from .config_defaults import DEFAULTS
 from .config_migration import ensure_config_defaults
@@ -18,14 +18,31 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "network_apply.s
 
 
 def _get_pi_ip() -> str:
+    import fcntl, struct
+    try:
+        # Versuche IP über aktives WLAN-Interface zu ermitteln (funktioniert ohne Internet)
+        import subprocess
+        out = subprocess.check_output(
+            ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show"],
+            text=True, timeout=3
+        )
+        for line in out.splitlines():
+            if line.startswith("IP4.ADDRESS"):
+                addr = line.split(":")[-1].split("/")[0].strip()
+                if addr and not addr.startswith("127."):
+                    return addr
+    except Exception:
+        pass
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
+        sock.connect(("192.168.50.1", 80))
         ip = sock.getsockname()[0]
         sock.close()
-        return ip
+        if ip and not ip.startswith("0."):
+            return ip
     except Exception:
-        return "127.0.0.1"
+        pass
+    return "127.0.0.1"
 
 
 def _to_public(cfg: dict[str, str]) -> dict:
@@ -108,14 +125,22 @@ def set_network_config(payload: NetworkConfigIn):
 
 
 
+def _require_local(request: Request) -> None:
+    client_ip = request.client.host if request.client else ""
+    if client_ip not in ("127.0.0.1", "::1"):
+        raise HTTPException(status_code=403, detail="Nur lokal erlaubt.")
+
+
 @router.get("/secret/ap-password")
-def get_ap_password_secret():
+def get_ap_password_secret(request: Request):
+    _require_local(request)
     cfg = _read_config()
     return {"ok": True, "value": cfg.get("ap_password", "")}
 
 
 @router.get("/secret/client-password")
-def get_client_password_secret():
+def get_client_password_secret(request: Request):
+    _require_local(request)
     cfg = _read_config()
     return {"ok": True, "value": cfg.get("client_password", "")}
 

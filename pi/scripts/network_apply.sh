@@ -26,7 +26,7 @@ CLIENT_SSID="$(get_state client_ssid)"
 CLIENT_PASSWORD="$(get_state client_password)"
 AP_BAND="$(get_state ap_band)"; AP_BAND="${AP_BAND:-bg}"
 AP_CHANNEL="$(get_state ap_channel)"; AP_CHANNEL="${AP_CHANNEL:-6}"
-AP_PMF="$(get_state ap_pmf)"; AP_PMF="${AP_PMF:-1}"
+AP_PMF="$(get_state ap_pmf)"; AP_PMF="${AP_PMF:-0}"
 
 WLAN_IFACE="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1; exit}')"
 [[ -n "$WLAN_IFACE" ]] || fail "Kein WLAN-Interface gefunden"

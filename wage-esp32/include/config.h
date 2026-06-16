@@ -37,7 +37,7 @@ static const char* EXTERNAL_TARGET_HOST_DEFAULT = "";
 static constexpr uint16_t EXTERNAL_TARGET_PORT_DEFAULT = 80;
 static const char* EXTERNAL_API_PATH_DEFAULT = "/api/v1/runs";
 static const char* EXTERNAL_API_KEY_DEFAULT = "";
-static constexpr uint32_t EXTERNAL_SEND_TIMEOUT_MS = 800;
+static constexpr uint32_t EXTERNAL_SEND_TIMEOUT_MS = 2000;
 static constexpr uint32_t EXTERNAL_RETRY_INTERVAL_MS = 5000;
 static constexpr size_t EXTERNAL_QUEUE_MAX = 50;
 
