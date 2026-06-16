@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
@@ -16,25 +17,31 @@ from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
 from .database import get_connection, init_db
 
-app = FastAPI(title="wage-pi", version=APP_VERSION)
-app.mount("/static", StaticFiles(directory=str(PI_ROOT / "frontend" / "static")), name="static")
-templates = Jinja2Templates(directory=str(PI_ROOT / "frontend" / "templates"))
 
-
-@app.on_event("startup")
-def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     init_db()
     ensure_config_defaults()
+    yield
+
+
+app = FastAPI(title="wage-pi", version=APP_VERSION, lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(PI_ROOT / "frontend" / "static")), name="static")
+templates = Jinja2Templates(directory=str(PI_ROOT / "frontend" / "templates"))
 
 
 @app.get("/api/v1/health")
 def health():
     db_ok = True
+    conn = None
     try:
-        with get_connection() as conn:
-            conn.execute("SELECT 1")
+        conn = get_connection()
+        conn.execute("SELECT 1")
     except sqlite3.Error:
         db_ok = False
+    finally:
+        if conn:
+            conn.close()
     return {
         "ok": True,
         "service": "wage-pi",

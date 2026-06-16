@@ -44,6 +44,9 @@ def init_db() -> None:
                 event_id TEXT NOT NULL,
                 time_ms INTEGER NOT NULL,
                 start_weight_g REAL NOT NULL,
+                min_weight_g REAL,
+                start_drop_threshold_g REAL,
+                stop_rise_threshold_g REAL,
                 status TEXT NOT NULL,
                 firmware_version TEXT NOT NULL,
                 queue_depth INTEGER,
@@ -66,6 +69,15 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_runs_boot_run ON runs(device_id, boot_id, run_number);
             """
         )
+        # Migration: neue Spalten für bestehende DBs ergänzen
+        existing_cols = {row[0] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+        for col, typedef in [
+            ("min_weight_g", "REAL"),
+            ("start_drop_threshold_g", "REAL"),
+            ("stop_rise_threshold_g", "REAL"),
+        ]:
+            if col not in existing_cols:
+                conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {typedef}")
         conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")

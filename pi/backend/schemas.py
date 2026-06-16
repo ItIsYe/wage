@@ -4,13 +4,16 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RunIn(BaseModel):
-    protocol_version: str = Field(default="1.0")
+    protocol_version: int = Field(default=1)
     device_id: str
     boot_id: str
     run_number: int
     event_id: str
     time_ms: int
     start_weight_g: float
+    min_weight_g: Optional[float] = None
+    start_drop_threshold_g: Optional[float] = None
+    stop_rise_threshold_g: Optional[float] = None
     status: str
     firmware_version: str
     queue_depth: Optional[int] = None

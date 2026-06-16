@@ -29,7 +29,6 @@ PROTECTED_RUNTIME_FILES = [
     "pi/data/wage_pi.sqlite3",
     "pi/data/wage_pi.sqlite3-shm",
     "pi/data/wage_pi.sqlite3-wal",
-    "pi/data/network_config.json",
     "pi/logs/network_apply.log",
 ]
 
@@ -289,6 +288,9 @@ def update_apply():
         return _response_payload(mode, _read_state(["last_update_status", "last_update_at", "last_update_progress_step", "last_update_progress_percent"]), local_commit, remote_commit, [], [], protected, ui_state="no_update", ui_message="Keine Pi-Updates verfügbar", progress_step="Prüfung abgeschlossen", progress_percent=100, can_apply=False)
     _persist_update_state("installiere update...", local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Code-Sync wird durchgeführt...", progress_step="Update wird vorbereitet...", progress_percent=5)
     python_bin = str(REPO_PATH / "pi" / ".venv" / "bin" / "python")
+    if not Path(python_bin).exists():
+        _persist_update_state("update fehlgeschlagen", local_commit, remote_commit, changed, obsolete, protected, ui_state="error", ui_message="venv nicht gefunden – bitte install.sh ausführen", progress_step="Update fehlgeschlagen", progress_percent=100)
+        raise HTTPException(status_code=500, detail="venv nicht gefunden – bitte install.sh ausführen")
     subprocess.Popen([python_bin, "-m", "backend.api_update", "--run-update-job"], cwd=str(REPO_PATH / "pi"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return _response_payload(mode, _read_state(["last_update_status", "last_update_at", "last_update_progress_step", "last_update_progress_percent"]), local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Code-Sync wird durchgeführt...", progress_step="Update wird vorbereitet...", progress_percent=5, can_apply=False)
 
