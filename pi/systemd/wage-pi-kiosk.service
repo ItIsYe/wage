@@ -1,0 +1,16 @@
+[Unit]
+Description=WAGE Pi Kiosk (Chromium)
+After=graphical.target wage-pi-backend.service
+Wants=wage-pi-backend.service
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+ExecStart=/home/pi/wage/pi/scripts/kiosk_start.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
