@@ -1,6 +1,6 @@
 import sqlite3
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from .database import db_cursor, utc_now_iso
 from .schemas import RunBatchIn, RunIn, RunUpdate
@@ -89,23 +89,25 @@ def _insert_run(cur, run: RunIn):
 
 
 @router.post("/heartbeat")
-def receive_heartbeat(payload: dict):
+def receive_heartbeat(payload: dict, request: Request):
     device_id = payload.get("device_id", "")
     firmware_version = payload.get("firmware_version", "")
     boot_id = payload.get("boot_id")
     queue_depth = payload.get("queue_depth")
+    client_ip = request.client.host if request.client else None
     if not device_id:
         raise HTTPException(status_code=400, detail="device_id fehlt")
     with db_cursor() as (_, cur):
         cur.execute(
-            """INSERT INTO devices (device_id, firmware_version, last_seen_at, last_boot_id, last_queue_depth)
-            VALUES (?, ?, ?, ?, ?)
+            """INSERT INTO devices (device_id, firmware_version, last_seen_at, last_boot_id, last_queue_depth, last_ip)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(device_id) DO UPDATE SET
                 firmware_version=excluded.firmware_version,
                 last_seen_at=excluded.last_seen_at,
                 last_boot_id=excluded.last_boot_id,
-                last_queue_depth=excluded.last_queue_depth""",
-            (device_id, firmware_version, utc_now_iso(), boot_id, queue_depth),
+                last_queue_depth=excluded.last_queue_depth,
+                last_ip=excluded.last_ip""",
+            (device_id, firmware_version, utc_now_iso(), boot_id, queue_depth, client_ip),
         )
     return {"ok": True}
     with db_cursor() as (_, cur):

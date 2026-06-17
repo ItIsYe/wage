@@ -73,6 +73,7 @@ def _build_status() -> dict:
         "last_run_received_at": app.get("last_run_received_at"),
         "last_event": app.get("last_event"),
         "last_device": dict(last_device) if last_device else None,
+        "scale_ip": last_device["last_ip"] if last_device else None,
         "network_mode": network_mode,
         "ap_ssid": net.get("ap_ssid", "wage-net"),
         "api_target_for_esp": api_target_for_esp,

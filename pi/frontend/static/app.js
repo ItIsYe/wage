@@ -655,3 +655,43 @@ startConfigAutoRefresh();
 
 setupPasswordToggle('ap-password', 'toggle-ap-password', 'load-ap-password', '/api/v1/config/network/secret/ap-password');
 setupPasswordToggle('client-password', 'toggle-client-password', 'load-client-password', '/api/v1/config/network/secret/client-password');
+
+
+async function loadWaageConfig() {
+  if (!document.getElementById("esp-frame")) return;
+  try {
+    const s = await api("/api/v1/status");
+    const ip = s.scale_ip || s.last_device?.last_ip;
+    const urlEl = document.getElementById("esp-url");
+    const frame = document.getElementById("esp-frame");
+    const loading = document.getElementById("esp-frame-loading");
+    if (!ip) {
+      if (urlEl) urlEl.textContent = "Unbekannt – noch kein Heartbeat empfangen";
+      if (loading) loading.textContent = "ESP-IP noch nicht bekannt. Bitte warten bis die Waage einen Heartbeat gesendet hat.";
+      return;
+    }
+    const espUrl = `http://${ip}/`;
+    if (urlEl) urlEl.textContent = espUrl;
+    if (frame) { frame.src = espUrl; }
+  } catch (e) {
+    flash(`ESP-URL konnte nicht ermittelt werden: ${e.message}`);
+  }
+}
+
+function onFrameLoad() {
+  const frame = document.getElementById("esp-frame");
+  const loading = document.getElementById("esp-frame-loading");
+  if (frame) frame.style.display = "block";
+  if (loading) loading.style.display = "none";
+}
+
+function reloadFrame() {
+  const frame = document.getElementById("esp-frame");
+  const loading = document.getElementById("esp-frame-loading");
+  if (!frame) return;
+  if (loading) { loading.style.display = "flex"; loading.textContent = "Lade ESP-Webinterface..."; }
+  frame.style.display = "none";
+  frame.src = frame.src;
+}
+
+loadWaageConfig();

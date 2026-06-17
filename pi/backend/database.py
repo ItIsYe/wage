@@ -33,7 +33,8 @@ def init_db() -> None:
                 firmware_version TEXT,
                 last_seen_at TEXT,
                 last_boot_id INTEGER,
-                last_queue_depth INTEGER
+                last_queue_depth INTEGER,
+                last_ip TEXT
             );
 
             CREATE TABLE IF NOT EXISTS runs (
@@ -81,6 +82,12 @@ def init_db() -> None:
                     conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {typedef}")
                 except sqlite3.OperationalError:
                     pass
+        dev_cols = {row[0] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+        if "last_ip" not in dev_cols:
+            try:
+                conn.execute("ALTER TABLE devices ADD COLUMN last_ip TEXT")
+            except sqlite3.OperationalError:
+                pass
         conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")
