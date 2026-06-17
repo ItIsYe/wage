@@ -88,8 +88,26 @@ def _insert_run(cur, run: RunIn):
     }
 
 
-@router.post("")
-def receive_run(payload: RunIn):
+@router.post("/heartbeat")
+def receive_heartbeat(payload: dict):
+    device_id = payload.get("device_id", "")
+    firmware_version = payload.get("firmware_version", "")
+    boot_id = payload.get("boot_id")
+    queue_depth = payload.get("queue_depth")
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id fehlt")
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """INSERT INTO devices (device_id, firmware_version, last_seen_at, last_boot_id, last_queue_depth)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET
+                firmware_version=excluded.firmware_version,
+                last_seen_at=excluded.last_seen_at,
+                last_boot_id=excluded.last_boot_id,
+                last_queue_depth=excluded.last_queue_depth""",
+            (device_id, firmware_version, utc_now_iso(), boot_id, queue_depth),
+        )
+    return {"ok": True}
     with db_cursor() as (_, cur):
         return _insert_run(cur, payload)
 

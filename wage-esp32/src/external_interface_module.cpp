@@ -21,9 +21,12 @@ size_t queueCount = 0;
 uint32_t lastSendAttemptMs = 0;
 char lastStatus[96] = "idle";
 char firmwareVersion[32] = "unknown";
+char deviceId[64] = "";
 ExternalTransportConfig transportCfg{};
 bool lastSendError = false;
 uint32_t sendErrorEventCounter = 0;
+uint32_t lastHeartbeatMs = 0;
+static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 30000;
 
 bool hasValidTarget() {
   return transportCfg.enabled && transportCfg.host[0] != '\0' && transportCfg.apiPath[0] != '\0';
@@ -77,6 +80,18 @@ String jsonEscape(const char* text) {
     }
   }
   return out;
+}
+
+String buildHeartbeatUrl() {
+  // Heartbeat-URL: apiPath-Basis + /heartbeat
+  // z.B. /api/v1/runs -> http://host:port/api/v1/runs/heartbeat
+  String url = String("http://") + transportCfg.host + ":" + String(transportCfg.port);
+  const bool pathHasLeadingSlash = transportCfg.apiPath[0] == '/';
+  if (!pathHasLeadingSlash) url += '/';
+  url += transportCfg.apiPath;
+  if (url.charAt(url.length() - 1) != '/') url += '/';
+  url += "heartbeat";
+  return url;
 }
 
 String buildTargetUrl() {
@@ -155,6 +170,8 @@ void externalInterfaceInit(const RuntimeConfig& cfg, const char* fwVersion) {
   lastSendError = false;
   sendErrorEventCounter = 0;
   externalInterfaceUpdateConfig(cfg);
+  strncpy(deviceId, cfg.deviceId, sizeof(deviceId) - 1);
+  deviceId[sizeof(deviceId) - 1] = '\0';
   if (fwVersion != nullptr) {
     strncpy(firmwareVersion, fwVersion, sizeof(firmwareVersion) - 1);
     firmwareVersion[sizeof(firmwareVersion) - 1] = '\0';
@@ -198,6 +215,23 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
     setSendErrorState(false);
     return;
   }
+  // Heartbeat senden
+  if (hasValidTarget() && (lastHeartbeatMs == 0 || (now - lastHeartbeatMs) >= HEARTBEAT_INTERVAL_MS)) {
+    lastHeartbeatMs = now;
+    String url = buildHeartbeatUrl();
+    String payload = String("{\"device_id\":\"") + jsonEscape(deviceId) + "\"";
+    payload += String(",\"firmware_version\":\"") + jsonEscape(firmwareVersion) + "\"";
+    payload += String(",\"queue_depth\":") + String(queueCount) + "}";
+    HTTPClient http;
+    if (http.begin(url)) {
+      http.setTimeout(EXTERNAL_SEND_TIMEOUT_MS);
+      http.addHeader("Content-Type", "application/json");
+      if (transportCfg.apiKey[0] != '\0') http.addHeader("X-API-Key", transportCfg.apiKey);
+      http.POST((uint8_t*)payload.c_str(), payload.length());
+      http.end();
+    }
+  }
+
   if (queueCount == 0) return;
   if (!hasValidTarget()) {
     setStatus("no target");
