@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+import asyncio
+import json
 import os
 import socket
 
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 
 from .config import OFFLINE_THRESHOLD_SECONDS
 from .database import db_cursor
@@ -13,20 +16,25 @@ router = APIRouter(prefix="/api/v1/status", tags=["status"])
 
 def get_pi_ip() -> str:
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        return ip
+        import subprocess
+        out = subprocess.check_output(
+            ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show"],
+            text=True, timeout=3
+        )
+        for line in out.splitlines():
+            if line.startswith("IP4.ADDRESS"):
+                addr = line.split(":")[-1].split("/")[0].strip()
+                if addr and not addr.startswith("127."):
+                    return addr
     except Exception:
-        try:
-            return os.popen("hostname -I").read().strip().split()[0]
-        except Exception:
-            return "127.0.0.1"
+        pass
+    try:
+        return os.popen("hostname -I").read().strip().split()[0]
+    except Exception:
+        return "127.0.0.1"
 
 
-@router.get("")
-def status():
+def _build_status() -> dict:
     now = datetime.now(timezone.utc)
     with db_cursor() as (_, cur):
         app = {r["key"]: r["value"] for r in cur.execute("SELECT key,value FROM app_state")}
@@ -69,3 +77,40 @@ def status():
         "ap_ssid": net.get("ap_ssid", "wage-net"),
         "api_target_for_esp": api_target_for_esp,
     }
+
+
+@router.get("")
+def status():
+    return _build_status()
+
+
+@router.get("/stream")
+async def status_stream():
+    """SSE-Stream: sendet bei jedem neuen Lauf ein Update ans Dashboard."""
+    async def event_generator():
+        last_run_id = None
+        try:
+            while True:
+                try:
+                    data = _build_status()
+                    current_run_id = data.get("last_run_id")
+                    if current_run_id != last_run_id:
+                        last_run_id = current_run_id
+                        yield f"data: {json.dumps(data)}\n\n"
+                    else:
+                        # Heartbeat alle 5s damit die Verbindung offen bleibt
+                        yield ": heartbeat\n\n"
+                except Exception:
+                    yield ": error\n\n"
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

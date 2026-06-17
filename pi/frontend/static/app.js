@@ -72,21 +72,10 @@ function statusTone(v) {
 }
 
 async function loadDashboard() {
-  const root = byId("dash-main");
-  if (!root) return;
+  if (!byId("dash-main")) return;
   try {
     const s = await api("/api/v1/status");
-    const last = s.last_run || {};
-    root.innerHTML = `
-      <div class="card ${statusTone(s.scale_online)}"><h3>Waage</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Letzter Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
-      <div class="card ${statusTone(s.api_status)}"><h3>API / Datenbank</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div><div>${esc(s.pi_url || "-")}</div></div>
-      <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status || "-")}</div><div>last_event: ${esc(s.last_event || "-")}</div></div>
-      <div class="card ${statusTone(s.oled_status)}"><h3>OLED</h3><div class="kpi">${esc(s.oled_status || "-")}</div><div>Aktive Person: ${esc(s.active_person?.name || "-")}</div></div>
-      <div class="card status-info"><h3>Letzter Lauf</h3><div class="kpi">#${esc(last.id || "-")}</div><div>Zeit: ${esc(last.time_ms || "-")} ms · Start: ${esc(last.start_weight_g || "-")} g</div></div>
-    `;
-    byId("dash-runs").innerHTML = (s.recent_runs || []).map((r) =>
-      `<div class="list-row">#${esc(r.id)} · Lauf ${esc(r.run_number)} · ${esc(r.person_name || "-")} · ${esc(r.start_weight_g)} g · ${esc(r.received_at)}</div>`
-    ).join("") || "Keine Läufe vorhanden.";
+    renderDashboardData(s);
     flash("", true);
   } catch (e) {
     flash(`Dashboard konnte nicht geladen werden: ${e.message}`);
@@ -196,6 +185,42 @@ loadDashboard();
 loadStatus();
 loadPersons();
 loadRuns();
+
+// SSE: Dashboard live aktualisieren wenn neuer Lauf eingeht
+(function initDashboardSSE() {
+  if (!byId("dash-main")) return;
+  let es;
+  function connect() {
+    es = new EventSource("/api/v1/status/stream");
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        renderDashboardData(data);
+      } catch (_) {}
+    };
+    es.onerror = () => {
+      es.close();
+      setTimeout(connect, 5000);
+    };
+  }
+  connect();
+})();
+
+function renderDashboardData(s) {
+  const root = byId("dash-main");
+  if (!root) return;
+  const last = s.last_run || {};
+  root.innerHTML = `
+    <div class="card ${statusTone(s.scale_online)}"><h3>Waage</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Letzter Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
+    <div class="card ${statusTone(s.api_status)}"><h3>API / Datenbank</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div><div>${esc(s.pi_url || "-")}</div></div>
+    <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status || "-")}</div><div>last_event: ${esc(s.last_event || "-")}</div></div>
+    <div class="card ${statusTone(s.oled_status)}"><h3>OLED</h3><div class="kpi">${esc(s.oled_status || "-")}</div><div>Aktive Person: ${esc(s.active_person?.name || "-")}</div></div>
+    <div class="card status-info"><h3>Letzter Lauf</h3><div class="kpi">#${esc(last.id || "-")}</div><div>Zeit: ${esc(last.time_ms || "-")} ms · Start: ${esc(last.start_weight_g || "-")} g</div></div>
+  `;
+  byId("dash-runs").innerHTML = (s.recent_runs || []).map((r) =>
+    `<div class="list-row">#${esc(r.id)} · Lauf ${esc(r.run_number)} · ${esc(r.person_name || "-")} · ${esc(r.start_weight_g)} g · ${esc(r.received_at)}</div>`
+  ).join("") || "Keine Läufe vorhanden.";
+}
 
 
 async function loadNetworkConfig() {

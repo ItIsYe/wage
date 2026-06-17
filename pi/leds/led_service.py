@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
             new_run_id = s["last_run_id"]
             if last_run_id is not None and new_run_id and new_run_id != last_run_id:
-                blink_until = now + 1.2
+                blink_until = now + 5.0
             last_run_id = new_run_id
 
             if now < blink_until:
@@ -109,8 +109,7 @@ if __name__ == "__main__":
 
             if strip and Color:
                 if status == "event:run_received":
-                    blink_toggle = not blink_toggle
-                    fill(strip, Color(0, 0, 160 if blink_toggle else 0))
+                    fill(strip, Color(0, 180, 0))  # grün für 5s
                 elif status == "fatal:red_blink":
                     blink_toggle = not blink_toggle
                     fill(strip, Color(150 if blink_toggle else 0, 0, 0))
