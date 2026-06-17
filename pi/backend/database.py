@@ -77,7 +77,10 @@ def init_db() -> None:
             ("stop_rise_threshold_g", "REAL"),
         ]:
             if col not in existing_cols:
-                conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {typedef}")
+                try:
+                    conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {typedef}")
+                except sqlite3.OperationalError:
+                    pass
         conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")
