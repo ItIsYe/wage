@@ -64,7 +64,7 @@ if [[ "$MODE" == "ap" ]]; then
 
   nmcli connection up wage-net-ap >/dev/null
   log "AP-Modus erfolgreich aktiviert"
-  log "Security=WPA2-PSK/RSN/CCMP PMF=optional Band=bg Channel=6"
+  log "Security=WPA2-PSK/RSN/CCMP PMF=$AP_PMF Band=$AP_BAND Channel=$AP_CHANNEL"
 else
   log "Modus=client SSID=$CLIENT_SSID passwort_gesetzt=$([[ -n "$CLIENT_PASSWORD" ]] && echo true || echo false)"
   [[ -n "$CLIENT_SSID" ]] || fail "Client-SSID fehlt"
