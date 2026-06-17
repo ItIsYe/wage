@@ -689,6 +689,47 @@ void webService(uint32_t now){
     }
   }
 
+  // Fallback-AP: alle 60s versuchen ob wage-net wieder erreichbar ist
+  if (wifiApMode && activeConfig.wifiStaEnabled && activeConfig.wifiSsid[0] != '\0') {
+    static constexpr uint32_t AP_RETRY_INTERVAL_MS = 60000;
+    if ((now - lastReconnectAttemptMs) >= AP_RETRY_INTERVAL_MS) {
+      lastReconnectAttemptMs = now;
+      Serial.println("[NET] Fallback-AP: versuche STA-Reconnect...");
+      WiFi.softAPdisconnect(false);
+      WiFi.mode(WIFI_STA);
+      WiFi.setSleep(false);
+      if (activeConfig.wifiUseStaticIp) {
+        IPAddress ip, gw, sn, d1, d2;
+        if (parseIpAddress(activeConfig.wifiLocalIp, ip)
+            && parseIpAddress(activeConfig.wifiGateway, gw)
+            && parseIpAddress(activeConfig.wifiSubnet, sn)
+            && parseIpAddress(activeConfig.wifiDns1, d1)
+            && parseIpAddress(activeConfig.wifiDns2, d2)) {
+          WiFi.config(ip, gw, sn, d1, d2);
+        }
+      }
+      WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
+      // kurz warten und prüfen
+      uint32_t waitStart = millis();
+      while (WiFi.status() != WL_CONNECTED && (millis() - waitStart) < 8000) {
+        delay(200);
+      }
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.print("[NET] Fallback-AP -> STA erfolgreich, IP=");
+        Serial.println(WiFi.localIP().toString());
+        wifiApMode = false;
+        networkInfo = WiFi.localIP().toString();
+        showNetworkStatus("WLAN", networkInfo);
+        lastReconnectAttemptMs = 0;
+      } else {
+        Serial.println("[NET] Fallback-AP: STA fehlgeschlagen, bleibe im AP");
+        WiFi.disconnect(false);
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(activeConfig.configApSsid, activeConfig.configApPassword);
+      }
+    }
+  }
+
   const bool isIdleState = (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
   const uint32_t interval = isIdleState ? WEB_SERVICE_INTERVAL_IDLE_MS : WEB_SERVICE_INTERVAL_BUSY_MS;
   if (now - lastWebServiceMs < interval) return;
