@@ -14,6 +14,55 @@ function flash(msg, ok = false) {
   el.className = ok ? "msg msg-ok" : "msg msg-err";
 }
 
+
+function networkActionMsg(msg, tone = "info") {
+  const el = byId("network-action-msg");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = `msg msg-${tone}`;
+}
+function setNetworkButtonsDisabled(disabled) {
+  ["btn-network-save", "btn-network-apply"].forEach((id) => { const btn = byId(id); if (btn) btn.disabled = disabled; });
+}
+function setApPasswordHint(visible, msg = "") {
+  const hint = byId("ap-password-hint");
+  if (!hint) return;
+  hint.style.display = visible ? "block" : "none";
+  hint.textContent = msg;
+}
+async function fetchSecretIntoField(inputId, endpoint, toggleBtnId, loadBtnId) {
+  const input = byId(inputId);
+  const toggleBtn = byId(toggleBtnId);
+  const loadBtn = byId(loadBtnId);
+  if (!input) return;
+  try {
+    const data = await api(endpoint);
+    input.value = data.value || '';
+    input.type = 'text';
+    if (toggleBtn) toggleBtn.textContent = 'verbergen';
+    if (loadBtn) loadBtn.textContent = 'neu laden';
+  } catch (e) {
+    flash(`Gespeichertes Passwort konnte nicht geladen werden: ${e.message}`);
+  }
+}
+
+function setupPasswordToggle(inputId, btnId, loadBtnId, secretEndpoint) {
+  const input = byId(inputId); const btn = byId(btnId); const loadBtn = byId(loadBtnId);
+  if (!input || !btn) return;
+  btn.addEventListener('click', async () => {
+    if (!input.value && loadBtn && secretEndpoint) {
+      await fetchSecretIntoField(inputId, secretEndpoint, btnId, loadBtnId);
+      return;
+    }
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.textContent = show ? 'verbergen' : 'anzeigen';
+  });
+  if (loadBtn && secretEndpoint) {
+    loadBtn.addEventListener('click', () => fetchSecretIntoField(inputId, secretEndpoint, btnId, loadBtnId));
+  }
+}
+
 function statusTone(v) {
   const s = String(v ?? "").toLowerCase();
   if (s === "ok" || s.includes("green") || s === "true") return "status-ok";
@@ -23,21 +72,10 @@ function statusTone(v) {
 }
 
 async function loadDashboard() {
-  const root = byId("dash-main");
-  if (!root) return;
+  if (!byId("dash-main")) return;
   try {
     const s = await api("/api/v1/status");
-    const last = s.last_run || {};
-    root.innerHTML = `
-      <div class="card ${statusTone(s.scale_online)}"><h3>Waage</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Letzter Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
-      <div class="card ${statusTone(s.api_status)}"><h3>API / Datenbank</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div><div>${esc(s.pi_url || "-")}</div></div>
-      <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status || "-")}</div><div>last_event: ${esc(s.last_event || "-")}</div></div>
-      <div class="card ${statusTone(s.oled_status)}"><h3>OLED</h3><div class="kpi">${esc(s.oled_status || "-")}</div><div>Aktive Person: ${esc(s.active_person?.name || "-")}</div></div>
-      <div class="card status-info"><h3>Letzter Lauf</h3><div class="kpi">#${esc(last.id || "-")}</div><div>Zeit: ${esc(last.time_ms || "-")} ms · Start: ${esc(last.start_weight_g || "-")} g</div></div>
-    `;
-    byId("dash-runs").innerHTML = (s.recent_runs || []).map((r) =>
-      `<div class="list-row">#${esc(r.id)} · Lauf ${esc(r.run_number)} · ${esc(r.person_name || "-")} · ${esc(r.start_weight_g)} g · ${esc(r.received_at)}</div>`
-    ).join("") || "Keine Läufe vorhanden.";
+    renderDashboardData(s);
     flash("", true);
   } catch (e) {
     flash(`Dashboard konnte nicht geladen werden: ${e.message}`);
@@ -147,3 +185,513 @@ loadDashboard();
 loadStatus();
 loadPersons();
 loadRuns();
+
+// SSE: Dashboard live aktualisieren wenn neuer Lauf eingeht
+(function initDashboardSSE() {
+  if (!byId("dash-main")) return;
+  let es;
+  function connect() {
+    es = new EventSource("/api/v1/status/stream");
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        renderDashboardData(data);
+      } catch (_) {}
+    };
+    es.onerror = () => {
+      es.close();
+      setTimeout(connect, 5000);
+    };
+  }
+  connect();
+})();
+
+function renderDashboardData(s) {
+  const root = byId("dash-main");
+  if (!root) return;
+  const last = s.last_run || {};
+  root.innerHTML = `
+    <div class="card ${statusTone(s.scale_online)}"><h3>Waage</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Letzter Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
+    <div class="card ${statusTone(s.api_status)}"><h3>API / Datenbank</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div><div>${esc(s.pi_url || "-")}</div></div>
+    <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status || "-")}</div><div>last_event: ${esc(s.last_event || "-")}</div></div>
+    <div class="card ${statusTone(s.oled_status)}"><h3>OLED</h3><div class="kpi">${esc(s.oled_status || "-")}</div><div>Aktive Person: ${esc(s.active_person?.name || "-")}</div></div>
+    <div class="card status-info"><h3>Letzter Lauf</h3><div class="kpi">#${esc(last.id || "-")}</div><div>Zeit: ${esc(last.time_ms || "-")} ms · Start: ${esc(last.start_weight_g || "-")} g</div></div>
+  `;
+  byId("dash-runs").innerHTML = (s.recent_runs || []).map((r) =>
+    `<div class="list-row">#${esc(r.id)} · Lauf ${esc(r.run_number)} · ${esc(r.person_name || "-")} · ${esc(r.start_weight_g)} g · ${esc(r.received_at)}</div>`
+  ).join("") || "Keine Läufe vorhanden.";
+}
+
+
+async function loadNetworkConfig() {
+  if (!byId("ap-ssid")) return;
+  try {
+    const [cfg, status] = await Promise.all([api('/api/v1/config/network'), api('/api/v1/config/network/status')]);
+    (document.querySelector(`input[name="network-mode"][value="${cfg.network_mode}"]`) || {}).checked = true;
+    byId('ap-ssid').value = cfg.ap_ssid || '';
+    byId('ap-ip').value = cfg.ap_ip || '';
+    byId('ap-dhcp-start').value = cfg.ap_dhcp_start || '';
+    byId('ap-dhcp-end').value = cfg.ap_dhcp_end || '';
+    byId('client-ssid').value = cfg.client_ssid || '';
+    if (byId('ap-password')) byId('ap-password').placeholder = cfg.ap_password_set ? 'AP Passwort gesetzt – leer lassen = behalten' : 'AP Passwort (mindestens 8 Zeichen)';
+    setApPasswordHint(!cfg.ap_password_set, 'AP-Passwort erforderlich, mindestens 8 Zeichen');
+    if (byId('client-password')) byId('client-password').placeholder = cfg.client_password_set ? 'WLAN Passwort gesetzt – leer lassen = behalten' : 'WLAN Passwort (optional)';
+    const statusRoot = byId('network-status-grid');
+    if (statusRoot) {
+      const nmConn = String(status.current_nmcli_connection || '-');
+      const shortNmConn = nmConn.length > 140 ? `${nmConn.slice(0, 140)}…` : nmConn;
+      statusRoot.innerHTML = `<div class="card network-status-card">
+        <h3>Netzwerk-Status</h3>
+        <div><strong>Gespeicherter Modus:</strong> ${esc(cfg.network_mode)}</div>
+        <div><strong>Aktiver Status:</strong> ${esc(status.status)}</div>
+        <div><strong>AP-Sicherheit:</strong> ${esc(cfg.ap_security)}</div>
+        <div><strong>Pi-IP:</strong> ${esc(cfg.current_pi_ip)}</div>
+        <div><strong>API-Ziel:</strong> ${esc(cfg.api_target)}</div>
+        <div><strong>Letzte Anwendung:</strong> ${esc(status.last_network_apply_at || '-')}</div>
+        <div><strong>Letzter Apply-Status:</strong> <span class="long-text">${esc(status.last_network_apply_status || '-')}</span></div>
+        <details class="nm-connection-details">
+          <summary>Aktive NM-Connection: ${esc(shortNmConn)}</summary>
+          <div class="long-text">${esc(nmConn)}</div>
+        </details>
+      </div>`;
+    }
+  } catch (e) { flash(`Konfiguration konnte nicht geladen werden: ${e.message}`); }
+}
+
+async function refreshConfigPage() {
+  await loadNetworkConfig();
+  await loadUpdateStatus();
+  await loadStatus();
+  await loadDashboard();
+}
+
+async function saveNetworkConfig() {
+  setNetworkButtonsDisabled(true);
+  networkActionMsg("Speichere...", "info");
+  const mode = document.querySelector('input[name="network-mode"]:checked')?.value || 'ap';
+  const payload = {
+    network_mode: mode, ap_ssid: byId('ap-ssid')?.value || '', ap_password: byId('ap-password')?.value || '', ap_ip: byId('ap-ip')?.value || '',
+    ap_dhcp_start: byId('ap-dhcp-start')?.value || '', ap_dhcp_end: byId('ap-dhcp-end')?.value || '', client_ssid: byId('client-ssid')?.value || '',
+    client_password: byId('client-password')?.value || '', client_dhcp_enabled: true
+  };
+  try {
+    await api('/api/v1/config/network', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    if (byId('ap-password')) byId('ap-password').value = '';
+    if (byId('client-password')) byId('client-password').value = '';
+    flash('Netzwerk-Konfiguration gespeichert.', true);
+    networkActionMsg('Gespeichert', 'ok');
+    await refreshConfigPage();
+  } catch (e) {
+    flash(`Speichern fehlgeschlagen: ${e.message}`);
+      networkActionMsg(`Speichern fehlgeschlagen: ${e.message}`, 'err');
+  } finally {
+    setNetworkButtonsDisabled(false);
+  }
+}
+
+async function applyNetworkConfig() {
+  setNetworkButtonsDisabled(true);
+  networkActionMsg("Wende Netzwerkeinstellungen an...", "info");
+  try {
+    const d = await api('/api/v1/config/network/apply', {method:'POST'});
+    flash(d.status || 'Angewendet.', d.ok);
+    networkActionMsg(d.status || 'Netzwerkeinstellungen angewendet', d.ok ? 'ok' : 'err');
+  } catch (e) {
+    const msg = String(e.message || '');
+    if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror') || msg.toLowerCase().includes('network')) {
+      flash('Netzwerk wird angewendet. Verbindung kann kurz abbrechen. Bitte Seite nach einigen Sekunden neu laden.');
+      networkActionMsg('Netzwerk wird angewendet. Verbindung kann kurz abbrechen.', 'warn');
+    } else {
+      flash(`Anwenden fehlgeschlagen: ${e.message}`);
+      networkActionMsg(`Anwenden fehlgeschlagen: ${msg}`, 'err');
+    }
+  } finally {
+    setNetworkButtonsDisabled(false);
+    await loadNetworkConfig();
+    await loadStatus();
+    setTimeout(() => { loadNetworkConfig(); loadStatus(); }, 2000);
+    setTimeout(() => { loadNetworkConfig(); loadStatus(); }, 5000);
+  }
+}
+
+loadNetworkConfig();
+
+let updateBusy = false;
+let updatePollTimer = null;
+
+function setUpdateButtonsDisabled(disabled) {
+  ['btn-update-check', 'btn-update-apply', 'btn-update-refresh'].forEach((id) => {
+    const btn = byId(id);
+    if (btn) btn.disabled = disabled;
+  });
+}
+
+function setUpdateHint(message, tone = 'info') {
+  const hint = byId('update-hint');
+  if (!hint) return;
+  hint.innerHTML = message || '';
+  hint.className = `msg msg-${tone}`;
+}
+
+function spinnerLabel(text) { return `<span class="busy-dot" aria-hidden="true"></span>${esc(text)}`; }
+
+function stateTone(uiState) {
+  if (['no_update','success'].includes(uiState)) return 'ok';
+  if (['checking','updating'].includes(uiState)) return 'info';
+  if (uiState === 'update_available') return 'warn';
+  return 'err';
+}
+
+function renderUpdateStatus(data) {
+  const root = byId('update-status-grid');
+  if (!root) return;
+  const changed = data.changed_pi_files || [];
+  const obsolete = data.obsolete_pi_files || [];
+  const protectedRuntime = data.protected_runtime_files || [];
+  const canApply = !!data.can_apply || data.ui_state === 'update_available';
+  const progress = Number(data.progress_percent || 0);
+  const details = `
+    <details class="update-details"><summary>Technische Details</summary>
+      <div><strong>local_commit:</strong> ${esc(data.local_commit || '-')}</div>
+      <div><strong>remote_commit:</strong> ${esc(data.remote_commit || '-')}</div>
+      <div><strong>changed_pi_files:</strong><ul>${(data.changed_pi_files||[]).map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+      <div><strong>obsolete_pi_files:</strong><ul>${obsolete.map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+      <div><strong>protected_runtime_files:</strong><ul>${protectedRuntime.map(f=>`<li>${esc(f)}</li>`).join('') || '<li>-</li>'}</ul></div>
+    </details>`;
+
+  root.innerHTML = `
+    <div class="card status-${stateTone(data.ui_state)} update-main-card">
+      <h3>Update-Status</h3>
+      <div class="kpi">${esc(data.ui_message || '-')}</div>
+      <div>Netzwerkmodus: <strong>${esc(data.network_mode || '-')}</strong></div>
+      <div>Update erlaubt: <strong>${data.allowed ? 'ja' : 'nein'}</strong></div>
+      <div>Letzte Prüfung: ${esc(data.last_update_at || '-')}</div>
+      <div>Letztes Update: ${esc(data.last_update_status || '-')}</div>
+      ${(data.ui_state === 'checking' || data.ui_state === 'updating') ? `<div class="update-progress-head">${spinnerLabel(esc(data.progress_step || 'Bitte warten...'))}</div>
+      <div class="progress"><div class="progress-bar" style="width:${Math.max(0,Math.min(100,progress))}%"></div></div>` : ''}
+      ${(changed.length > 0) ? `<h4>Neue/geänderte Dateien</h4><ul>${changed.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      ${(obsolete.length > 0) ? `<h4>Dateien, die entfernt werden</h4><ul>${obsolete.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>` : ''}
+      <small>Lokale Betriebsdaten bleiben geschützt.</small><br>
+      <small>Lokale Pi-Code-Abweichungen werden durch den Repo-Stand ersetzt.</small>
+      ${details}
+    </div>`;
+
+  const applyBtn = byId('btn-update-apply');
+  if (applyBtn) applyBtn.style.display = canApply ? 'inline-flex' : 'none';
+  if (applyBtn) applyBtn.disabled = updateBusy || !canApply;
+  setUpdateHint(data.ui_message || '', stateTone(data.ui_state));
+  setUpdateButtonsDisabled(updateBusy || !data.can_check);
+}
+
+function setUpdatePolling(active) {
+  if (updatePollTimer) clearInterval(updatePollTimer);
+  updatePollTimer = null;
+  if (!active) return;
+  updatePollTimer = setInterval(() => loadUpdateStatus(true).catch(() => {}), 2000);
+}
+
+async function loadUpdateStatus(silent = false) {
+  if (!byId('update-status-grid')) return;
+  try {
+    const data = await api('/api/v1/system/update/status');
+    renderUpdateStatus(data);
+    if (data.ui_state === 'success' && !updateBusy) {
+      await api('/api/v1/system/update/check', {method: 'POST'});
+      return loadUpdateStatus(true);
+    }
+    setUpdatePolling(data.ui_state === 'checking' || data.ui_state === 'updating' || updateBusy);
+  } catch (e) {
+    const inProgress = updateBusy;
+    if (inProgress) {
+      setUpdatePolling(true);
+      return;
+    }
+    if (!silent) flash(`Update-Status konnte nicht geladen werden: ${e.message}`);
+  }
+}
+
+
+async function checkPiUpdates() {
+  updateBusy = true;
+  setUpdateButtonsDisabled(true);
+  setUpdateHint(spinnerLabel('Suche nach Updates...'), 'info');
+  setUpdatePolling(true);
+  try {
+    const data = await api('/api/v1/system/update/check', {method: 'POST'});
+    renderUpdateStatus(data);
+    setUpdatePolling(true);
+  } catch (e) {
+    flash(`Update-Prüfung fehlgeschlagen: ${e.message}`);
+  } finally {
+    updateBusy = false;
+    await loadUpdateStatus(true);
+  }
+}
+
+async function waitForBackendAfterUpdate() {
+  setUpdateHint(spinnerLabel('Backend startet neu, bitte warten...'), 'info');
+  for (let i = 0; i < 45; i += 1) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const h = await api('/api/v1/health');
+      if (h && h.ok) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
+async function applyPiUpdate() {
+  updateBusy = true;
+  setUpdateButtonsDisabled(true);
+  setUpdatePolling(true);
+  setUpdateHint(spinnerLabel('Update wird vorbereitet...'), 'info');
+  try {
+    const data = await api('/api/v1/system/update/apply', {method: 'POST'});
+    renderUpdateStatus(data);
+    setUpdatePolling(true);
+  } catch (e) {
+    const msg = String(e.message || '').toLowerCase();
+    if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
+      const ok = await waitForBackendAfterUpdate();
+      if (ok) await loadUpdateStatus();
+      else flash('Backend war nicht rechtzeitig erreichbar.', false);
+    } else {
+      flash(`Pi-Update fehlgeschlagen: ${e.message}`);
+    }
+  } finally {
+    updateBusy = false;
+    await loadUpdateStatus(true);
+  }
+}
+
+function startConfigAutoRefresh() {
+  loadUpdateStatus(true).catch(() => {});
+}
+loadUpdateStatus();
+startConfigAutoRefresh();
+
+
+(function initTouchKeyboard() {
+  const textRows = [
+    ['1','2','3','4','5','6','7','8','9','0'],
+    ['q','w','e','r','t','y','u','i','o','p'],
+    ['a','s','d','f','g','h','j','k','l','-'],
+    ['SHIFT','z','x','c','v','b','n','m','_','@'],
+    ['.','SPACE','BACKSPACE','OK','CLOSE']
+  ];
+  const numericRows = [
+    ['1','2','3'],
+    ['4','5','6'],
+    ['7','8','9'],
+    ['.','0','BACKSPACE'],
+    ['OK','CLOSE']
+  ];
+
+  let activeKeyboardInput = null;
+  let shiftEnabled = false;
+  let hideTimer = null;
+  const keyboard = document.createElement('div');
+  keyboard.id = 'touch-keyboard';
+  keyboard.className = 'touch-keyboard hidden';
+  keyboard.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(keyboard);
+
+  function preventKeyboardPointerBlur(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  ['pointerdown', 'mousedown', 'touchstart'].forEach((eventName) => {
+    keyboard.addEventListener(eventName, preventKeyboardPointerBlur, { passive: false });
+  });
+
+  function triggerInputEvents(el) {
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function isSupportedInput(el) {
+    if (!el || el.disabled || el.readOnly) return false;
+    if (el.tagName === 'TEXTAREA') return true;
+    if (el.tagName !== 'INPUT') return false;
+    const type = (el.getAttribute('type') || 'text').toLowerCase();
+    return ['text', 'password', 'number', ''].includes(type);
+  }
+
+  function isNumericLayout(el) {
+    if (!el) return false;
+    const type = (el.getAttribute('type') || '').toLowerCase();
+    if (type === 'number') return true;
+    const probe = `${el.id || ''} ${el.name || ''}`.toLowerCase();
+    return ['ip', 'dhcp', 'port', 'address'].some((k) => probe.includes(k));
+  }
+
+  function resolveKeyLabel(key) {
+    if (key.length !== 1) return key;
+    if (!/[a-z]/i.test(key)) return key;
+    return shiftEnabled ? key.toUpperCase() : key.toLowerCase();
+  }
+
+  function insertAtCursor(el, text) {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const before = el.value.slice(0, start);
+    const after = el.value.slice(end);
+    el.value = `${before}${text}${after}`;
+    const pos = start + text.length;
+    el.setSelectionRange(pos, pos);
+    triggerInputEvents(el);
+  }
+
+  function backspaceAtCursor(el) {
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    if (start === 0 && end === 0) return;
+    if (start !== end) {
+      el.value = `${el.value.slice(0, start)}${el.value.slice(end)}`;
+      el.setSelectionRange(start, start);
+    } else {
+      el.value = `${el.value.slice(0, start - 1)}${el.value.slice(end)}`;
+      el.setSelectionRange(start - 1, start - 1);
+    }
+    triggerInputEvents(el);
+  }
+
+  function keyboardHeight() {
+    return Math.min(window.innerHeight * 0.35, 340);
+  }
+
+  function setBodyPadding(show) {
+    document.body.classList.toggle('touch-keyboard-open', show);
+    document.body.style.setProperty('--touch-keyboard-height', show ? `${keyboardHeight()}px` : '0px');
+  }
+
+  function hideKeyboard(blur = false) {
+    keyboard.classList.add('hidden');
+    keyboard.setAttribute('aria-hidden', 'true');
+    setBodyPadding(false);
+    const target = activeKeyboardInput;
+    activeKeyboardInput = null;
+    if (blur && target) target.blur();
+  }
+
+  function ensureVisible(el) {
+    if (!el) return;
+    window.setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }, 60);
+  }
+
+  function onKeyPress(key) {
+    if (!activeKeyboardInput) return;
+    if (key === 'SHIFT') {
+      shiftEnabled = !shiftEnabled;
+      renderKeyboard();
+      return;
+    }
+    const input = activeKeyboardInput;
+    if (key === 'SPACE') return insertAtCursor(input, ' ');
+    if (key === 'BACKSPACE') return backspaceAtCursor(input);
+    if (key === 'OK') return hideKeyboard(true);
+    if (key === 'CLOSE') return hideKeyboard(false);
+    if (key === 'ENTER') {
+      if (input.tagName === 'TEXTAREA') return insertAtCursor(input, '\n');
+      return hideKeyboard(true);
+    }
+    insertAtCursor(input, resolveKeyLabel(key));
+    if (shiftEnabled) {
+      shiftEnabled = false;
+      renderKeyboard();
+    }
+  }
+
+  function renderKeyboard() {
+    if (!activeKeyboardInput) return;
+    const layout = isNumericLayout(activeKeyboardInput) ? numericRows : textRows;
+    keyboard.innerHTML = layout.map((row) => {
+      const buttons = row.map((key) => {
+        const label = resolveKeyLabel(key);
+        const classes = ['touch-key'];
+        if (['BACKSPACE', 'OK', 'CLOSE', 'SHIFT'].includes(key)) classes.push('touch-key-action');
+        if (key === 'SPACE') classes.push('touch-key-space');
+        if (key === 'SHIFT' && shiftEnabled) classes.push('is-active');
+        return `<button type="button" class="${classes.join(' ')}" data-key="${key}">${esc(label)}</button>`;
+      }).join('');
+      return `<div class="touch-key-row">${buttons}</div>`;
+    }).join('');
+    keyboard.querySelectorAll('button[data-key]').forEach((btn) => {
+      ['pointerdown', 'mousedown', 'touchstart'].forEach((eventName) => {
+        btn.addEventListener(eventName, preventKeyboardPointerBlur, { passive: false });
+      });
+      btn.addEventListener('click', () => onKeyPress(btn.dataset.key));
+    });
+  }
+
+  function showKeyboard(el) {
+    clearTimeout(hideTimer);
+    activeKeyboardInput = el;
+    renderKeyboard();
+    keyboard.classList.remove('hidden');
+    keyboard.setAttribute('aria-hidden', 'false');
+    setBodyPadding(true);
+    ensureVisible(el);
+  }
+
+  document.addEventListener('focusin', (ev) => {
+    const target = ev.target;
+    if (!isSupportedInput(target)) return hideKeyboard(false);
+    showKeyboard(target);
+  });
+
+  document.addEventListener('pointerdown', (ev) => {
+    if (!activeKeyboardInput) return;
+    const target = ev.target;
+    if (keyboard.contains(target) || target === activeKeyboardInput) return;
+    if (isSupportedInput(target)) return;
+    hideKeyboard(false);
+  });
+
+})();
+
+setupPasswordToggle('ap-password', 'toggle-ap-password', 'load-ap-password', '/api/v1/config/network/secret/ap-password');
+setupPasswordToggle('client-password', 'toggle-client-password', 'load-client-password', '/api/v1/config/network/secret/client-password');
+
+
+async function loadWaageConfig() {
+  if (!document.getElementById("esp-frame")) return;
+  try {
+    const s = await api("/api/v1/status");
+    const ip = s.scale_ip || s.last_device?.last_ip;
+    const urlEl = document.getElementById("esp-url");
+    const frame = document.getElementById("esp-frame");
+    const loading = document.getElementById("esp-frame-loading");
+    if (!ip) {
+      if (urlEl) urlEl.textContent = "Unbekannt – noch kein Heartbeat empfangen";
+      if (loading) loading.textContent = "ESP-IP noch nicht bekannt. Bitte warten bis die Waage einen Heartbeat gesendet hat.";
+      return;
+    }
+    const espUrl = `http://${ip}/`;
+    if (urlEl) urlEl.textContent = espUrl;
+    if (frame) { frame.src = espUrl; }
+  } catch (e) {
+    flash(`ESP-URL konnte nicht ermittelt werden: ${e.message}`);
+  }
+}
+
+function onFrameLoad() {
+  const frame = document.getElementById("esp-frame");
+  const loading = document.getElementById("esp-frame-loading");
+  if (frame) frame.style.display = "block";
+  if (loading) loading.style.display = "none";
+}
+
+function reloadFrame() {
+  const frame = document.getElementById("esp-frame");
+  const loading = document.getElementById("esp-frame-loading");
+  if (!frame) return;
+  if (loading) { loading.style.display = "flex"; loading.textContent = "Lade ESP-Webinterface..."; }
+  frame.style.display = "none";
+  frame.src = frame.src;
+}
+
+loadWaageConfig();

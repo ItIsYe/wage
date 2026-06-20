@@ -4,14 +4,17 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RunIn(BaseModel):
-    protocol_version: str = Field(default="1.0")
+    protocol_version: int = Field(default=1)
     device_id: str
-    boot_id: str
+    boot_id: int
     run_number: int
     event_id: str
     time_ms: int
     start_weight_g: float
-    status: str
+    min_weight_g: Optional[float] = None
+    start_drop_threshold_g: Optional[float] = None
+    stop_rise_threshold_g: Optional[float] = None
+    status: str = Field(default="ok")
     firmware_version: str
     queue_depth: Optional[int] = None
 
@@ -48,3 +51,15 @@ class PersonUpdate(BaseModel):
         if not value:
             raise ValueError("Name darf nicht leer sein")
         return value
+
+
+class NetworkConfigIn(BaseModel):
+    network_mode: Optional[str] = None
+    ap_ssid: Optional[str] = None
+    ap_password: Optional[str] = None
+    ap_ip: Optional[str] = None
+    ap_dhcp_start: Optional[str] = None
+    ap_dhcp_end: Optional[str] = None
+    client_ssid: Optional[str] = None
+    client_password: Optional[str] = None
+    client_dhcp_enabled: Optional[bool] = None

@@ -1,0 +1,16 @@
+DEFAULTS = {
+    "network_mode": "ap",
+    "ap_ssid": "wage-net",
+    "ap_password": "",
+    "ap_ip": "192.168.50.1",
+    "ap_pmf": "0",
+    "ap_band": "bg",
+    "ap_channel": "6",
+    "ap_dhcp_start": "192.168.50.50",
+    "ap_dhcp_end": "192.168.50.150",
+    "client_ssid": "",
+    "client_password": "",
+    "client_dhcp_enabled": "true",
+    "last_network_apply_status": "never",
+    "last_network_apply_at": "",
+}

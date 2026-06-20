@@ -68,6 +68,18 @@ struct RuntimeConfig {
   uint8_t ring2StandbyBrightnessPercent;
   bool ring2DebugAllOn;
   char deviceId[32];
+  bool wifiStaEnabled;
+  char wifiSsid[32];
+  char wifiPassword[64];
+  uint32_t wifiConnectTimeoutMs;
+  bool wifiUseStaticIp;
+  char wifiLocalIp[16];
+  char wifiGateway[16];
+  char wifiSubnet[16];
+  char wifiDns1[16];
+  char wifiDns2[16];
+  char configApSsid[32];
+  char configApPassword[64];
   bool externalEnabled;
   char externalHost[64];
   uint16_t externalPort;

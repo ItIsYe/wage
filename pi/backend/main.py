@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
@@ -10,27 +11,37 @@ from fastapi.templating import Jinja2Templates
 from .api_persons import router as persons_router
 from .api_runs import router as runs_router
 from .api_status import router as status_router
+from .api_network_config import router as network_config_router
+from .api_update import router as update_router
 from .config import APP_VERSION, PI_ROOT
+from .config_migration import ensure_config_defaults
 from .database import get_connection, init_db
 
-app = FastAPI(title="wage-pi", version=APP_VERSION)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    ensure_config_defaults()
+    yield
+
+
+app = FastAPI(title="wage-pi", version=APP_VERSION, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(PI_ROOT / "frontend" / "static")), name="static")
 templates = Jinja2Templates(directory=str(PI_ROOT / "frontend" / "templates"))
-
-
-@app.on_event("startup")
-def startup():
-    init_db()
 
 
 @app.get("/api/v1/health")
 def health():
     db_ok = True
+    conn = None
     try:
-        with get_connection() as conn:
-            conn.execute("SELECT 1")
+        conn = get_connection()
+        conn.execute("SELECT 1")
     except sqlite3.Error:
         db_ok = False
+    finally:
+        if conn:
+            conn.close()
     return {
         "ok": True,
         "service": "wage-pi",
@@ -42,6 +53,8 @@ def health():
 app.include_router(runs_router)
 app.include_router(persons_router)
 app.include_router(status_router)
+app.include_router(network_config_router)
+app.include_router(update_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -62,3 +75,12 @@ def persons_page(request: Request):
 @app.get("/status", response_class=HTMLResponse)
 def status_page(request: Request):
     return templates.TemplateResponse("status.html", {"request": request})
+
+
+@app.get("/waage-config", response_class=HTMLResponse)
+async def page_waage_config(request: Request):
+    return templates.TemplateResponse("waage_config.html", {"request": request})
+
+@app.get("/config", response_class=HTMLResponse)
+def config_page(request: Request):
+    return templates.TemplateResponse("config.html", {"request": request})

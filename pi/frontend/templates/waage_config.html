@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Waage-Konfiguration</h1>
+<div id="msg" class="msg"></div>
+<div class="card">
+  <div class="toolbar">
+    <span>ESP32-Webinterface: <strong id="esp-url">-</strong></span>
+    <button onclick="reloadFrame()">Neu laden</button>
+  </div>
+</div>
+<div id="esp-frame-wrap" style="position:relative;width:100%;height:80vh;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--bg-card);">
+  <div id="esp-frame-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.1em;color:var(--text-muted);">Lade ESP-Webinterface...</div>
+  <iframe id="esp-frame" src="" style="width:100%;height:100%;border:none;display:none;" onload="onFrameLoad()"></iframe>
+</div>
+{% endblock %}

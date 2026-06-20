@@ -59,7 +59,7 @@ def make_strip():
     return strip, Color
 
 
-def fill(strip, color, value):
+def fill(strip, value):
     for i in range(strip.numPixels()):
         strip.setPixelColor(i, value)
     strip.show()
@@ -81,7 +81,7 @@ if __name__ == "__main__":
             last_init_try = now
             try:
                 strip, Color = make_strip()
-                fill(strip, Color, Color(90, 90, 90))
+                fill(strip, Color(90, 90, 90))
                 set_state("led_status", "starting:white")
             except Exception as exc:
                 set_state("led_status", f"degraded:{type(exc).__name__}")
@@ -101,7 +101,7 @@ if __name__ == "__main__":
 
             new_run_id = s["last_run_id"]
             if last_run_id is not None and new_run_id and new_run_id != last_run_id:
-                blink_until = now + 1.2
+                blink_until = now + 5.0
             last_run_id = new_run_id
 
             if now < blink_until:
@@ -109,21 +109,20 @@ if __name__ == "__main__":
 
             if strip and Color:
                 if status == "event:run_received":
-                    blink_toggle = not blink_toggle
-                    fill(strip, Color, Color(0, 0, 160 if blink_toggle else 0))
+                    fill(strip, Color(0, 180, 0))  # grün für 5s
                 elif status == "fatal:red_blink":
                     blink_toggle = not blink_toggle
-                    fill(strip, Color, Color(150 if blink_toggle else 0, 0, 0))
+                    fill(strip, Color(150 if blink_toggle else 0, 0, 0))
                 elif status == "running:green":
-                    fill(strip, Color, Color(0, 120, 0))
+                    fill(strip, Color(0, 120, 0))
                 elif status == "running:yellow":
-                    fill(strip, Color, Color(120, 120, 0))
+                    fill(strip, Color(120, 120, 0))
                 elif status == "running:blue":
-                    fill(strip, Color, Color(0, 0, 110))
+                    fill(strip, Color(0, 0, 110))
                 elif status == "error:red":
-                    fill(strip, Color, Color(150, 0, 0))
+                    fill(strip, Color(150, 0, 0))
                 else:
-                    fill(strip, Color, Color(20, 20, 20))
+                    fill(strip, Color(20, 20, 20))
 
             set_state("led_status", status if strip else "degraded:NoHardware")
         except Exception as exc:

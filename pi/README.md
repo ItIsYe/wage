@@ -52,6 +52,13 @@ bash scripts/kiosk_start.sh
 ```
 Verwendet `WAGE_PI_KIOSK_URL` (Default `http://localhost:8000`).
 
+### Touchscreen-Eingabe
+- `scripts/kiosk_start.sh` startet **keine dauerhaft sichtbare OS-Tastatur** (`squeekboard`, `matchbox-keyboard`, `onboard` werden nicht im Hintergrund erzwungen).
+- Chromium wird mit Touch-/Virtual-Keyboard-freundlichen Flags gestartet (`--touch-events=enabled`, `--enable-features=VirtualKeyboard`, `--disable-features=TranslateUI`).
+- Je nach Raspberry-Pi-OS, X11/Wayland und Chromium-Version kann die native OS-Tastatur automatisch erscheinen – das ist in Ordnung, aber keine harte Abhängigkeit.
+- Zusätzlich gibt es im Pi-Webinterface eine integrierte Fallback-Tastatur: Sie erscheint nur bei aktiven Eingabefeldern und verschwindet nach **OK** oder Klick außerhalb.
+- Falls eine externe/native Tastatur stört, keine OS-Tastatur im `kiosk_start.sh` dauerhaft starten.
+
 ## Installation
 ```bash
 cd pi
@@ -176,3 +183,102 @@ Prüft Health, Personen, Aktivierung, Laufannahme, Duplikaterkennung, Runs, Stat
 8. `GET /api/v1/status` auf Pflichtfelder prüfen
 9. `/`, `/runs`, `/persons`, `/status`, `/docs` im Browser prüfen
 10. `scripts/test_api.sh` erfolgreich ausführen
+
+
+## Netzwerk-Konfiguration (AP oder Haus-WLAN)
+- Neue Seite: `/config` (Navigation: **Konfiguration**)
+- Modus **AP** (Standard): SSID `wage-net`, Pi-IP `192.168.50.1`, DHCP-Range `192.168.50.50-192.168.50.150`
+- Pi-AP ist für ESP32-Kompatibilität fest auf **2.4 GHz** mit `band=bg` und `channel=6` konfiguriert.
+- AP-Security ist fest auf **WPA2-PSK / RSN / CCMP** gesetzt (kein WPA3/SAE, kein TKIP, kein Mischmodus).
+- PMF ist standardmäßig **optional** (`pmf=1`); falls ein ESP32 weiterhin nicht verbindet, kann testweise `pmf=0` gesetzt werden.
+- API-Ziel für ESP im AP-Modus: `http://192.168.50.1:8000/api/v1/runs`
+- Modus **Client**: Pi verbindet sich mit Haus-WLAN (für Updates/Internet/Administration)
+- Speichern über `POST /api/v1/config/network`, Anwenden über `POST /api/v1/config/network/apply`
+- Status über `GET /api/v1/config/network/status`
+- Passwörter werden in GET-Antworten nie im Klartext ausgegeben, nur `*_password_set`
+- Anwenden benötigt `nmcli` (NetworkManager).
+
+### Risiken beim Anwenden
+- Netzwerkwechsel kann die aktuelle Webverbindung kurzzeitig trennen.
+- Nach Änderungen wird ein Neustart empfohlen.
+
+### Fehlerbehebung Netzwerk
+- `nmcli fehlt`: NetworkManager installieren/aktivieren (`sudo apt install network-manager`).
+- `WLAN-Interface nicht gefunden`: `nmcli device status` prüfen, WLAN-Hardware/Driver prüfen.
+- `AP startet nicht`: `journalctl -u NetworkManager -f` und `pi/logs/network_apply.log` prüfen.
+- `Client verbindet nicht`: SSID/Passwort kontrollieren, Reichweite/Kanal prüfen.
+- `Pi nicht mehr erreichbar`: per LAN einloggen oder lokal am Pi auf `/config` zurückstellen.
+
+## Pi-Updates (nur `/pi`)
+
+Der Web-Updater ist ein **Pi-Code-Sync** mit Migrationsschritten.
+Quelle der Wahrheit für Pi-Code ist **`origin/beta:/pi`**.
+
+### Sync-Verhalten
+- Beim Prüfen (`POST /api/v1/system/update/check`) wird `origin/beta` gefetched und ein Dateivergleich auf Pi-Code-Pfaden durchgeführt.
+- Lokale Pi-Code-Abweichungen blockieren nicht mehr; sie werden beim Update durch den Repo-Stand ersetzt.
+- Nicht mehr im Remote vorhandene Pi-Code-Dateien werden lokal entfernt.
+- Geschützte Runtime-Daten bleiben immer unangetastet:
+  - `pi/data/`
+  - `pi/logs/`
+  - Datenbank (`pi/data/wage_pi.sqlite3`, `-shm`, `-wal`)
+  - Netzwerk-Konfiguration (`pi/data/network_config.json`)
+  - Logs (`pi/logs/network_apply.log`)
+  - `pi/**/__pycache__/`, `pi/**/*.pyc`
+
+### Web-Update im `/config`-Bereich
+- Standardansicht: Statuskarte + **„Nach Updates prüfen“**.
+- Ohne Sync-Bedarf: **„Keine Pi-Updates verfügbar“**.
+- Mit Sync-Bedarf: **„Pi-Code-Sync verfügbar“** mit Listen für:
+  - neue/geänderte Dateien
+  - Dateien, die entfernt werden
+- Hinweise in der UI:
+  - „Lokale Betriebsdaten bleiben geschützt.“
+  - „Lokale Pi-Code-Abweichungen werden durch den Repo-Stand ersetzt.“
+- Update bleibt im AP-Modus gesperrt: nur im Haus-WLAN-Client-Modus.
+
+### Update-Ablauf (`POST /api/v1/system/update/apply`)
+1. Update wird vorbereitet
+2. Pi-Code wird synchronisiert
+3. Alte Pi-Code-Dateien werden entfernt
+4. Konfiguration wird migriert
+5. Abhängigkeiten werden geprüft
+6. Services werden neu gestartet
+7. Update abgeschlossen
+
+Danach wird das Backend zuletzt neu gestartet.
+
+### Config-Migration
+- Nach Code-Sync läuft `ensure_config_defaults()`.
+- Neue Config-Keys werden ergänzt.
+- Bestehende lokale Werte (WLAN/AP/Client) bleiben erhalten.
+- `network_config.json` wird sicher aus `app_state` neu erzeugt.
+- Passwörter werden nicht im Klartext ausgegeben.
+
+### API-Endpunkte für Update
+- `GET /api/v1/system/update/status`
+- `POST /api/v1/system/update/check`
+- `POST /api/v1/system/update/apply`
+
+
+### AP/Client-Passwort-Handling
+- Pi-AP nutzt WPA/WPA2-PSK; AP-Passwort muss mindestens 8 Zeichen haben.
+- Passwörter werden in `app_state` der SQLite-DB `pi/data/wage_pi.sqlite3` gespeichert.
+- `pi/data/network_config.json` enthält keine Klartext-Passwörter, nur `*_password_set`.
+- `pi/scripts/network_apply.sh` liest Secrets direkt aus SQLite (nicht aus JSON).
+
+### nmcli-Debug-Befehle
+```bash
+nmcli connection show
+nmcli connection show wage-net-ap
+journalctl -u NetworkManager -f
+tail -f pi/logs/network_apply.log
+```
+
+### Netzwerk-Fehlerbehebung (AP/Client)
+- ESP verbindet nicht: SSID/Passwort prüfen, `network_apply.log` und NetworkManager-Logs prüfen.
+- Passwort zu kurz: AP-Passwort muss mind. 8 Zeichen haben, sonst wird Apply abgebrochen.
+- `nmcli` fehlt: `sudo apt install network-manager` und NetworkManager aktivieren.
+- `sqlite3` fehlt: `sudo apt install sqlite3`.
+- AP aktiv, aber kein DHCP: `ipv4.method shared` in Connection prüfen und Connection neu anwenden.
+- Falsche SSID/Passwort: Konfiguration auf `/config` korrigieren und neu anwenden.

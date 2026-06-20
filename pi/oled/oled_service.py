@@ -1,5 +1,4 @@
 import os
-import socket
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -29,16 +28,22 @@ def set_status(v: str):
 
 def get_ip() -> str:
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("8.8.8.8", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        return ip
+        import subprocess
+        out = subprocess.check_output(
+            ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show"],
+            text=True, timeout=3
+        )
+        for line in out.splitlines():
+            if line.startswith("IP4.ADDRESS"):
+                addr = line.split(":")[-1].split("/")[0].strip()
+                if addr and not addr.startswith("127."):
+                    return addr
     except Exception:
-        try:
-            return os.popen("hostname -I").read().strip().split()[0]
-        except Exception:
-            return "127.0.0.1"
+        pass
+    try:
+        return os.popen("hostname -I").read().strip().split()[0]
+    except Exception:
+        return "127.0.0.1"
 
 
 def get_runtime_status() -> dict:

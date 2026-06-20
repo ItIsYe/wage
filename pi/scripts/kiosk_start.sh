@@ -6,4 +6,23 @@ if [ -z "$BROWSER" ]; then
   echo "Kein Chromium gefunden" >&2
   exit 1
 fi
-"$BROWSER" --kiosk --incognito --disable-translate --noerrdialogs --disable-infobars "$URL"
+
+# Warten bis Backend erreichbar ist (max. 60s)
+echo "Warte auf Backend unter $URL ..."
+for i in $(seq 1 60); do
+  if curl -sf --max-time 2 "$URL/api/v1/health" > /dev/null 2>&1; then
+    echo "Backend bereit nach ${i}s"
+    break
+  fi
+  sleep 1
+done
+
+exec "$BROWSER" \
+  --kiosk \
+  --incognito \
+  --noerrdialogs \
+  --disable-infobars \
+  --touch-events=enabled \
+  --enable-features=VirtualKeyboard \
+  --disable-features=TranslateUI \
+  --app="$URL"
