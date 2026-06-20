@@ -7,6 +7,7 @@
 #include "config.h"
 #include "display_module.h"
 #include "external_interface_module.h"
+#include "ota_module.h"
 
 extern State state;
 extern ErrCode err;
@@ -135,7 +136,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>IP:</b> "); h += htmlEscape(networkInfo); h += F("</p>");
   h += F("<p><b>Modus:</b> "); h += (wifiApMode ? F("Fallback-AP") : F("WLAN")); h += F("</p>");
   h += F("<p><b>Feste IP aktiv:</b> "); h += (c.wifiUseStaticIp ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>Firmware:</b> "); h += FIRMWARE_VERSION; h += F("</p>");
+  h += F("<p><b>Firmware:</b> "); h += FIRMWARE_VERSION; h += F(" (<a href='/ota'>Update pruefen</a>)</p>");
   h += F("<p><b>State:</b> "); h += stateToStrLocal(state); h += F("</p>");
   h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
@@ -648,6 +649,76 @@ void webConfigSetup() {
   };
   server.on("/debug/off", HTTP_GET, disableDebugModesHandler);
   server.on("/debug/off", HTTP_POST, disableDebugModesHandler);
+
+  // OTA: Pi-Ziel aus der bestehenden externen API-Konfiguration übernehmen,
+  // damit nicht zwei separate Host/Port-Felder gepflegt werden müssen.
+  otaInit(FIRMWARE_VERSION);
+  otaSetTarget(activeConfig.externalHost, activeConfig.externalPort);
+
+  server.on("/ota/check", HTTP_POST, [](){
+    if (!isConfigApplyAllowedState()) {
+      server.send(409, "text/plain; charset=utf-8", "Update-Pruefung nur im Leerlauf moeglich (kein aktiver Wiege-Vorgang).");
+      return;
+    }
+    otaSetTarget(activeConfig.externalHost, activeConfig.externalPort);
+    otaCheckForUpdate();
+    server.sendHeader("Location", "/ota");
+    server.send(303);
+  });
+
+  server.on("/ota/apply", HTTP_POST, [](){
+    if (!isConfigApplyAllowedState()) {
+      server.send(409, "text/plain; charset=utf-8", "Update nur im Leerlauf moeglich (kein aktiver Wiege-Vorgang).");
+      return;
+    }
+    if (otaGetState() != OtaState::UPDATE_AVAILABLE) {
+      server.send(409, "text/plain; charset=utf-8", "Kein verfuegbares Update. Bitte zuerst pruefen.");
+      return;
+    }
+    // Antwort vor dem (blockierenden) Update senden, da der ESP danach
+    // neu startet und keine Antwort mehr senden kann.
+    server.send(200, "text/plain; charset=utf-8", "Update wird gestartet. Geraet startet nach Abschluss automatisch neu.");
+    delay(100);
+    otaPerformUpdate();
+  });
+
+  server.on("/ota/status", HTTP_GET, [](){
+    char json[256];
+    snprintf(json, sizeof(json),
+      "{\"state\":%d,\"status\":\"%s\",\"current_version\":\"%s\",\"available_version\":\"%s\",\"progress\":%u,\"busy\":%s}",
+      (int)otaGetState(), otaGetStatusText(), FIRMWARE_VERSION, otaGetAvailableVersion(),
+      (unsigned)otaGetDownloadProgressPercent(), otaIsBusy() ? "true" : "false");
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/ota", HTTP_GET, [](){
+    String h = F("<!doctype html><html lang='de'><head><meta charset='utf-8'>"
+                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                 "<title>WAGE Firmware-Update</title>"
+                 "<style>body{font-family:sans-serif;max-width:480px;margin:2em auto;padding:0 1em;}"
+                 "button{padding:0.6em 1.2em;font-size:1em;margin-top:0.6em;}"
+                 ".warn{color:#a33;font-size:0.9em;}</style></head><body>");
+    h += F("<h2>WAGE Firmware-Update</h2>");
+    h += F("<p>Aktuelle Version: <b>");
+    h += FIRMWARE_VERSION;
+    h += F("</b></p>");
+    if (!isConfigApplyAllowedState()) {
+      h += F("<p class='warn'>Geraet ist gerade aktiv (Wiege-Vorgang) - Update-Aktionen sind deaktiviert bis der Leerlauf erreicht ist.</p>");
+    }
+    h += F("<p>Status: <span id='status'>");
+    h += otaGetStatusText();
+    h += F("</span></p>");
+    h += F("<p>Fortschritt: <span id='progress'>");
+    h += String(otaGetDownloadProgressPercent());
+    h += F("%</span></p>");
+    h += F("<button onclick=\"fetch('/ota/check',{method:'POST'}).then(()=>location.reload())\">Auf Update pruefen</button><br>");
+    h += F("<button onclick=\"if(confirm('Firmware jetzt aktualisieren? Das Geraet startet danach neu.')) fetch('/ota/apply',{method:'POST'}).then(r=>r.text()).then(t=>{document.getElementById('status').innerText=t;})\">Update installieren</button><br>");
+    h += F("<p><a href='/'>Zurueck</a></p>");
+    h += F("<p class='warn'>Waehrend des Updates nicht vom Strom trennen.</p>");
+    h += F("</body></html>");
+    server.send(200, "text/html", h);
+  });
+
   server.begin();
 }
 

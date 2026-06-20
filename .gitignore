@@ -1,0 +1,16 @@
+# PlatformIO
+wage-esp32/.pio/
+wage-esp32/.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Pi Laufzeitdaten (lokal, nicht versionieren)
+pi/data/*.sqlite3
+pi/data/*.sqlite3-shm
+pi/data/*.sqlite3-wal
+pi/data/network_config.json
+pi/firmware_cache/
+pi/logs/

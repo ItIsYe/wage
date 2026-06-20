@@ -13,6 +13,7 @@ from .api_runs import router as runs_router
 from .api_status import router as status_router
 from .api_network_config import router as network_config_router
 from .api_update import router as update_router
+from .api_esp_firmware import router as esp_firmware_router
 from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
 from .database import get_connection, init_db
@@ -55,6 +56,7 @@ app.include_router(persons_router)
 app.include_router(status_router)
 app.include_router(network_config_router)
 app.include_router(update_router)
+app.include_router(esp_firmware_router)
 
 
 @app.get("/", response_class=HTMLResponse)
