@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include <Wire.h>
+#include <WiFi.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
+#include <ArduinoOTA.h>
 #include <string.h>
 
 #include "config.h"
@@ -307,6 +309,31 @@ void setup() {
   setState(State::BOOT_MSG);
   webConfigSetup();
   externalInterfaceInit(activeConfig, "v1-webcfg");
+
+  // ArduinoOTA: nur starten wenn STA-WLAN verbunden (nicht im Fallback-AP)
+  if (!webIsWifiApMode() && WiFi.status() == WL_CONNECTED) {
+    ArduinoOTA.setHostname("wage-esp32");
+    ArduinoOTA.setPassword("wagefirmware");  // Passwort für OTA-Upload, in platformio.ini hinterlegen
+    ArduinoOTA.onStart([]() {
+      Serial.println("[OTA] Start");
+    });
+    ArduinoOTA.onEnd([]() {
+      Serial.println("[OTA] Fertig, starte neu...");
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      if (MASTER_DEBUG_LOG) {
+        Serial.printf("[OTA] %u%%\n", progress * 100 / total);
+      }
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+      Serial.printf("[OTA] Fehler[%u]\n", error);
+    });
+    ArduinoOTA.begin();
+    Serial.print("[OTA] ArduinoOTA bereit, IP=");
+    Serial.println(WiFi.localIP().toString());
+  } else {
+    Serial.println("[OTA] ArduinoOTA nicht gestartet (kein STA-WLAN)");
+  }
 }
 
 static void stateMachineService(uint32_t now) {
@@ -626,6 +653,7 @@ static void handleResetRequestIfAllowed(uint32_t now){
 }
 
 void loop() {
+  ArduinoOTA.handle();
   const uint32_t now = millis();
   const uint32_t loopStartUs = PERFORMANCE_DEBUG ? micros() : 0;
 
