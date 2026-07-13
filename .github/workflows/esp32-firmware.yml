@@ -25,7 +25,10 @@ jobs:
 
       - name: Build firmware
         working-directory: wage-esp32
-        run: pio run -e esp32dev
+        run: |
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          VERSION="beta-${SHORT_SHA}"
+          pio run -e esp32dev --project-option="build_flags=-D FIRMWARE_VERSION='\"${VERSION}\"'"
 
       - name: Determine version
         id: ver

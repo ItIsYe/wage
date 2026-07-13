@@ -6,6 +6,10 @@
 #include <ArduinoOTA.h>
 #include <string.h>
 
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "dev"
+#endif
+
 #include "config.h"
 #include "types.h"
 #include "display_module.h"
@@ -308,7 +312,7 @@ void setup() {
   oledMsg2("Start...", "Initialisierung");
   setState(State::BOOT_MSG);
   webConfigSetup();
-  externalInterfaceInit(activeConfig, "v1-webcfg");
+  externalInterfaceInit(activeConfig, FIRMWARE_VERSION);
 
   // ArduinoOTA: nur starten wenn STA-WLAN verbunden (nicht im Fallback-AP)
   if (!webIsWifiApMode() && WiFi.status() == WL_CONNECTED) {

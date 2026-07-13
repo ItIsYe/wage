@@ -13,7 +13,10 @@ extern State state;
 extern ErrCode err;
 extern RuntimeConfig activeConfig;
 
-static const char* FIRMWARE_VERSION = "v1-webcfg";
+#ifndef FIRMWARE_VERSION
+#define FIRMWARE_VERSION "dev"
+#endif
+static const char* FIRMWARE_VERSION_STR = FIRMWARE_VERSION;
 static const char* errToStrLocal(ErrCode e);
 static const char* stateToStrLocal(State s);
 
@@ -136,7 +139,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><b>IP:</b> "); h += htmlEscape(networkInfo); h += F("</p>");
   h += F("<p><b>Modus:</b> "); h += (wifiApMode ? F("Fallback-AP") : F("WLAN")); h += F("</p>");
   h += F("<p><b>Feste IP aktiv:</b> "); h += (c.wifiUseStaticIp ? F("ja") : F("nein")); h += F("</p>");
-  h += F("<p><b>Firmware:</b> "); h += FIRMWARE_VERSION; h += F(" (<a href='/ota'>Update pruefen</a>)</p>");
+  h += F("<p><b>Firmware:</b> "); h += FIRMWARE_VERSION_STR; h += F(" (<a href='/ota'>Update pruefen</a>)</p>");
   h += F("<p><b>State:</b> "); h += stateToStrLocal(state); h += F("</p>");
   h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
@@ -151,7 +154,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<p><a href='/debug/off'>Alle Debug-Modi per Link deaktivieren</a></p>");
   h += F("<form method='POST' action='/save'>");
   h += F("<fieldset><legend>System & Geraete-Identitaet</legend><label>Geraete-Name / Device-ID (eindeutig)</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>Min: 1, Max: 31 Zeichen. Wird fuer Wiedererkennung, Logs und externe Zuordnung genutzt. Wirkt nach Speichern sofort.</small>");
-  h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION; h += F("' readonly>");
+  h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION_STR; h += F("' readonly>");
   h += F("<label>State</label><input value='"); h += stateToStrLocal(state); h += F("' readonly></fieldset>");
   h += F("<fieldset><legend>Messwerte & Schwellwerte</legend>");
   h += F("<label>Messstart bei Gewichtsabfall (%)</label><input type='number' step='0.1' min='0' max='100' name='startDropPercent' value='"); h += String(c.startDropPercent,2); h += F("'><small>Min: 0, Max: 100. Startet die Messung beim Unterschreiten des Abfalls.</small>");
@@ -652,7 +655,7 @@ void webConfigSetup() {
 
   // OTA: Pi-Ziel aus der bestehenden externen API-Konfiguration übernehmen,
   // damit nicht zwei separate Host/Port-Felder gepflegt werden müssen.
-  otaInit(FIRMWARE_VERSION);
+  otaInit(FIRMWARE_VERSION_STR);
   otaSetTarget(activeConfig.externalHost, activeConfig.externalPort);
 
   server.on("/ota/check", HTTP_POST, [](){
@@ -686,7 +689,7 @@ void webConfigSetup() {
     char json[256];
     snprintf(json, sizeof(json),
       "{\"state\":%d,\"status\":\"%s\",\"current_version\":\"%s\",\"available_version\":\"%s\",\"progress\":%u,\"busy\":%s}",
-      (int)otaGetState(), otaGetStatusText(), FIRMWARE_VERSION, otaGetAvailableVersion(),
+      (int)otaGetState(), otaGetStatusText(), FIRMWARE_VERSION_STR, otaGetAvailableVersion(),
       (unsigned)otaGetDownloadProgressPercent(), otaIsBusy() ? "true" : "false");
     server.send(200, "application/json", json);
   });
@@ -700,7 +703,7 @@ void webConfigSetup() {
                  ".warn{color:#a33;font-size:0.9em;}</style></head><body>");
     h += F("<h2>WAGE Firmware-Update</h2>");
     h += F("<p>Aktuelle Version: <b>");
-    h += FIRMWARE_VERSION;
+    h += FIRMWARE_VERSION_STR;
     h += F("</b></p>");
     if (!isConfigApplyAllowedState()) {
       h += F("<p class='warn'>Geraet ist gerade aktiv (Wiege-Vorgang) - Update-Aktionen sind deaktiviert bis der Leerlauf erreicht ist.</p>");
