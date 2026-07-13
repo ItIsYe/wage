@@ -22,6 +22,12 @@ sudo systemctl enable wage-pi-backend wage-pi-oled wage-pi-leds
 sudo install -m 0755 "$ROOT/scripts/nm_dispatcher_eth_route.sh" /etc/NetworkManager/dispatcher.d/99-wage-eth-route
 echo "NM-Dispatcher installiert: /etc/NetworkManager/dispatcher.d/99-wage-eth-route"
 
+# Cronjob: ESP-Firmware alle 5 Minuten automatisch syncen
+chmod +x "$ROOT/scripts/firmware_sync_cron.sh"
+CRON_JOB="*/5 * * * * $ROOT/scripts/firmware_sync_cron.sh >> $ROOT/logs/firmware_sync.log 2>&1"
+( crontab -l 2>/dev/null | grep -v "firmware_sync_cron"; echo "$CRON_JOB" ) | crontab -
+echo "Cronjob eingerichtet: ESP-Firmware-Sync alle 5 Minuten"
+
 echo "Installation abgeschlossen"
 echo "Start: sudo systemctl start wage-pi-backend wage-pi-oled wage-pi-leds"
 echo "Web:  http://<pi-ip>:8000"
