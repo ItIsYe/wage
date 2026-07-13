@@ -698,26 +698,72 @@ void webConfigSetup() {
     String h = F("<!doctype html><html lang='de'><head><meta charset='utf-8'>"
                  "<meta name='viewport' content='width=device-width,initial-scale=1'>"
                  "<title>WAGE Firmware-Update</title>"
-                 "<style>body{font-family:sans-serif;max-width:480px;margin:2em auto;padding:0 1em;}"
-                 "button{padding:0.6em 1.2em;font-size:1em;margin-top:0.6em;}"
-                 ".warn{color:#a33;font-size:0.9em;}</style></head><body>");
+                 "<style>"
+                 "body{font-family:sans-serif;max-width:480px;margin:2em auto;padding:0 1em;}"
+                 "button{padding:0.6em 1.2em;font-size:1em;margin-top:0.6em;cursor:pointer;}"
+                 "button:disabled{opacity:0.4;cursor:not-allowed;}"
+                 ".warn{color:#a33;font-size:0.9em;}"
+                 ".ok{color:#1a7a1a;font-size:0.9em;}"
+                 ".bar-wrap{background:#ddd;border-radius:6px;height:22px;width:100%;margin:0.5em 0;overflow:hidden;}"
+                 ".bar{background:#2a7;height:100%;width:0%;border-radius:6px;transition:width 0.3s;text-align:center;color:#fff;font-size:0.85em;line-height:22px;}"
+                 "</style></head><body>");
     h += F("<h2>WAGE Firmware-Update</h2>");
     h += F("<p>Aktuelle Version: <b>");
     h += FIRMWARE_VERSION_STR;
     h += F("</b></p>");
+    h += F("<p>Verfuegbare Version: <b><span id='avail'>-</span></b></p>");
     if (!isConfigApplyAllowedState()) {
-      h += F("<p class='warn'>Geraet ist gerade aktiv (Wiege-Vorgang) - Update-Aktionen sind deaktiviert bis der Leerlauf erreicht ist.</p>");
+      h += F("<p class='warn'>Geraet ist gerade aktiv — Update-Aktionen erst im Leerlauf moeglich.</p>");
     }
     h += F("<p>Status: <span id='status'>");
     h += otaGetStatusText();
     h += F("</span></p>");
-    h += F("<p>Fortschritt: <span id='progress'>");
-    h += String(otaGetDownloadProgressPercent());
-    h += F("%</span></p>");
-    h += F("<button onclick=\"fetch('/ota/check',{method:'POST'}).then(()=>location.reload())\">Auf Update pruefen</button><br>");
-    h += F("<button onclick=\"if(confirm('Firmware jetzt aktualisieren? Das Geraet startet danach neu.')) fetch('/ota/apply',{method:'POST'}).then(r=>r.text()).then(t=>{document.getElementById('status').innerText=t;})\">Update installieren</button><br>");
+    h += F("<div class='bar-wrap'><div class='bar' id='bar'>0%</div></div>");
+    h += F("<p style='margin:0'><small><span id='progress'>0</span>%</small></p>");
+    h += F("<br>");
+    h += F("<button id='btn-check' onclick='doCheck()'>Auf Update pruefen</button><br>");
+    h += F("<button id='btn-apply' onclick='doApply()' disabled>Update installieren</button><br>");
     h += F("<p><a href='/'>Zurueck</a></p>");
     h += F("<p class='warn'>Waehrend des Updates nicht vom Strom trennen.</p>");
+    h += F("<script>"
+           "var polling=null;"
+           "function poll(){"
+           "  fetch('/ota/status').then(r=>r.json()).then(d=>{"
+           "    document.getElementById('status').innerText=d.status||'-';"
+           "    document.getElementById('avail').innerText=d.available_version||'-';"
+           "    var p=d.progress||0;"
+           "    document.getElementById('progress').innerText=p;"
+           "    var bar=document.getElementById('bar');"
+           "    bar.style.width=p+'%';"
+           "    bar.innerText=p+'%';"
+           "    var busy=d.busy;"
+           "    document.getElementById('btn-check').disabled=busy;"
+           "    document.getElementById('btn-apply').disabled=(busy||d.state!=3);"
+           "    if(busy&&!polling) polling=setInterval(poll,800);"
+           "    if(!busy&&polling){clearInterval(polling);polling=null;}"
+           "    if(d.state==6){location.reload();}"  // SUCCESS_PENDING_REBOOT
+           "  }).catch(function(){});"
+           "}"
+           "function doCheck(){"
+           "  document.getElementById('btn-check').disabled=true;"
+           "  document.getElementById('status').innerText='Pruefe...';"
+           "  fetch('/ota/check',{method:'POST'}).then(()=>{"
+           "    poll();"
+           "    polling=setInterval(poll,1500);"
+           "  });"
+           "}"
+           "function doApply(){"
+           "  if(!confirm('Firmware jetzt aktualisieren? Das Geraet startet danach neu.')) return;"
+           "  document.getElementById('btn-apply').disabled=true;"
+           "  document.getElementById('btn-check').disabled=true;"
+           "  document.getElementById('status').innerText='Update wird gestartet...';"
+           "  fetch('/ota/apply',{method:'POST'}).then(r=>r.text()).then(t=>{"
+           "    document.getElementById('status').innerText=t;"
+           "  });"
+           "  polling=setInterval(poll,800);"
+           "}"
+           "poll();"
+           "</script>");
     h += F("</body></html>");
     server.send(200, "text/html", h);
   });
