@@ -58,10 +58,27 @@ def _network_mode() -> str:
     return _read_state(["network_mode"]).get("network_mode") or "ap"
 
 
-def _require_client_mode() -> str:
+def _has_internet() -> bool:
+    """Prüft ob Internet verfügbar ist (eth0 mit Default-Route oder Client-Modus)."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True, text=True, timeout=3
+        )
+        return "default" in result.stdout
+    except Exception:
+        return False
+
+
+def _require_internet() -> str:
+    """Erlaubt Update-Aktionen wenn Internet verfügbar ist — egal ob AP- oder Client-Modus."""
     mode = _network_mode()
-    if mode == "ap":
-        raise HTTPException(status_code=400, detail=AP_BLOCK_REASON)
+    if not _has_internet():
+        raise HTTPException(
+            status_code=400,
+            detail="Kein Internet verfügbar. Bitte LAN-Kabel einstecken oder in den Client-Modus wechseln."
+        )
     return mode
 
 
@@ -250,8 +267,8 @@ def _run_background_update_job() -> None:
 def update_status():
     state = _read_state(["last_update_status", "last_update_at", "last_update_ui_state", "last_update_ui_message", "last_update_progress_step", "last_update_progress_percent"])
     mode = _network_mode()
-    if mode == "ap":
-        return _response_payload(mode, state, "", "", [], [], sorted(PROTECTED_RUNTIME_FILES), ui_state="blocked", ui_message=AP_BLOCK_REASON)
+    if not _has_internet():
+        return _response_payload(mode, state, "", "", [], [], sorted(PROTECTED_RUNTIME_FILES), ui_state="blocked", ui_message="Kein Internet verfügbar. Bitte LAN-Kabel einstecken.")
     _ensure_repo_and_git()
     _fetch_origin_target()
     local_commit, remote_commit, changed, obsolete, protected = _calculate_update_status()
@@ -263,7 +280,7 @@ def update_status():
 
 @router.post("/check")
 def update_check():
-    mode = _require_client_mode()
+    mode = _require_internet()
     _persist_update_state("prüfe updates...", "", "", [], [], sorted(PROTECTED_RUNTIME_FILES), ui_state="checking", ui_message="Suche nach Updates...", progress_step="Suche nach Updates...", progress_percent=10)
     _ensure_repo_and_git()
     _fetch_origin_target()
@@ -278,7 +295,7 @@ def update_check():
 
 @router.post("/apply")
 def update_apply():
-    mode = _require_client_mode()
+    mode = _require_internet()
     _ensure_repo_and_git()
     _fetch_origin_target()
     local_commit, remote_commit, changed, obsolete, protected = _calculate_update_status()
