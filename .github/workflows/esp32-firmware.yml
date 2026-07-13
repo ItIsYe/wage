@@ -28,7 +28,7 @@ jobs:
         run: |
           SHORT_SHA="$(git rev-parse --short HEAD)"
           VERSION="beta-${SHORT_SHA}"
-          pio run -e esp32dev --project-option="build_flags=-D FIRMWARE_VERSION='\"${VERSION}\"'"
+          PLATFORMIO_BUILD_FLAGS="-D FIRMWARE_VERSION='\"${VERSION}\"'" pio run -e esp32dev
 
       - name: Determine version
         id: ver
