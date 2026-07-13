@@ -440,11 +440,42 @@ async function waitForBackendAfterUpdate() {
   return false;
 }
 
+function showUpdateOverlay(msg, step, percent) {
+  const ov = document.getElementById('update-overlay');
+  if (!ov) return;
+  ov.classList.add('active');
+  const m = document.getElementById('ov-msg');
+  const s = document.getElementById('ov-step');
+  const b = document.getElementById('ov-bar');
+  const p = document.getElementById('ov-percent');
+  if (m && msg !== undefined) m.textContent = msg;
+  if (s && step !== undefined) s.textContent = step;
+  if (b && percent !== undefined) b.style.width = Math.max(0, Math.min(100, percent)) + '%';
+  if (p && percent !== undefined) p.textContent = Math.round(percent);
+}
+
+function hideUpdateOverlay() {
+  const ov = document.getElementById('update-overlay');
+  if (ov) ov.classList.remove('active');
+}
+
 async function applyPiUpdate() {
   updateBusy = true;
   setUpdateButtonsDisabled(true);
   setUpdatePolling(true);
+  showUpdateOverlay('Pi-Update wird durchgeführt...', 'Vorbereitung...', 5);
   setUpdateHint(spinnerLabel('Update wird vorbereitet...'), 'info');
+
+  // Overlay während des Pollings live aktualisieren
+  const overlayPoll = setInterval(async () => {
+    try {
+      const d = await api('/api/v1/system/update/status');
+      showUpdateOverlay(d.ui_message || 'Bitte warten...', d.progress_step || '', d.progress_percent || 0);
+    } catch (_) {
+      showUpdateOverlay('Backend startet neu...', 'Neustart läuft...', 90);
+    }
+  }, 1500);
+
   try {
     const data = await api('/api/v1/system/update/apply', {method: 'POST'});
     renderUpdateStatus(data);
@@ -452,13 +483,24 @@ async function applyPiUpdate() {
   } catch (e) {
     const msg = String(e.message || '').toLowerCase();
     if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
+      showUpdateOverlay('Backend startet neu...', 'Bitte warten...', 90);
       const ok = await waitForBackendAfterUpdate();
-      if (ok) await loadUpdateStatus();
-      else flash('Backend war nicht rechtzeitig erreichbar.', false);
+      clearInterval(overlayPoll);
+      if (ok) {
+        showUpdateOverlay('Update abgeschlossen!', 'Backend ist wieder erreichbar', 100);
+        setTimeout(hideUpdateOverlay, 2000);
+        await loadUpdateStatus();
+      } else {
+        showUpdateOverlay('Timeout — Backend nicht erreichbar', 'Bitte Seite neu laden', 100);
+        flash('Backend war nicht rechtzeitig erreichbar.', false);
+      }
     } else {
+      clearInterval(overlayPoll);
+      hideUpdateOverlay();
       flash(`Pi-Update fehlgeschlagen: ${e.message}`);
     }
   } finally {
+    clearInterval(overlayPoll);
     updateBusy = false;
     await loadUpdateStatus(true);
   }

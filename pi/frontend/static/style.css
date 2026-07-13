@@ -35,3 +35,13 @@ body.touch-keyboard-open{padding-bottom:var(--touch-keyboard-height,0)}
 .pw-field button{flex:0 0 auto;white-space:nowrap}
 .msg-warn{color:#92400e}
 @media (max-width:720px){.pw-field{flex-direction:column;align-items:stretch}.pw-field button{width:100%}}
+
+/* Update Overlay */
+#update-overlay{display:none;position:fixed;inset:0;z-index:9999;background:rgba(10,20,40,0.92);flex-direction:column;align-items:center;justify-content:center;gap:1.5em}
+#update-overlay.active{display:flex}
+#update-overlay h2{color:#fff;margin:0;font-size:1.4em}
+#update-overlay .ov-msg{color:#c8d8f0;font-size:1em;text-align:center;max-width:340px}
+#update-overlay .ov-step{color:#7bb8ff;font-size:0.9em;min-height:1.4em}
+#update-overlay .ov-bar-wrap{width:300px;background:rgba(255,255,255,0.15);border-radius:8px;height:18px;overflow:hidden}
+#update-overlay .ov-bar{height:100%;border-radius:8px;background:linear-gradient(90deg,#2a7,#4cf);width:0%;transition:width 0.4s}
+#update-overlay .ov-percent{color:#fff;font-size:0.85em}
