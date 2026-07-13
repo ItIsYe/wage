@@ -63,7 +63,7 @@ static constexpr int SCREEN_H = 64;
 // =========================================================
 // GPIO5: ESP32 nutzbarer Output, aber Strapping-Pin. Externe Beschaltung darf Boot nicht stören.
 static constexpr uint8_t LED_STRIP_PIN = 5;
-static constexpr uint16_t PIXEL_COUNT = 25;
+static constexpr uint16_t PIXEL_COUNT = 100;
 static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
 static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90;
 static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
