@@ -18,6 +18,10 @@ mkdir -p "$ROOT/data" "$ROOT/logs"
 bash "$ROOT/scripts/create_services.sh"
 sudo systemctl enable wage-pi-backend wage-pi-oled wage-pi-leds
 
+# NetworkManager Dispatcher: Default-Route auf eth0 wenn LAN im AP-Modus
+sudo install -m 0755 "$ROOT/scripts/nm_dispatcher_eth_route.sh" /etc/NetworkManager/dispatcher.d/99-wage-eth-route
+echo "NM-Dispatcher installiert: /etc/NetworkManager/dispatcher.d/99-wage-eth-route"
+
 echo "Installation abgeschlossen"
 echo "Start: sudo systemctl start wage-pi-backend wage-pi-oled wage-pi-leds"
 echo "Web:  http://<pi-ip>:8000"

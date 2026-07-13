@@ -65,6 +65,24 @@ if [[ "$MODE" == "ap" ]]; then
   nmcli connection up wage-net-ap >/dev/null
   log "AP-Modus erfolgreich aktiviert"
   log "Security=WPA2-PSK/RSN/CCMP PMF=$AP_PMF Band=$AP_BAND Channel=$AP_CHANNEL"
+
+  # Wenn eth0 verbunden ist: Default-Route auf eth0 setzen damit Internet
+  # über LAN läuft und wage-net AP gleichzeitig aktiv bleibt.
+  ETH_IFACE="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2==\"ethernet\"{print $1; exit}')"
+  if [[ -n "$ETH_IFACE" ]] && nmcli -t -f STATE device status | grep -q "^connected"; then
+    ETH_GW="$(ip route show dev "$ETH_IFACE" | awk '/default/{print $3; exit}')"
+    if [[ -n "$ETH_GW" ]]; then
+      # wlan0 Default-Route entfernen (kommt von ipv4.method shared)
+      ip route del default dev "$WLAN_IFACE" 2>/dev/null || true
+      # eth0 Default-Route sicherstellen
+      ip route replace default via "$ETH_GW" dev "$ETH_IFACE" metric 100
+      log "LAN erkannt ($ETH_IFACE gw=$ETH_GW): Default-Route auf eth0 gesetzt, Internet über LAN verfügbar"
+    else
+      log "LAN-Interface $ETH_IFACE gefunden aber kein Gateway — Internet nur über LAN wenn DHCP-Lease vorhanden"
+    fi
+  else
+    log "Kein LAN verbunden — kein Internet im AP-Modus (normal)"
+  fi
 else
   log "Modus=client SSID=$CLIENT_SSID passwort_gesetzt=$([[ -n "$CLIENT_PASSWORD" ]] && echo true || echo false)"
   [[ -n "$CLIENT_SSID" ]] || fail "Client-SSID fehlt"
