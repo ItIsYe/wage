@@ -96,6 +96,9 @@ else
   nmcli device wifi rescan ifname "$WLAN_IFACE" 2>/dev/null || true
   sleep 2
 
+  # Bestehende Verbindung für diese SSID löschen damit NM keine kaputte Config wiederverwendet
+  nmcli connection delete "$CLIENT_SSID" 2>/dev/null || true
+
   CONNECT_OUT=""
   CONNECT_RC=0
   if [[ -n "$CLIENT_PASSWORD" ]]; then
