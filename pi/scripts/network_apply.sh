@@ -31,6 +31,12 @@ AP_PMF="$(get_state ap_pmf)"; AP_PMF="${AP_PMF:-0}"
 WLAN_IFACE="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1; exit}')"
 [[ -n "$WLAN_IFACE" ]] || fail "Kein WLAN-Interface gefunden"
 
+# Bestehende WLAN-Verbindungen sauber trennen bevor umgeschaltet wird
+log "Trenne bestehende WLAN-Verbindungen..."
+nmcli connection down wage-net-ap >/dev/null 2>&1 || true
+nmcli device disconnect "$WLAN_IFACE" >/dev/null 2>&1 || true
+sleep 1
+
 if [[ "$MODE" == "ap" ]]; then
   log "Modus=ap SSID=$AP_SSID IP=$AP_IP passwort_gesetzt=$([[ -n "$AP_PASSWORD" ]] && echo true || echo false)"
   [[ -n "$AP_SSID" ]] || fail "AP-SSID darf nicht leer sein"
@@ -38,8 +44,7 @@ if [[ "$MODE" == "ap" ]]; then
 
   [[ "$AP_BAND" == "bg" ]] || AP_BAND="bg"
   [[ "$AP_CHANNEL" =~ ^[0-9]+$ ]] || AP_CHANNEL="6"
-  [[ "$AP_CHANNEL" == "6" ]] || AP_CHANNEL="6"
-  [[ "$AP_PMF" == "0" || "$AP_PMF" == "1" ]] || AP_PMF="1"
+  [[ "$AP_PMF" == "0" || "$AP_PMF" == "1" ]] || AP_PMF="0"
 
   if [[ -z "$AP_PASSWORD" ]]; then
     fail "AP-Passwort fehlt. Bitte im Webinterface ein AP-Passwort mit mindestens 8 Zeichen setzen."
@@ -62,23 +67,23 @@ if [[ "$MODE" == "ap" ]]; then
     802-11-wireless-security.pmf "$AP_PMF" \
     802-11-wireless-security.psk "$AP_PASSWORD"
 
-  nmcli connection up wage-net-ap >/dev/null
+  if ! nmcli connection up wage-net-ap >/dev/null 2>&1; then
+    sleep 2
+    nmcli connection up wage-net-ap >/dev/null || fail "AP konnte nicht gestartet werden"
+  fi
   log "AP-Modus erfolgreich aktiviert"
   log "Security=WPA2-PSK/RSN/CCMP PMF=$AP_PMF Band=$AP_BAND Channel=$AP_CHANNEL"
 
-  # Wenn eth0 verbunden ist: Default-Route auf eth0 setzen damit Internet
-  # über LAN läuft und wage-net AP gleichzeitig aktiv bleibt.
-  ETH_IFACE="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2==\"ethernet\"{print $1; exit}')"
-  if [[ -n "$ETH_IFACE" ]] && nmcli -t -f STATE device status | grep -q "^connected"; then
-    ETH_GW="$(ip route show dev "$ETH_IFACE" | awk '/default/{print $3; exit}')"
+  # Default-Route auf eth0 setzen wenn LAN verbunden
+  ETH_IFACE="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="ethernet"{print $1; exit}')"
+  if [[ -n "$ETH_IFACE" ]]; then
+    ETH_GW="$(ip route show dev "$ETH_IFACE" 2>/dev/null | awk '/default/{print $3; exit}')"
     if [[ -n "$ETH_GW" ]]; then
-      # wlan0 Default-Route entfernen (kommt von ipv4.method shared)
       ip route del default dev "$WLAN_IFACE" 2>/dev/null || true
-      # eth0 Default-Route sicherstellen
       ip route replace default via "$ETH_GW" dev "$ETH_IFACE" metric 100
-      log "LAN erkannt ($ETH_IFACE gw=$ETH_GW): Default-Route auf eth0 gesetzt, Internet über LAN verfügbar"
+      log "LAN erkannt ($ETH_IFACE gw=$ETH_GW): Default-Route auf eth0 gesetzt"
     else
-      log "LAN-Interface $ETH_IFACE gefunden aber kein Gateway — Internet nur über LAN wenn DHCP-Lease vorhanden"
+      log "LAN-Interface $ETH_IFACE gefunden aber kein Gateway"
     fi
   else
     log "Kein LAN verbunden — kein Internet im AP-Modus (normal)"
@@ -87,11 +92,20 @@ else
   log "Modus=client SSID=$CLIENT_SSID passwort_gesetzt=$([[ -n "$CLIENT_PASSWORD" ]] && echo true || echo false)"
   [[ -n "$CLIENT_SSID" ]] || fail "Client-SSID fehlt"
 
-  nmcli connection down wage-net-ap >/dev/null 2>&1 || true
+  # Kurz scannen damit NM das Netz kennt
+  nmcli device wifi rescan ifname "$WLAN_IFACE" 2>/dev/null || true
+  sleep 2
+
+  CONNECT_OUT=""
+  CONNECT_RC=0
   if [[ -n "$CLIENT_PASSWORD" ]]; then
-    nmcli device wifi connect "$CLIENT_SSID" password "$CLIENT_PASSWORD" ifname "$WLAN_IFACE" >/dev/null
+    CONNECT_OUT=$(nmcli --wait 20 device wifi connect "$CLIENT_SSID" password "$CLIENT_PASSWORD" ifname "$WLAN_IFACE" 2>&1) || CONNECT_RC=$?
   else
-    nmcli device wifi connect "$CLIENT_SSID" ifname "$WLAN_IFACE" >/dev/null
+    CONNECT_OUT=$(nmcli --wait 20 device wifi connect "$CLIENT_SSID" ifname "$WLAN_IFACE" 2>&1) || CONNECT_RC=$?
   fi
-  log "Client-Modus erfolgreich aktiviert"
+
+  if [[ $CONNECT_RC -ne 0 ]]; then
+    fail "WLAN-Verbindung fehlgeschlagen (rc=$CONNECT_RC): $CONNECT_OUT"
+  fi
+  log "Client-Modus erfolgreich aktiviert: $CONNECT_OUT"
 fi

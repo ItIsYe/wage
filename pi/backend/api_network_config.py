@@ -146,7 +146,8 @@ def get_client_password_secret(request: Request):
 
 
 @router.post("/apply")
-def apply_network_config():
+async def apply_network_config():
+    import asyncio
     now = datetime.now(timezone.utc).isoformat()
     with db_cursor() as (_, cur):
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?,?)", ("last_network_apply_status", "applying"))
@@ -165,13 +166,29 @@ def apply_network_config():
         status_msg = "error: sqlite3 not available"
     else:
         try:
-            proc = subprocess.run([str(SCRIPT_PATH)], check=False, capture_output=True, text=True, timeout=90)
-            if proc.returncode != 0:
+            proc = await asyncio.create_subprocess_exec(
+                str(SCRIPT_PATH),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            except asyncio.TimeoutError:
+                proc.kill()
                 ok = False
-                status_msg = f"error: rc={proc.returncode} {(proc.stderr.strip() or proc.stdout.strip())}"
+                status_msg = "error: timeout (60s) — Netzwerk-Script hat nicht geantwortet"
             else:
-                out = proc.stdout.strip()
-                status_msg = f"applied: {out}" if out else "applied: Netzwerk-Konfiguration angewendet"
+                out = stdout.decode(errors="replace").strip()
+                err = stderr.decode(errors="replace").strip()
+                if proc.returncode != 0:
+                    ok = False
+                    detail = err or out or f"rc={proc.returncode}"
+                    # Letzten Fehler aus dem Log extrahieren
+                    last_line = (err or out).splitlines()[-1] if (err or out) else f"rc={proc.returncode}"
+                    status_msg = f"error: {last_line}"
+                else:
+                    last_line = out.splitlines()[-1] if out else "Netzwerk-Konfiguration angewendet"
+                    status_msg = f"applied: {last_line}"
         except Exception as exc:
             ok = False
             status_msg = f"error: {exc}"
