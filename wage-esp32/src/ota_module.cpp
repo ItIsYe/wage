@@ -6,6 +6,8 @@
 #include <cstring>
 #include <cstdio>
 
+#include "display_module.h"
+
 namespace {
 
 OtaTargetConfig targetCfg{};
@@ -18,6 +20,7 @@ uint8_t downloadProgressPercent = 0;
 void setStatus(const char* text) {
   strncpy(statusText, text, sizeof(statusText) - 1);
   statusText[sizeof(statusText) - 1] = '\0';
+  oledMsg2("Firmware-Update", text);
 }
 
 bool hasValidTarget() {
@@ -216,6 +219,14 @@ bool otaPerformUpdate() {
     }
     written += wroteNow;
     downloadProgressPercent = (uint8_t)((written * 100UL) / (size_t)contentLength);
+    // OLED alle ~5% aktualisieren um I2C nicht zu überlasten
+    static uint8_t lastOledPercent = 255;
+    if (downloadProgressPercent / 5 != lastOledPercent / 5) {
+      lastOledPercent = downloadProgressPercent;
+      char buf[20];
+      snprintf(buf, sizeof(buf), "Flashe: %u%%", (unsigned)downloadProgressPercent);
+      oledMsg2("Firmware-Update", buf);
+    }
   }
   http.end();
 

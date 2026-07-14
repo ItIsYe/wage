@@ -320,17 +320,25 @@ void setup() {
     ArduinoOTA.setPassword("wagefirmware");  // Passwort für OTA-Upload, in platformio.ini hinterlegen
     ArduinoOTA.onStart([]() {
       Serial.println("[OTA] Start");
+      ledClear(); ledShow();
+      oledMsg2("Firmware-Update", "Bitte warten...");
     });
     ArduinoOTA.onEnd([]() {
       Serial.println("[OTA] Fertig, starte neu...");
+      oledMsg2("Update fertig", "Neustart...");
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+      const uint8_t percent = (uint8_t)(progress * 100 / total);
+      char buf[20];
+      snprintf(buf, sizeof(buf), "Fortschritt: %u%%", (unsigned)percent);
+      oledMsg2("Firmware-Update", buf);
       if (MASTER_DEBUG_LOG) {
         Serial.printf("[OTA] %u%%\n", progress * 100 / total);
       }
     });
     ArduinoOTA.onError([](ota_error_t error) {
       Serial.printf("[OTA] Fehler[%u]\n", error);
+      oledMsg2("Update Fehler!", "Neustart...");
     });
     ArduinoOTA.begin();
     Serial.print("[OTA] ArduinoOTA bereit, IP=");
