@@ -29,9 +29,45 @@ static uint32_t lastOledPatternMs = 0;
 static int32_t lastTimingTenths = -1;
 static uint32_t lastOledFlushMs = 0;
 static bool oledFlushPending = false;
-static constexpr uint32_t OLED_MIN_FLUSH_INTERVAL_MS = 50; // max. 20 FPS
+static constexpr uint32_t OLED_MIN_FLUSH_INTERVAL_MS = 50;
 
-// Überträgt den Framebuffer nur wenn nötig und nicht zu oft
+// Page-Dirty-Tracking fuer partielles I2C-Update
+// SH1106G: 128x64 = 8 Pages a 128 Bytes
+static constexpr uint8_t OLED_PAGES = 8;
+static constexpr uint8_t OLED_PAGE_WIDTH = 128;
+static uint8_t oledPageSnapshot[OLED_PAGES][OLED_PAGE_WIDTH] = {};
+static bool oledSnapshotValid = false;
+
+// Sendet eine einzelne Page direkt per I2C (SH1106G, Spalten-Offset 2)
+static void sh1106SendPage(uint8_t page, const uint8_t* data) {
+  Wire.beginTransmission(OLED_ADDR);
+  Wire.write(0x00);
+  Wire.write(0xB0 | (page & 0x07));
+  Wire.write(0x02);
+  Wire.write(0x10);
+  Wire.endTransmission();
+  for (uint8_t col = 0; col < OLED_PAGE_WIDTH; col += 16) {
+    Wire.beginTransmission(OLED_ADDR);
+    Wire.write(0x40);
+    const uint8_t chunk = (col + 16 <= OLED_PAGE_WIDTH) ? 16 : (OLED_PAGE_WIDTH - col);
+    Wire.write(data + col, chunk);
+    Wire.endTransmission();
+  }
+}
+
+// Partielles Update: nur geaenderte Pages uebertragen
+static void oledFlushPartial() {
+  uint8_t* buf = display.getBuffer();
+  if (!buf) { display.display(); return; }
+  for (uint8_t page = 0; page < OLED_PAGES; ++page) {
+    const uint8_t* pageData = buf + (page * OLED_PAGE_WIDTH);
+    if (oledSnapshotValid && memcmp(pageData, oledPageSnapshot[page], OLED_PAGE_WIDTH) == 0) continue;
+    sh1106SendPage(page, pageData);
+    memcpy(oledPageSnapshot[page], pageData, OLED_PAGE_WIDTH);
+  }
+  oledSnapshotValid = true;
+}
+
 static inline void oledFlush() {
   const uint32_t now = millis();
   if ((now - lastOledFlushMs) < OLED_MIN_FLUSH_INTERVAL_MS) {
@@ -40,17 +76,16 @@ static inline void oledFlush() {
   }
   lastOledFlushMs = now;
   oledFlushPending = false;
-  oledFlush();
+  oledFlushPartial();
 }
 
-// Ausstehende Übertragung nachholen — in webService() oder main loop aufrufen
 void oledFlushIfPending() {
   if (!oledFlushPending || !oledReady) return;
   const uint32_t now = millis();
   if ((now - lastOledFlushMs) < OLED_MIN_FLUSH_INTERVAL_MS) return;
   lastOledFlushMs = now;
   oledFlushPending = false;
-  display.display();
+  oledFlushPartial();
 }
 
 void oledInit() {
@@ -59,6 +94,7 @@ void oledInit() {
   Wire.setClock(activeConfig.oledI2cClockHz);
   if (!display.begin(OLED_ADDR, true)) return;
   oledReady = true;
+  oledSnapshotValid = false;
   display.setRotation(activeConfig.oledRotation);
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
