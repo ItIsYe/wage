@@ -26,7 +26,7 @@ static const IPAddress WIFI_DNS2(8, 8, 8, 8);
 static const char* CONFIG_AP_SSID = "Waage-Config";
 static const char* CONFIG_AP_PASSWORD = "waagecfg1";
 static constexpr uint16_t WEB_SERVER_PORT = 80;
-static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 200;
+static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 500;
 static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000;
 
 // =========================================================

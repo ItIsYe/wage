@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "config.h"
+#include "led_gamma.h"
 #include "types.h"
 
 extern RuntimeConfig activeConfig;
@@ -38,23 +39,8 @@ static inline CRGB scaleColor(const CRGB& color, uint8_t brightness) {
   return out;
 }
 static inline CRGB rgb(uint8_t r, uint8_t g, uint8_t b) { return CRGB(r, g, b); }
-// Gamma-LUT: einmal beim Start befüllt, danach O(1) statt powf() pro Pixel.
-static uint8_t gammaLut[256] = {};
-static bool gammaLutReady = false;
-
-static void buildGammaLut() {
-  if (gammaLutReady) return;
-  for (uint16_t i = 0; i < 256; ++i) {
-    const float normalized = i / 255.0f;
-    const float corrected = powf(normalized, 2.8f);
-    gammaLut[i] = (uint8_t)(corrected * 255.0f + 0.5f);
-  }
-  gammaLutReady = true;
-}
-
-static inline uint8_t ledGamma8(uint8_t value) {
-  return gammaLut[value];
-}
+static void buildGammaLut() { LedGamma::build(); }
+static inline uint8_t ledGamma8(uint8_t value) { return LedGamma::apply(value); }
 static inline CRGB hsvGamma(uint16_t hue, uint8_t sat, uint8_t val) {
   CHSV hsv((uint8_t)(hue >> 8), sat, val);
   CRGB out;

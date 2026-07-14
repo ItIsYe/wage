@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include "config.h"
+#include "led_gamma.h"
 #include "types.h"
 
 extern RuntimeConfig activeConfig;
@@ -88,6 +89,7 @@ void ring2LogWrite(uint32_t now) {
 static inline void ring2Fill(const CRGB& color) { if (!ring2Ready()) return; for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte); }
 
 void ring2Init(CRGB* leds) {
+  LedGamma::build();
   ring2Leds = leds;
   ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
   if (RING2_BOOT_TEST) {
@@ -260,12 +262,9 @@ void ring2ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t*
     CHSV hsv((uint8_t)(hue[idx] >> 8), activeConfig.standbySaturation, value[idx]);
     CRGB c;
     hsv2rgb_rainbow(hsv, c);
-    const float nr = c.r / 255.0f;
-    const float ng = c.g / 255.0f;
-    const float nb = c.b / 255.0f;
-    c.r = (uint8_t)(powf(nr, 2.8f) * 255.0f + 0.5f);
-    c.g = (uint8_t)(powf(ng, 2.8f) * 255.0f + 0.5f);
-    c.b = (uint8_t)(powf(nb, 2.8f) * 255.0f + 0.5f);
+    c.r = LedGamma::apply(c.r);
+    c.g = LedGamma::apply(c.g);
+    c.b = LedGamma::apply(c.b);
     ring2Leds[i] = scaleColor(c, ring2BrightnessByte);
   }
 }
