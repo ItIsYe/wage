@@ -61,8 +61,12 @@ async def _proxy(path: str, request: Request):
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Timeout beim Verbinden mit dem ESP")
 
+    content_type = esp_response.headers.get("content-type", "text/html; charset=utf-8")
+    if "text/html" not in content_type and esp_response.content.strip().startswith(b"<"):
+        content_type = "text/html; charset=utf-8"
+
     return Response(
         content=esp_response.content,
         status_code=esp_response.status_code,
-        media_type=esp_response.headers.get("content-type", "text/html"),
+        media_type=content_type,
     )
