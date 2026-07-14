@@ -21,8 +21,17 @@ def _get_esp_ip() -> str:
     return row["last_ip"]
 
 
-@router.api_route("/{path:path}", methods=["GET", "POST"])
-async def proxy_to_esp(path: str, request: Request):
+@router.get("/{path:path}", operation_id="esp_proxy_get")
+async def proxy_to_esp_get(path: str, request: Request):
+    return await _proxy(path, request)
+
+
+@router.post("/{path:path}", operation_id="esp_proxy_post")
+async def proxy_to_esp_post(path: str, request: Request):
+    return await _proxy(path, request)
+
+
+async def _proxy(path: str, request: Request):
     """Proxied alle Anfragen transparent an das ESP32-Webinterface.
     Funktioniert unabhängig vom Netzwerkmodus des Pi."""
     esp_ip = _get_esp_ip()
