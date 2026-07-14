@@ -797,16 +797,27 @@ async function otaApply() {
   if (!confirm('Firmware jetzt aktualisieren? Das Gerät startet danach automatisch neu.')) return;
   const applyBtn = document.getElementById('btn-ota-apply');
   if (applyBtn) applyBtn.disabled = true;
-  setOtaStatus('Starte Update...', 0);
+  setOtaStatus('Lade Firmware vom Pi auf ESP...', 10);
 
-  // Erst sync um neueste Firmware zu holen
+  // Erst sync
   await fetch('/api/v1/esp-firmware/sync', { method: 'POST' });
-  setOtaStatus('Übertrage Firmware an ESP...', 20);
+  setOtaStatus('Firmware synchronisiert, prüfe Update...', 20);
+
+  // Check auf dem ESP ausführen damit otaGetState() == UPDATE_AVAILABLE
+  try {
+    await fetch('/esp-proxy/ota/check', { method: 'POST' });
+  } catch (_) {}
+  setOtaStatus('Starte Update...', 30);
 
   try {
     const r = await fetch('/esp-proxy/ota/apply', { method: 'POST' });
     const text = await r.text();
-    setOtaStatus(text || 'Update gestartet — ESP startet neu', 50);
+    if (r.status === 409) {
+      setOtaStatus('Fehler: ' + text, null);
+      if (applyBtn) applyBtn.disabled = false;
+      return;
+    }
+    setOtaStatus(text || 'Update läuft...', 50);
 
     // Fortschritt pollen
     let retries = 0;
