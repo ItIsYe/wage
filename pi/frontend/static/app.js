@@ -128,9 +128,7 @@ async function loadRuns() {
       </tr>`).join("");
     runs.runs.forEach((r) => { const sel = byId(`run-person-${r.id}`); if (sel) sel.value = String(r.person_id || 1); });
     flash(`${runs.count} Läufe geladen.`, true);
-  } catch (e) {
-    flash(`Läufe konnten nicht geladen werden: ${e.message}`);
-  }
+  } catch (e) { flash(`Läufe konnten nicht geladen werden: ${e.message || e}`); }
 }
 
 async function saveRun(id) {
