@@ -88,6 +88,13 @@ def _insert_run(cur, run: RunIn):
     }
 
 
+@router.post("", status_code=201)
+def receive_run(run: RunIn):
+    with db_cursor() as (_, cur):
+        result = _insert_run(cur, run)
+    return result
+
+
 @router.post("/heartbeat")
 def receive_heartbeat(payload: dict, request: Request):
     device_id = payload.get("device_id", "")
