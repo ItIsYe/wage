@@ -712,8 +712,8 @@ async function loadWaageConfig() {
       if (loading) loading.textContent = "ESP-IP noch nicht bekannt. Bitte warten bis die Waage einen Heartbeat gesendet hat.";
       return;
     }
-    const espUrl = `http://${ip}/`;
-    if (urlEl) urlEl.textContent = espUrl;
+    const espUrl = "/esp-proxy/";
+    if (urlEl) urlEl.textContent = `${ip} (via Pi-Proxy)`;
     if (frame) { frame.src = espUrl; }
   } catch (e) {
     flash(`ESP-URL konnte nicht ermittelt werden: ${e.message}`);
