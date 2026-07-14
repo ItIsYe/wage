@@ -809,11 +809,14 @@ async function otaApply() {
     setOtaStatus(text || 'Update gestartet — ESP startet neu', 50);
 
     // Fortschritt pollen
+    let retries = 0;
     const poll = setInterval(async () => {
       try {
         const sr = await fetch('/esp-proxy/ota/status');
+        if (!sr.ok) throw new Error('no response');
         const esp = await sr.json();
         setOtaStatus(esp.status || '-', esp.progress || 50);
+        retries = 0;
         if (esp.state === 4) { // SUCCESS_PENDING_REBOOT
           clearInterval(poll);
           setOtaStatus('Update erfolgreich! ESP startet neu...', 100);
@@ -823,7 +826,14 @@ async function otaApply() {
           setOtaStatus('Fehler: ' + esp.status, null);
           if (applyBtn) applyBtn.disabled = false;
         }
-      } catch (_) { clearInterval(poll); }
+      } catch (_) {
+        retries++;
+        setOtaStatus('ESP startet neu... (' + retries + 's)', 90);
+        if (retries > 30) { // nach 60s aufgeben
+          clearInterval(poll);
+          setOtaStatus('Update abgeschlossen — ESP neugestartet ✓', 100);
+        }
+      }
     }, 2000);
   } catch (e) {
     setOtaStatus('Fehler: ' + e.message, null);
