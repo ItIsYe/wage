@@ -737,3 +737,109 @@ function reloadFrame() {
 }
 
 loadWaageConfig();
+
+
+// === OTA Update (Waage-Config Seite) ===
+
+async function otaSync() {
+  const btn = document.getElementById('btn-ota-sync');
+  if (btn) btn.disabled = true;
+  setOtaStatus('Lade Firmware von GitHub...', null);
+  try {
+    const r = await fetch('/api/v1/esp-firmware/sync', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      setOtaStatus('Firmware geladen: ' + (d.manifest?.version || '-'), null);
+      document.getElementById('ota-available').textContent = d.manifest?.version || '-';
+    } else {
+      setOtaStatus('Fehler beim Laden', null);
+    }
+  } catch (e) {
+    setOtaStatus('Fehler: ' + e.message, null);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function otaCheck() {
+  const btn = document.getElementById('btn-ota-check');
+  const applyBtn = document.getElementById('btn-ota-apply');
+  if (btn) btn.disabled = true;
+  setOtaStatus('Prüfe...', 0);
+  try {
+    // Manifest vom Pi holen
+    const mr = await fetch('/api/v1/esp-firmware/manifest?refresh=true');
+    const manifest = await mr.json();
+    const available = manifest.version || '-';
+    document.getElementById('ota-available').textContent = available;
+
+    // Aktuellen Status vom ESP holen
+    const sr = await fetch('/esp-proxy/ota/status');
+    const esp = await sr.json();
+    const current = esp.current_version || '-';
+    document.getElementById('ota-current').textContent = current;
+
+    if (current !== available) {
+      setOtaStatus('Update verfügbar: ' + current + ' → ' + available, null);
+      if (applyBtn) applyBtn.disabled = false;
+    } else {
+      setOtaStatus('Firmware ist aktuell (' + current + ')', null);
+      if (applyBtn) applyBtn.disabled = true;
+    }
+  } catch (e) {
+    setOtaStatus('Fehler: ' + e.message, null);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function otaApply() {
+  if (!confirm('Firmware jetzt aktualisieren? Das Gerät startet danach automatisch neu.')) return;
+  const applyBtn = document.getElementById('btn-ota-apply');
+  if (applyBtn) applyBtn.disabled = true;
+  setOtaStatus('Starte Update...', 0);
+
+  // Erst sync um neueste Firmware zu holen
+  await fetch('/api/v1/esp-firmware/sync', { method: 'POST' });
+  setOtaStatus('Übertrage Firmware an ESP...', 20);
+
+  try {
+    const r = await fetch('/esp-proxy/ota/apply', { method: 'POST' });
+    const text = await r.text();
+    setOtaStatus(text || 'Update gestartet — ESP startet neu', 50);
+
+    // Fortschritt pollen
+    const poll = setInterval(async () => {
+      try {
+        const sr = await fetch('/esp-proxy/ota/status');
+        const esp = await sr.json();
+        setOtaStatus(esp.status || '-', esp.progress || 50);
+        if (esp.state === 4) { // SUCCESS_PENDING_REBOOT
+          clearInterval(poll);
+          setOtaStatus('Update erfolgreich! ESP startet neu...', 100);
+        }
+        if (esp.state === 6) { // ERROR
+          clearInterval(poll);
+          setOtaStatus('Fehler: ' + esp.status, null);
+          if (applyBtn) applyBtn.disabled = false;
+        }
+      } catch (_) { clearInterval(poll); }
+    }, 2000);
+  } catch (e) {
+    setOtaStatus('Fehler: ' + e.message, null);
+    if (applyBtn) applyBtn.disabled = false;
+  }
+}
+
+function setOtaStatus(msg, percent) {
+  const el = document.getElementById('ota-status');
+  if (el) el.textContent = msg;
+  const wrap = document.getElementById('ota-progress-wrap');
+  if (percent !== null && percent !== undefined) {
+    if (wrap) wrap.style.display = 'block';
+    const bar = document.getElementById('ota-progress-bar');
+    const pct = document.getElementById('ota-progress-pct');
+    if (bar) bar.style.width = percent + '%';
+    if (pct) pct.textContent = percent + '%';
+  }
+}
