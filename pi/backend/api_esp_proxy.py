@@ -66,15 +66,30 @@ async def _proxy(path: str, request: Request):
     if "text/html" not in content_type and content.strip().startswith(b"<"):
         content_type = "text/html; charset=utf-8"
 
-    # Links umschreiben damit sie vom Pi-Browser erreichbar sind
+    # HTML-Inhalte anpassen
     if "text/html" in content_type:
-        # /ota Link zeigt auf Pi-OTA-Seite (nicht ESP /ota)
-        content = content.replace(b"href='/ota'", b"href='/ota' target='_top'")
-        content = content.replace(b"action='/ota", b"action='/esp-proxy/ota")
-        content = content.replace(
-            f"http://{esp_ip}/ota".encode(),
-            b"/ota"
+        # Relative Links und Actions über den Proxy leiten
+        content = content.replace(b"action='/", b"action='/esp-proxy/")
+        content = content.replace(b'action="/', b'action="/esp-proxy/')
+        content = content.replace(b"href='/", b"href='/esp-proxy/")
+        content = content.replace(b'href="/', b'href="/esp-proxy/')
+        # /ota Link auf Pi-OTA-Seite umleiten
+        content = content.replace(b"href='/esp-proxy/ota'", b"href='/ota'")
+        content = content.replace(b'href="/esp-proxy/ota"', b'href="/ota"')
+        # Pi-Navigation einfügen
+        nav = (
+            b"<header><nav style='background:#111827;padding:16px;position:sticky;top:0;z-index:999;'>"
+            b"<a href='/' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Dashboard</a>"
+            b"<a href='/runs' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>L\xc3\xa4ufe</a>"
+            b"<a href='/persons' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Personen</a>"
+            b"<a href='/status' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Status</a>"
+            b"<a href='/config' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Konfiguration</a>"
+            b"<a href='/esp-proxy/' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;background:#2563eb;'>Waage-Config</a>"
+            b"<a href='/ota' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;'>OTA-Update</a>"
+            b"</nav></header>"
         )
+        content = content.replace(b"<body>", b"<body>" + nav)
+        content = content.replace(b"<body ", b"<body>" + nav + b"<div ")
 
     return Response(
         content=content,
