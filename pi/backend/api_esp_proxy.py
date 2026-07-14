@@ -21,6 +21,11 @@ def _get_esp_ip() -> str:
     return row["last_ip"]
 
 
+@router.get("/", operation_id="esp_proxy_get_root")
+async def proxy_to_esp_get_root(request: Request):
+    return await _proxy("", request)
+
+
 @router.get("/{path:path}", operation_id="esp_proxy_get")
 async def proxy_to_esp_get(path: str, request: Request):
     return await _proxy(path, request)
