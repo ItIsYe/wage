@@ -822,6 +822,7 @@ async function otaApply() {
     // Fortschritt pollen
     let retries = 0;
     let maxPercent = 50;
+    let espWasOffline = false;
     const poll = setInterval(async () => {
       try {
         const sr = await fetch('/esp-proxy/ota/status');
@@ -829,8 +830,16 @@ async function otaApply() {
         const esp = await sr.json();
         const pct = Math.max(maxPercent, esp.progress || 50);
         maxPercent = pct;
-        setOtaStatus(esp.status || '-', pct);
         retries = 0;
+
+        if (espWasOffline) {
+          // ESP war offline (Neustart) und ist wieder da → Update erfolgreich
+          clearInterval(poll);
+          setOtaStatus('Update abgeschlossen — ESP wieder online ✓', 100);
+          return;
+        }
+
+        setOtaStatus(esp.status || '-', pct);
         if (esp.state === 4) {
           clearInterval(poll);
           setOtaStatus('Update erfolgreich! ESP startet neu...', 100);
@@ -842,11 +851,13 @@ async function otaApply() {
         }
       } catch (_) {
         retries++;
+        espWasOffline = true;
         maxPercent = Math.max(maxPercent, 80);
         setOtaStatus('ESP startet neu... (' + retries + 's)', maxPercent);
-        if (retries > 30) {
+        if (retries > 60) {
           clearInterval(poll);
-          setOtaStatus('Update abgeschlossen — ESP neugestartet ✓', 100);
+          setOtaStatus('Timeout — ESP nicht mehr erreichbar', null);
+          if (applyBtn) applyBtn.disabled = false;
         }
       }
     }, 2000);
