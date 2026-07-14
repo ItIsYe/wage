@@ -81,6 +81,11 @@ def status_page(request: Request):
     return templates.TemplateResponse("status.html", {"request": request})
 
 
+@app.get("/ota", response_class=HTMLResponse)
+async def page_ota(request: Request):
+    return templates.TemplateResponse("ota.html", {"request": request})
+
+
 @app.get("/waage-config", response_class=HTMLResponse)
 async def page_waage_config(request: Request):
     return templates.TemplateResponse("waage_config.html", {"request": request})
