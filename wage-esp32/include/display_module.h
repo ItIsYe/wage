@@ -7,6 +7,7 @@ extern Adafruit_SH1106G display;
 extern bool oledReady;
 
 void oledInit();
+void oledFlushIfPending();
 void initOledScale();
 uint8_t oledTextSizeFromScale();
 void oledMsg2(const char* line1, const char* line2);

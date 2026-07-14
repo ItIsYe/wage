@@ -789,4 +789,6 @@ void loop() {
   }
 
   if (activeConfig.debugMode) oledDebugWeights();
+
+  oledFlushIfPending();
 }

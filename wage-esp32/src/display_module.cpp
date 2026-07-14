@@ -27,6 +27,31 @@ static uint32_t lastOledTimingMs = 0;
 static uint32_t lastOledDebugMs = 0;
 static uint32_t lastOledPatternMs = 0;
 static int32_t lastTimingTenths = -1;
+static uint32_t lastOledFlushMs = 0;
+static bool oledFlushPending = false;
+static constexpr uint32_t OLED_MIN_FLUSH_INTERVAL_MS = 50; // max. 20 FPS
+
+// Überträgt den Framebuffer nur wenn nötig und nicht zu oft
+static inline void oledFlush() {
+  const uint32_t now = millis();
+  if ((now - lastOledFlushMs) < OLED_MIN_FLUSH_INTERVAL_MS) {
+    oledFlushPending = true;
+    return;
+  }
+  lastOledFlushMs = now;
+  oledFlushPending = false;
+  oledFlush();
+}
+
+// Ausstehende Übertragung nachholen — in webService() oder main loop aufrufen
+void oledFlushIfPending() {
+  if (!oledFlushPending || !oledReady) return;
+  const uint32_t now = millis();
+  if ((now - lastOledFlushMs) < OLED_MIN_FLUSH_INTERVAL_MS) return;
+  lastOledFlushMs = now;
+  oledFlushPending = false;
+  display.display();
+}
 
 void oledInit() {
   oledReady = false;
@@ -38,6 +63,7 @@ void oledInit() {
   display.clearDisplay();
   display.setTextColor(SH110X_WHITE);
   display.display();
+  lastOledFlushMs = millis();
 }
 
 void initOledScale() {
@@ -92,7 +118,7 @@ void oledMsg2(const char* line1, const char* line2) {
   display.println(line1);
   display.setCursor(0, line2Y);
   display.println(line2);
-  display.display();
+  oledFlush();
 }
 
 void showNetworkStatus(const char* line1, const String& ip) {
@@ -141,7 +167,7 @@ void oledTimingLive(uint32_t dtMs) {
   display.print('.');
   display.print(tenths);
   display.print('s');
-  display.display();
+  oledFlush();
 }
 
 void oledDebugWeights() {
@@ -176,7 +202,7 @@ void oledDebugWeights() {
   display.print(" E:");
   display.println(errToStr(err));
 
-  display.display();
+  oledFlush();
 }
 
 void oledDebugPattern(uint32_t now) {
@@ -190,13 +216,7 @@ void oledDebugPattern(uint32_t now) {
   display.drawLine(0, display.height() / 2, display.width() - 1, display.height() / 2, SH110X_WHITE);
   display.drawLine(display.width() / 2, 0, display.width() / 2, display.height() - 1, SH110X_WHITE);
 
-  for (int16_t y = 2; y < display.height() - 2; ++y) {
-    for (int16_t x = 2; x < display.width() - 2; ++x) {
-      if (((x + y) & 0x03) == 0) display.drawPixel(x, y, SH110X_WHITE);
-    }
-  }
-
   const int16_t sweepX = (int16_t)(now / 20u) % display.width();
   display.drawLine(sweepX, 0, sweepX, display.height() - 1, SH110X_WHITE);
-  display.display();
+  oledFlush();
 }
