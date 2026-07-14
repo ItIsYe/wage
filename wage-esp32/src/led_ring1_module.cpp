@@ -13,10 +13,10 @@ static uint32_t ledTickMs = 0;
 static bool ledFlip = false;
 static uint32_t twinkleNextMs = 0;
 static uint32_t standbyFrameNextMs = 0;
-static uint8_t ledSpinIdx = 0;
+static uint16_t ledSpinIdx = 0;
 static bool ledFrameDirty = true;
 static bool standbyTwinkleOn[PIXEL_COUNT] = {};
-static uint8_t standbyOnCount = 0;
+static uint16_t standbyOnCount = 0;
 static uint8_t currentBrightnessByte = 0;
 static bool brightnessInitialized = false;
 static uint16_t standbyHue[PIXEL_COUNT] = {};
@@ -38,10 +38,22 @@ static inline CRGB scaleColor(const CRGB& color, uint8_t brightness) {
   return out;
 }
 static inline CRGB rgb(uint8_t r, uint8_t g, uint8_t b) { return CRGB(r, g, b); }
+// Gamma-LUT: einmal beim Start befüllt, danach O(1) statt powf() pro Pixel.
+static uint8_t gammaLut[256] = {};
+static bool gammaLutReady = false;
+
+static void buildGammaLut() {
+  if (gammaLutReady) return;
+  for (uint16_t i = 0; i < 256; ++i) {
+    const float normalized = i / 255.0f;
+    const float corrected = powf(normalized, 2.8f);
+    gammaLut[i] = (uint8_t)(corrected * 255.0f + 0.5f);
+  }
+  gammaLutReady = true;
+}
+
 static inline uint8_t ledGamma8(uint8_t value) {
-  const float normalized = value / 255.0f;
-  const float corrected = powf(normalized, 2.8f);
-  return (uint8_t)(corrected * 255.0f + 0.5f);
+  return gammaLut[value];
 }
 static inline CRGB hsvGamma(uint16_t hue, uint8_t sat, uint8_t val) {
   CHSV hsv((uint8_t)(hue >> 8), sat, val);
@@ -110,7 +122,7 @@ static constexpr uint8_t ALT_PATTERN_B[] = {1,3,5,7,9,11,13,15,17,19,21,23,25,27
 static void standbyApplyOutputs() {
   if (!ring1Ready()) return;
   pixelsClear();
-  for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
+  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) {
     if (standbyTwinkleOn[i]) {
       primaryLeds[i] = scaleColor(hsvGamma(standbyHue[i], activeConfig.standbySaturation, standbyValue[i]), currentBrightnessByte);
     }
@@ -118,6 +130,7 @@ static void standbyApplyOutputs() {
 }
 
 void ring1Init(CRGB* leds) {
+  buildGammaLut();
   primaryLeds = leds;
   setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
   colorGreen = rgb(0, 90, 0);
@@ -146,7 +159,7 @@ void ring1SetMode(LedMode m, uint32_t now) {
     standbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
     twinkleNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
     standbyOnCount = 0;
-    for (uint8_t i = 0; i < PIXEL_COUNT; i++) {
+    for (uint16_t i = 0; i < PIXEL_COUNT; i++) {
       standbyTwinkleOn[i] = false;
       standbyHue[i] = (uint16_t)random(0, 65536);
       standbyValue[i] = randomInclusiveU8(valueMin, valueMax);
@@ -183,7 +196,7 @@ bool ring1Service(uint32_t now) {
       break;
     case LedMode::GLASS_GREEN_SOLID: if (ledFrameDirty) pixelsFill(colorGreen); break;
     case LedMode::TIMING_BLUE_SPINNER:
-      if (now - ledTickMs >= 180) { ledTickMs = now; ledSpinIdx = (uint8_t)((ledSpinIdx + 1) % PIXEL_COUNT); ledFrameDirty = true; }
+      if (now - ledTickMs >= 180) { ledTickMs = now; ledSpinIdx = (uint16_t)((ledSpinIdx + 1) % PIXEL_COUNT); ledFrameDirty = true; }
       if (ledFrameDirty) { pixelsClear(); primaryLeds[ledSpinIdx] = scaleColor(colorBlue, currentBrightnessByte); }
       break;
     case LedMode::RESULT_FLASH_GB_ONCE:
@@ -204,8 +217,8 @@ bool ring1Service(uint32_t now) {
         const bool needLess = standbyOnCount > onMax;
         const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
         if (needMore || needLess || shouldToggle) {
-          for (uint8_t tries = 0; tries < PIXEL_COUNT; ++tries) {
-            const uint8_t i = (uint8_t)random(0, PIXEL_COUNT);
+          for (uint16_t tries = 0; tries < PIXEL_COUNT; ++tries) {
+            const uint16_t i = (uint16_t)random(0, PIXEL_COUNT);
             if (needMore) {
               if (!standbyTwinkleOn[i]) { standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = randomInclusiveU8(valueMin, valueMax); ledFrameDirty = true; break; }
             } else if (needLess) {
@@ -223,7 +236,7 @@ bool ring1Service(uint32_t now) {
         const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
 
         standbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
-        for (uint8_t i = 0; i < PIXEL_COUNT; ++i) {
+        for (uint16_t i = 0; i < PIXEL_COUNT; ++i) {
           if (!standbyTwinkleOn[i]) continue;
           const int16_t shift = (int16_t)random(-2, 3);
           standbyHue[i] = (uint16_t)(standbyHue[i] + shift);
