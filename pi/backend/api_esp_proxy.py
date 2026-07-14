@@ -62,11 +62,22 @@ async def _proxy(path: str, request: Request):
         raise HTTPException(status_code=504, detail="Timeout beim Verbinden mit dem ESP")
 
     content_type = esp_response.headers.get("content-type", "text/html; charset=utf-8")
-    if "text/html" not in content_type and esp_response.content.strip().startswith(b"<"):
+    content = esp_response.content
+    if "text/html" not in content_type and content.strip().startswith(b"<"):
         content_type = "text/html; charset=utf-8"
 
+    # Links umschreiben damit sie vom Pi-Browser erreichbar sind
+    if "text/html" in content_type:
+        # /ota Link zeigt auf Pi-OTA-Seite (nicht ESP /ota)
+        content = content.replace(b"href='/ota'", b"href='/ota' target='_top'")
+        content = content.replace(b"action='/ota", b"action='/esp-proxy/ota")
+        content = content.replace(
+            f"http://{esp_ip}/ota".encode(),
+            b"/ota"
+        )
+
     return Response(
-        content=esp_response.content,
+        content=content,
         status_code=esp_response.status_code,
         media_type=content_type,
     )
