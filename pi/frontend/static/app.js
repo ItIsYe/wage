@@ -821,26 +821,30 @@ async function otaApply() {
 
     // Fortschritt pollen
     let retries = 0;
+    let maxPercent = 50;
     const poll = setInterval(async () => {
       try {
         const sr = await fetch('/esp-proxy/ota/status');
         if (!sr.ok) throw new Error('no response');
         const esp = await sr.json();
-        setOtaStatus(esp.status || '-', esp.progress || 50);
+        const pct = Math.max(maxPercent, esp.progress || 50);
+        maxPercent = pct;
+        setOtaStatus(esp.status || '-', pct);
         retries = 0;
-        if (esp.state === 4) { // SUCCESS_PENDING_REBOOT
+        if (esp.state === 4) {
           clearInterval(poll);
           setOtaStatus('Update erfolgreich! ESP startet neu...', 100);
         }
-        if (esp.state === 6) { // ERROR
+        if (esp.state === 6) {
           clearInterval(poll);
           setOtaStatus('Fehler: ' + esp.status, null);
           if (applyBtn) applyBtn.disabled = false;
         }
       } catch (_) {
         retries++;
-        setOtaStatus('ESP startet neu... (' + retries + 's)', 90);
-        if (retries > 30) { // nach 60s aufgeben
+        maxPercent = Math.max(maxPercent, 80);
+        setOtaStatus('ESP startet neu... (' + retries + 's)', maxPercent);
+        if (retries > 30) {
           clearInterval(poll);
           setOtaStatus('Update abgeschlossen — ESP neugestartet ✓', 100);
         }
