@@ -215,8 +215,8 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
     setSendErrorState(false);
     return;
   }
-  // Heartbeat senden
-  if (hasValidTarget() && (lastHeartbeatMs == 0 || (now - lastHeartbeatMs) >= HEARTBEAT_INTERVAL_MS)) {
+  // Heartbeat nur im sicheren Zustand (nicht waehrend GLASS_DETECTED/TIMING)
+  if (safeToRetry && hasValidTarget() && (lastHeartbeatMs == 0 || (now - lastHeartbeatMs) >= HEARTBEAT_INTERVAL_MS)) {
     lastHeartbeatMs = now;
     String url = buildHeartbeatUrl();
     String payload = String("{\"device_id\":\"") + jsonEscape(deviceId) + "\"";
@@ -224,7 +224,7 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
     payload += String(",\"queue_depth\":") + String(queueCount) + "}";
     HTTPClient http;
     if (http.begin(url)) {
-      http.setTimeout(EXTERNAL_SEND_TIMEOUT_MS);
+      http.setTimeout(800);  // Heartbeat: kurzer Timeout, Pi ist im LAN
       http.addHeader("Content-Type", "application/json");
       if (transportCfg.apiKey[0] != '\0') http.addHeader("X-API-Key", transportCfg.apiKey);
       http.POST((uint8_t*)payload.c_str(), payload.length());
