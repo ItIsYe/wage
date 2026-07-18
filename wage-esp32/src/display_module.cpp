@@ -97,6 +97,7 @@ void oledInit() {
   oledSnapshotValid = false;
   display.setRotation(activeConfig.oledRotation);
   display.clearDisplay();
+  oledSnapshotValid = false;
   display.setTextColor(SH110X_WHITE);
   display.display();
   lastOledFlushMs = millis();
@@ -156,6 +157,7 @@ void oledMsg2(const char* line1, const char* line2) {
   const int maxY = display.height() - lineHeight;
   if (line2Y > maxY) line2Y = maxY;
   display.clearDisplay();
+  oledSnapshotValid = false;
   display.setTextSize(textScale);
   display.setCursor(0, 0);
   display.println(line1);
@@ -194,6 +196,7 @@ void oledTimingLive(uint32_t dtMs) {
   const int timeLineHeight = (int)timeScale * 8;
   const int timeY = display.height() - timeLineHeight - 2;
   display.clearDisplay();
+  oledSnapshotValid = false;
   display.setTextSize(titleScale);
   display.setCursor(0, 0);
   display.println("Zeitmessung");
@@ -222,6 +225,7 @@ void oledDebugWeights() {
 
   const uint8_t textScale = 1;
   display.clearDisplay();
+  oledSnapshotValid = false;
   display.setTextSize(textScale);
   display.setCursor(0, 0);
 
@@ -254,6 +258,7 @@ void oledDebugPattern(uint32_t now) {
   lastOledPatternMs = now;
   oledMsgValid = false;
   display.clearDisplay();
+  oledSnapshotValid = false;
 
   display.drawRect(0, 0, display.width(), display.height(), SH110X_WHITE);
   display.drawLine(0, display.height() / 2, display.width() - 1, display.height() / 2, SH110X_WHITE);
