@@ -224,14 +224,17 @@ void setup() {
 
   ledsInit();
   oledInit();
-
   scaleInit();
 
+  // Sofort anzeigen bevor WLAN-Connect (kann bis zu 30s dauern)
   ledsSetMode(LedMode::RED_SOLID);
-  oledMsg2("Start...", "Initialisierung");
+  oledMsg2("Start...", "Verbinde WLAN...");
   setState(State::BOOT_MSG);
+
   webConfigSetup();
   externalInterfaceInit(activeConfig, FIRMWARE_VERSION);
+
+  oledMsg2("Start...", "Initialisierung");
 
   // ArduinoOTA: nur starten wenn STA-WLAN verbunden (nicht im Fallback-AP)
   if (!webIsWifiApMode() && WiFi.status() == WL_CONNECTED) {

@@ -424,6 +424,7 @@ void webConfigSetup() {
     WiFi.setSleep(false);
 
     Serial.println("[NET] STA scan start");
+    oledMsg2("WLAN", "Suche Netzwerk...");
     const int networkCount = WiFi.scanNetworks();
     Serial.print("[NET] STA scan found=");
     Serial.println(networkCount);
@@ -475,6 +476,7 @@ void webConfigSetup() {
     Serial.print(" timeout=");
     Serial.println(activeConfig.wifiConnectTimeoutMs);
     WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
+    oledMsg2("WLAN", "Verbinde...");
     const uint32_t startMs = millis();
     uint32_t lastStatusLogMs = startMs - 1000U;
     while (WiFi.status() != WL_CONNECTED && (millis() - startMs) < activeConfig.wifiConnectTimeoutMs) {
