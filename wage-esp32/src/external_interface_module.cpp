@@ -26,6 +26,10 @@ ExternalTransportConfig transportCfg{};
 bool lastSendError = false;
 uint32_t sendErrorEventCounter = 0;
 uint32_t lastHeartbeatMs = 0;
+static uint8_t consecutiveFailures = 0;
+static bool piOffline = false;
+static constexpr uint8_t OFFLINE_THRESHOLD = 3;       // nach 3 Fehlern -> offline
+static constexpr uint32_t OFFLINE_PROBE_INTERVAL_MS = 60000;  // alle 60s kurzer Probe
 static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 30000;
 
 bool hasValidTarget() {
@@ -38,6 +42,19 @@ void setStatus(const char* text) {
 }
 
 void setSendErrorState(bool hasError) {
+  if (hasError) {
+    if (consecutiveFailures < OFFLINE_THRESHOLD) consecutiveFailures++;
+    if (consecutiveFailures >= OFFLINE_THRESHOLD && !piOffline) {
+      piOffline = true;
+      Serial.println("[NET] Pi offline erkannt, wechsle in Probe-Modus (60s Intervall)");
+    }
+  } else {
+    if (piOffline) {
+      piOffline = false;
+      Serial.println("[NET] Pi wieder erreichbar, normaler Betrieb");
+    }
+    consecutiveFailures = 0;
+  }
   if (lastSendError != hasError) {
     lastSendError = hasError;
     sendErrorEventCounter++;
@@ -215,8 +232,10 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
     setSendErrorState(false);
     return;
   }
-  // Heartbeat nur im sicheren Zustand (nicht waehrend GLASS_DETECTED/TIMING)
-  if (safeToRetry && hasValidTarget() && (lastHeartbeatMs == 0 || (now - lastHeartbeatMs) >= HEARTBEAT_INTERVAL_MS)) {
+  // Im Offline-Modus: nur alle 60s einen kurzen Probe-Heartbeat senden
+  // Im Online-Modus: normaler Heartbeat alle 30s
+  const uint32_t heartbeatInterval = piOffline ? OFFLINE_PROBE_INTERVAL_MS : HEARTBEAT_INTERVAL_MS;
+  if (safeToRetry && hasValidTarget() && (lastHeartbeatMs == 0 || (now - lastHeartbeatMs) >= heartbeatInterval)) {
     lastHeartbeatMs = now;
     String url = buildHeartbeatUrl();
     String payload = String("{\"device_id\":\"") + jsonEscape(deviceId) + "\"";
@@ -224,12 +243,23 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
     payload += String(",\"queue_depth\":") + String(queueCount) + "}";
     HTTPClient http;
     if (http.begin(url)) {
-      http.setTimeout(800);  // Heartbeat: kurzer Timeout, Pi ist im LAN
+      http.setTimeout(800);
       http.addHeader("Content-Type", "application/json");
       if (transportCfg.apiKey[0] != '\0') http.addHeader("X-API-Key", transportCfg.apiKey);
-      http.POST((uint8_t*)payload.c_str(), payload.length());
+      const int code = http.POST((uint8_t*)payload.c_str(), payload.length());
       http.end();
+      if (code > 0 && code < 300) {
+        setSendErrorState(false);  // Probe erfolgreich -> Pi wieder online
+      } else if (piOffline) {
+        // Probe fehlgeschlagen, bleibt offline
+      }
     }
+  }
+
+  // Im Offline-Modus: Queue nicht abarbeiten (würde nur blockieren)
+  if (piOffline) {
+    setStatus("offline - probe alle 60s");
+    return;
   }
 
   if (queueCount == 0) return;
