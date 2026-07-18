@@ -773,6 +773,8 @@ void webConfigSetup() {
 
 void webService(uint32_t now){
   if (!WEB_CONFIG_ENABLED) return;
+  // Während aktiver Zeitmessung: kein Web-Handling um Scale-Reads nicht zu blockieren
+  if (state == State::TIMING) return;
 
   // Reconnect-Logik: nur im STA-Modus, nicht im Fallback-AP
   if (!wifiApMode && activeConfig.wifiStaEnabled) {
@@ -812,8 +814,14 @@ void webService(uint32_t now){
   // Fallback-AP: alle 60s versuchen ob wage-net wieder erreichbar ist
   if (wifiApMode && activeConfig.wifiStaEnabled && activeConfig.wifiSsid[0] != '\0') {
     static constexpr uint32_t AP_RETRY_INTERVAL_MS = 60000;
-    if ((now - lastReconnectAttemptMs) >= AP_RETRY_INTERVAL_MS) {
+    static constexpr uint32_t AP_RETRY_WAIT_MS     = 8000;
+    static bool apRetryInProgress = false;
+    static uint32_t apRetryStartMs = 0;
+
+    if (!apRetryInProgress && (now - lastReconnectAttemptMs) >= AP_RETRY_INTERVAL_MS) {
       lastReconnectAttemptMs = now;
+      apRetryStartMs = now;
+      apRetryInProgress = true;
       Serial.println("[NET] Fallback-AP: versuche STA-Reconnect...");
       WiFi.softAPdisconnect(false);
       WiFi.mode(WIFI_STA);
@@ -829,24 +837,25 @@ void webService(uint32_t now){
         }
       }
       WiFi.begin(activeConfig.wifiSsid, activeConfig.wifiPassword);
-      // kurz warten und prüfen
-      uint32_t waitStart = millis();
-      while (WiFi.status() != WL_CONNECTED && (millis() - waitStart) < 8000) {
-        delay(200);
-      }
+    }
+
+    if (apRetryInProgress) {
       if (WiFi.status() == WL_CONNECTED) {
+        apRetryInProgress = false;
         Serial.print("[NET] Fallback-AP -> STA erfolgreich, IP=");
         Serial.println(WiFi.localIP().toString());
         wifiApMode = false;
         networkInfo = WiFi.localIP().toString();
         showNetworkStatus("WLAN", networkInfo);
         lastReconnectAttemptMs = 0;
-      } else {
+      } else if ((now - apRetryStartMs) >= AP_RETRY_WAIT_MS) {
+        apRetryInProgress = false;
         Serial.println("[NET] Fallback-AP: STA fehlgeschlagen, bleibe im AP");
         WiFi.disconnect(false);
         WiFi.mode(WIFI_AP);
         WiFi.softAP(activeConfig.configApSsid, activeConfig.configApPassword);
       }
+      // sonst: warten auf nächsten webService()-Aufruf, Loop läuft frei weiter
     }
   }
 

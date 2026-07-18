@@ -550,7 +550,7 @@ static void handleResetRequestIfAllowed(uint32_t now){
 }
 
 void loop() {
-  ArduinoOTA.handle();
+  if (state != State::TIMING) ArduinoOTA.handle();
   const uint32_t now = millis();
   const uint32_t loopStartUs = PERFORMANCE_DEBUG ? micros() : 0;
 
