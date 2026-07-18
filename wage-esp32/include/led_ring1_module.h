@@ -13,4 +13,5 @@ void ring1MarkDirty();
 void ring1Clear();
 void ring1FillDebugAllOn();
 
-void ring1ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value, uint16_t count);
+void ring1ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value,
+                              const bool* dirty, bool fullRedraw, uint16_t count);

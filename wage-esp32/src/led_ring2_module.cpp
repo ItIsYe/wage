@@ -251,20 +251,39 @@ bool ring2ForceTestService(uint32_t now) {
   if (MASTER_DEBUG_LOG) Serial.printf("[RING2 FASTLED TEST] wrote RGBW pin=%u pixels=%u\n", (unsigned)RING2_PIN, (unsigned)RING2_PIXEL_COUNT);
   return true;
 }
-void ring2ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value, uint16_t count) {
+void ring2ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value,
+                              const bool* dirty, bool fullRedraw, uint16_t count) {
   if (!ring2Ready()) return;
   ring2SetBrightnessPercent(activeConfig.ring2StandbyBrightnessPercent);
-  ring2Clear();
   const uint16_t base = PIXEL_COUNT;
-  for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
-    const uint16_t idx = base + i;
-    if (idx >= count || !on[idx]) continue;
-    CHSV hsv((uint8_t)(hue[idx] >> 8), activeConfig.standbySaturation, value[idx]);
-    CRGB c;
-    hsv2rgb_rainbow(hsv, c);
-    c.r = LedGamma::apply(c.r);
-    c.g = LedGamma::apply(c.g);
-    c.b = LedGamma::apply(c.b);
-    ring2Leds[i] = scaleColor(c, ring2BrightnessByte);
+  if (fullRedraw) {
+    ring2Clear();
+    for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+      const uint16_t idx = base + i;
+      if (idx >= count || !on[idx]) continue;
+      CHSV hsv((uint8_t)(hue[idx] >> 8), activeConfig.standbySaturation, value[idx]);
+      CRGB c;
+      hsv2rgb_rainbow(hsv, c);
+      c.r = LedGamma::apply(c.r);
+      c.g = LedGamma::apply(c.g);
+      c.b = LedGamma::apply(c.b);
+      ring2Leds[i] = scaleColor(c, ring2BrightnessByte);
+    }
+  } else {
+    for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+      const uint16_t idx = base + i;
+      if (idx >= count || !dirty[idx]) continue;
+      if (on[idx]) {
+        CHSV hsv((uint8_t)(hue[idx] >> 8), activeConfig.standbySaturation, value[idx]);
+        CRGB c;
+        hsv2rgb_rainbow(hsv, c);
+        c.r = LedGamma::apply(c.r);
+        c.g = LedGamma::apply(c.g);
+        c.b = LedGamma::apply(c.b);
+        ring2Leds[i] = scaleColor(c, ring2BrightnessByte);
+      } else {
+        ring2Leds[i] = CRGB::Black;
+      }
+    }
   }
 }

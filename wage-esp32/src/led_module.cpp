@@ -17,6 +17,8 @@ static uint32_t sharedStandbyChangeNextMs = 0;
 static constexpr uint16_t SHARED_PIXELS = PIXEL_COUNT + RING2_PIXEL_COUNT;
 static bool sharedStandbyTwinkleOn[SHARED_PIXELS] = {};
 static bool sharedStandbyRenderMask[SHARED_PIXELS] = {};
+static bool sharedStandbyDirty[SHARED_PIXELS] = {};
+static bool sharedStandbyFullRedraw = true;
 static uint16_t sharedStandbyHue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyValue[SHARED_PIXELS] = {};
 static uint8_t sharedStandbyTargetValue[SHARED_PIXELS] = {};
@@ -106,12 +108,17 @@ static bool sharedStandbyConfigChanged(bool* needsReinit) {
   return brightnessChanged || patternChanged;
 }
 static void applySharedStandbyFrame() {
-  ring1ApplySharedStandby(sharedStandbyRenderMask, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
+  ring1ApplySharedStandby(sharedStandbyRenderMask, sharedStandbyHue, sharedStandbyValue,
+                           sharedStandbyDirty, sharedStandbyFullRedraw, SHARED_PIXELS);
   if (RING2_ENABLED) {
-    ring2ApplySharedStandby(sharedStandbyRenderMask, sharedStandbyHue, sharedStandbyValue, SHARED_PIXELS);
+    ring2ApplySharedStandby(sharedStandbyRenderMask, sharedStandbyHue, sharedStandbyValue,
+                             sharedStandbyDirty, sharedStandbyFullRedraw, SHARED_PIXELS);
   }
+  if (sharedStandbyFullRedraw) sharedStandbyFullRedraw = false;
+  for (uint16_t i = 0; i < SHARED_PIXELS; ++i) sharedStandbyDirty[i] = false;
 }
 static void sharedStandbyInit(uint32_t now) {
+  sharedStandbyFullRedraw = true;
   uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
   uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
   sanitizeSharedStandbyChangeRange(changeMinMs, changeMaxMs);
@@ -178,8 +185,8 @@ static bool sharedStandbyService(uint32_t now) {
       const uint16_t start = sharedStandbyCursor;
       for (uint16_t tries = 0; tries < SHARED_PIXELS; ++tries) {
         const uint16_t i = (uint16_t)((start + (uint32_t)tries * stride) % SHARED_PIXELS);
-        if (needMore && !sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; sharedStandbyCursor = (uint16_t)((i + stride) % SHARED_PIXELS); changed = true; break; }
-        if (needLess && sharedStandbyTwinkleOn[i]) { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; sharedStandbyCursor = (uint16_t)((i + stride) % SHARED_PIXELS); changed = true; break; }
+        if (needMore && !sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; sharedStandbyRenderMask[i] = true; sharedStandbyDirty[i] = true; sharedStandbyCursor = (uint16_t)((i + stride) % SHARED_PIXELS); changed = true; break; }
+        if (needLess && sharedStandbyTwinkleOn[i]) { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; sharedStandbyRenderMask[i] = false; sharedStandbyDirty[i] = true; sharedStandbyCursor = (uint16_t)((i + stride) % SHARED_PIXELS); changed = true; break; }
         if (!needMore && !needLess) {
           if (!sharedStandbyTwinkleOn[i]) { sharedStandbyHue[i] = (uint16_t)random(0, 65536); sharedStandbyTwinkleOn[i] = true; sharedStandbyTargetValue[i] = randomInclusiveU8(valueMin, valueMax); ++sharedStandbyOnCount; }
           else { sharedStandbyTwinkleOn[i] = false; sharedStandbyTargetValue[i] = valueBase; --sharedStandbyOnCount; }
@@ -215,6 +222,7 @@ static bool sharedStandbyService(uint32_t now) {
         int16_t step = delta / 4;
         if (step == 0) step = (delta > 0) ? 1 : -1;
         sharedStandbyValue[i] = (uint8_t)(current + step);
+        sharedStandbyDirty[i] = true;
       }
     }
     changed = true;

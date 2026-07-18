@@ -156,15 +156,14 @@ void scaleService(uint32_t now) {
   haveRead = false;
   haveStableRead = false;
   objectMissingStable = false;
-  absFilt = fabsf(w_filt);
 
   const bool needScaleRead = (state != State::BOOT_MSG && state != State::BOOT_TARE && state != State::SHOW_RESULT);
-  if (!needScaleRead) return;
+  if (!needScaleRead) { absFilt = fabsf(w_filt); return; }
   if ((now - lastScaleReadMs) < activeConfig.scaleReadIntervalMs) return;
   lastScaleReadMs = now;
 
   haveRead = readScalesOnce(raw1, raw2);
+  absFilt = fabsf(w_filt);
   haveStableRead = haveRead && isStable;
-  absFilt = haveRead ? fabsf(w_filt) : absFilt;
   objectMissingStable = haveStableRead && (w_filt < activeConfig.objectPresentG * 0.7f);
 }
