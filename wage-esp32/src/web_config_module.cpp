@@ -518,6 +518,7 @@ void webConfigSetup() {
     showNetworkStatus("WLAN", networkInfo);
   } else {
     WiFi.mode(WIFI_AP);
+    WiFi.setSleep(false);  // Kein Modem-Sleep im AP-Modus, sonst verliert das Smartphone die Verbindung
     const bool apStarted = WiFi.softAP(activeConfig.configApSsid, activeConfig.configApPassword);
     Serial.print("[NET] Fallback AP ssid=");
     Serial.print(activeConfig.configApSsid);
@@ -855,6 +856,7 @@ void webService(uint32_t now){
         Serial.println("[NET] Fallback-AP: STA fehlgeschlagen, bleibe im AP");
         WiFi.disconnect(false);
         WiFi.mode(WIFI_AP);
+        WiFi.setSleep(false);
         WiFi.softAP(activeConfig.configApSsid, activeConfig.configApPassword);
       }
       // sonst: warten auf nächsten webService()-Aufruf, Loop läuft frei weiter
