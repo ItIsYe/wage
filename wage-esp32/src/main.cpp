@@ -17,6 +17,9 @@
 #include "scale_module.h"
 #include "web_config_module.h"
 #include "external_interface_module.h"
+#include "run_module.h"
+#include "perf_module.h"
+#include "serial_debug_module.h"
 
 /* =========================================================
    DISPLAY
@@ -57,19 +60,14 @@ RuntimeConfig activeConfig;
 // moving average buffer
 float oledScale = 1.5f;
 
-// stability window
 // object tracking
 bool objectPresent = false;
-static float readyReferenceWeight = 0.0f;
-static float startDropThresholdG = 0.0f;
-static float stopRiseThresholdG = 0.0f;
 
 // timing
 static uint32_t detectAtMs = 0;
 static uint32_t tStartMs   = 0;
 static uint32_t showUntilMs= 0;
 
-static float minDuringTiming = 1e9f;
 static uint32_t dropSinceMs = 0;
 static uint32_t stopCandidateSinceMs = 0;
 
@@ -80,35 +78,15 @@ static uint32_t lastActionMs = 0;
 static uint32_t recoverUntilMs = 0;
 
 static uint32_t bootId = 0;
-static uint32_t runCounter = 0;
 static uint32_t lastShownExternalErrorEvent = 0;
 
 static bool oledDebugLedsCleared = false;
 
-// OLED-Cache gegen redundante Full-Refreshes
-// Serial-Rate-Limiter
-static uint32_t lastSerialBaseMs = 0;
-static uint32_t lastSerialReadyMs = 0;
-static uint32_t lastSerialTimingMs = 0;
-static uint32_t lastSerialRecoverMs = 0;
-
-static uint32_t perfLastLogMs = 0;
-static uint32_t perfMaxScaleUs = 0;
-static uint32_t perfMaxLedUs = 0;
-static uint32_t perfMaxOledUs = 0;
-static uint32_t perfMaxStateUs = 0;
-static uint32_t perfMaxConfigUs = 0;
-static uint32_t perfMaxResetUs = 0;
-static uint32_t perfMaxWebUs = 0;
-static uint32_t perfMaxLoopUs = 0;
 
 /* =========================================================
    FORWARD DECLARATIONS
    ========================================================= */
 static void setState(State s);
-static void finalizeTiming(uint32_t now);
-static float percentOfReference(float referenceWeight, float percent);
-static void refreshTimingThresholds();
 static const char* stateToStr(State s);
 static bool shouldCheckNegativeError(State s);
 static void oledService(uint32_t now);
@@ -123,78 +101,21 @@ static void resetRuntimeAfterTare();
    HELPERS
    ========================================================= */
 
-static void serialPrintAll(long raw1, long raw2) {
-  Serial.print("RAW1:");
-  Serial.print(raw1);
-  Serial.print(" g1:");
-  Serial.print(w_raw1, 2);
-  Serial.print("  ||  RAW2:");
-  Serial.print(raw2);
-  Serial.print(" g2:");
-  Serial.print(w_raw2, 2);
-  Serial.print("  AVG:");
-  Serial.print(w_avg, 2);
-  Serial.print("  FILT:");
-  Serial.print(w_filt, 2);
-  Serial.print("  STB:");
-  Serial.print(isStable ? 1 : 0);
-  Serial.print("  STATE:");
-  Serial.print((int)state);
-  Serial.print("  OBJ:");
-  Serial.print(objectPresent ? 1 : 0);
-  Serial.print("  ERR:");
-  Serial.println(errToStr(err));
-}
-
-static RunDataSnapshot buildRunDataSnapshot(uint32_t now, uint32_t durationMs) {
-  RunDataSnapshot snapshot{};
-  snapshot.bootId = bootId;
-  snapshot.runNumber = ++runCounter;
-  snapshot.finishedAtMs = now;
-  snapshot.durationMs = durationMs;
-  snapshot.referenceWeightG = readyReferenceWeight;
-  snapshot.minWeightG = minDuringTiming;
-  snapshot.startDropThresholdG = startDropThresholdG;
-  snapshot.stopRiseThresholdG = stopRiseThresholdG;
-  strncpy(snapshot.deviceId, activeConfig.deviceId, sizeof(snapshot.deviceId) - 1);
-  snapshot.deviceId[sizeof(snapshot.deviceId) - 1] = '\0';
-  snprintf(snapshot.eventId, sizeof(snapshot.eventId), "%s-%lu-%lu", snapshot.deviceId, (unsigned long)snapshot.bootId, (unsigned long)snapshot.runNumber);
-  return snapshot;
-}
+// serialPrintAll -> serial_debug_module.cpp
 
 static void finalizeTiming(uint32_t now) {
   const uint32_t dt = now - tStartMs;
-  const RunDataSnapshot runData = buildRunDataSnapshot(now, dt);
+  const RunDataSnapshot runData = runModuleBuildSnapshot(now, dt);
   (void)externalInterfaceEnqueueRun(runData);
   char buf[24];
   snprintf(buf, sizeof(buf), "Zeit: %.1fs", dt / 1000.0f);
   showStatus("Fertig", buf);
-
   ledsSetMode(LedMode::RESULT_FLASH_GB_ONCE);
   showUntilMs = now + SHOW_RESULT_MS;
   setState(State::SHOW_RESULT);
 }
 
-static float percentOfReference(float referenceWeight, float percent) {
-  return referenceWeight * (percent / 100.0f);
-}
-
-static void refreshTimingThresholds() {
-  readyReferenceWeight = max(readyReferenceWeight, activeConfig.objectPresentG);
-  startDropThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, percentOfReference(readyReferenceWeight, activeConfig.startDropPercent));
-  stopRiseThresholdG = max(MIN_DYNAMIC_THRESHOLD_G, percentOfReference(readyReferenceWeight, activeConfig.stopRisePercent));
-
-  if (MASTER_DEBUG_LOG) {
-    Serial.print("[THR] ref=");
-    Serial.print(readyReferenceWeight, 2);
-    Serial.print(" startDrop=");
-    Serial.print(startDropThresholdG, 2);
-    Serial.print(" stopRise=");
-    Serial.println(stopRiseThresholdG, 2);
-  }
-}
-
-static void showStatus(const char* line1, const char* line2) {
+static void showStatusstatic void showStatus(const char* line1, const char* line2) {
   if (activeConfig.debugMode) return;
   oledMsg2(line1, line2);
 }
@@ -210,10 +131,7 @@ static void resetRuntimeAfterTare() {
   objectPresent = false;
   dropSinceMs = 0;
   stopCandidateSinceMs = 0;
-  minDuringTiming = 1e9f;
-  readyReferenceWeight = 0.0f;
-  startDropThresholdG = 0.0f;
-  stopRiseThresholdG = 0.0f;
+  runModuleReset();
   resetNegativeDetection();
 }
 
@@ -301,7 +219,8 @@ void setup() {
                 (unsigned long)(activeConfig.standbyAfterMs / 1000U));
   randomSeed(esp_random());
   bootId = esp_random();
-  runCounter = 0;
+  serialDebugInit();
+  runModuleInit(bootId, activeConfig.deviceId);
 
   ledsInit();
   oledInit();
@@ -404,7 +323,7 @@ static void stateMachineService(uint32_t now) {
 
       if (haveRead && isObjectPresentStable(w_filt, isStable)) {
         objectPresent = true;
-        readyReferenceWeight = w_filt;
+        runModuleSetReference(w_filt, activeConfig);
         detectAtMs = now;
         showStatus("Glas erkannt", "");
         ledsSetMode(LedMode::GLASS_GREEN_SOLID);
@@ -423,12 +342,11 @@ static void stateMachineService(uint32_t now) {
       }
 
       if (haveRead) {
-        readyReferenceWeight = max(readyReferenceWeight, w_filt);
+        runModuleSetReference(max(runModuleGetReference(), w_filt), activeConfig);
       }
 
       if (haveRead && (now - detectAtMs >= READY_AFTER_DETECT_MS)) {
-        readyReferenceWeight = max(readyReferenceWeight, w_filt);
-        refreshTimingThresholds();
+        runModuleSetReference(max(runModuleGetReference(), w_filt), activeConfig);
         showStatus("Bereit fuer", "Zeitmessung");
         dropSinceMs = 0;
         stopCandidateSinceMs = 0;
@@ -440,7 +358,7 @@ static void stateMachineService(uint32_t now) {
 
     case State::READY_FOR_TIMING: {
       const float w = w_filt;
-      const float drop = readyReferenceWeight - w;
+      const float drop = runModuleGetReference() - w;
 
       if (objectMissingStable) {
         objectPresent = false;
@@ -450,33 +368,22 @@ static void stateMachineService(uint32_t now) {
         break;
       }
 
-      if (haveRead && drop >= startDropThresholdG) {
+      if (haveRead && drop >= runModuleGetStartDropThreshold()) {
         if (dropSinceMs == 0) dropSinceMs = now;
         if (now - dropSinceMs >= DROP_HOLD_MS) {
           tStartMs = now;
-          minDuringTiming = w;
+          runModuleReset();
+          runModuleUpdateMin(w);
           dropSinceMs = 0;
           stopCandidateSinceMs = 0;
           ledsSetMode(LedMode::TIMING_BLUE_SPINNER);
           setState(State::TIMING);
         }
-      } else if (drop <= (startDropThresholdG - START_RESET_HYST_G)) {
+      } else if (drop <= (runModuleGetStartDropThreshold() - START_RESET_HYST_G)) {
         dropSinceMs = 0;
       }
 
-      if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialReadyMs >= SERIAL_STATE_REFRESH_MS)) {
-        lastSerialReadyMs = now;
-        Serial.print("[READY] w=");
-        Serial.print(w, 2);
-        Serial.print(" ref=");
-        Serial.print(readyReferenceWeight, 2);
-        Serial.print(" startThr=");
-        Serial.print(startDropThresholdG, 2);
-        Serial.print(" stopThr=");
-        Serial.print(stopRiseThresholdG, 2);
-        Serial.print(" drop=");
-        Serial.println(drop, 2);
-      }
+      serialDebugPrintReady(now, w, runModuleGetReference(), runModuleGetStartDropThreshold(), runModuleGetStopRiseThreshold(), drop);
       break;
     }
 
@@ -487,12 +394,10 @@ static void stateMachineService(uint32_t now) {
         // Minimum nur während "freiem Lauf" weiter nachführen.
         // Sobald ein Stop-Kandidat aktiv ist, wird das Minimum eingefroren,
         // damit die Schwelle nicht von Messrauschen "wegläuft".
-        if (stopCandidateSinceMs == 0 && w < minDuringTiming) {
-          minDuringTiming = w;
-        }
+        if (stopCandidateSinceMs == 0) runModuleUpdateMin(w);
 
-        const float stopThreshold = minDuringTiming + stopRiseThresholdG;
-        const float rebound = w - minDuringTiming;
+        const float stopThreshold = runModuleGetMin() + runModuleGetStopRiseThreshold();
+        const float rebound = w - runModuleGetMin();
         const bool aboveStopThreshold = (w >= stopThreshold);
         const uint32_t stopHoldMs = (stopCandidateSinceMs == 0) ? 0 : (now - stopCandidateSinceMs);
 
@@ -509,21 +414,7 @@ static void stateMachineService(uint32_t now) {
           }
         }
 
-        if (MASTER_DEBUG_LOG && (now - lastSerialTimingMs >= SERIAL_STATE_REFRESH_MS)) {
-          lastSerialTimingMs = now;
-          Serial.print("[TIMING] w=");
-          Serial.print(w, 2);
-          Serial.print(" min=");
-          Serial.print(minDuringTiming, 2);
-          Serial.print(" stopThr=");
-          Serial.print(stopThreshold, 2);
-          Serial.print(" rebound=");
-          Serial.print(rebound, 2);
-          Serial.print(" candHold=");
-          Serial.print(stopHoldMs);
-          Serial.print("ms active=");
-          Serial.println(stopCandidateSinceMs != 0 ? 1 : 0);
-        }
+        serialDebugPrintTiming(now, w, runModuleGetMin(), stopThreshold, rebound, stopHoldMs, stopCandidateSinceMs != 0);
       }
       break;
     }
@@ -589,10 +480,7 @@ static void stateMachineService(uint32_t now) {
     case State::ERROR_RECOVER: {
       if (now >= recoverUntilMs) {
         if (haveStableRead && absFilt < 2.0f) {
-          if ((now - lastSerialRecoverMs) >= SERIAL_STATE_REFRESH_MS) {
-            lastSerialRecoverMs = now;
-            Serial.println("[RECOVER] Tare (empty & stable).");
-          }
+          serialDebugPrintRecover(now, "[RECOVER] Tare (empty & stable).");
           showStatus("Recovery", "Nullung...");
           tareBoth();
           resetRuntimeAfterTare();
@@ -600,10 +488,7 @@ static void stateMachineService(uint32_t now) {
           ledsSetMode(LedMode::OK_ALT_GB);
           setState(State::IDLE_WAIT_GLASS);
         } else {
-          if ((now - lastSerialRecoverMs) >= SERIAL_STATE_REFRESH_MS) {
-            lastSerialRecoverMs = now;
-            Serial.println("[RECOVER] Waiting for empty/stable before tare...");
-          }
+          serialDebugPrintRecover(now, "[RECOVER] Waiting for empty/stable before tare...");
           showStatus("Fehler", "Bitte leeren!");
           recoverUntilMs = now + 700;
         }
@@ -684,10 +569,7 @@ void loop() {
 
   const uint32_t scaleStartUs = PERFORMANCE_DEBUG ? micros() : 0;
   scaleService(now);
-  if (MASTER_DEBUG_LOG && haveRead && (now - lastSerialBaseMs >= SERIAL_BASE_REFRESH_MS)) {
-    lastSerialBaseMs = now;
-    serialPrintAll(raw1, raw2);
-  }
+  serialDebugPrintBase(now, raw1, raw2, w_raw1, w_raw2, w_avg, w_filt, isStable, state, objectPresent, errToStr(err));
   const uint32_t scaleDurUs = PERFORMANCE_DEBUG ? (micros() - scaleStartUs) : 0;
 
   const uint32_t stateStartUs = PERFORMANCE_DEBUG ? micros() : 0;
@@ -739,54 +621,18 @@ void loop() {
 
   if (oledDebugActive) delay(20);
 
+  perfTrackScale(scaleDurUs);
+  perfTrackLed(ledDurUs);
+  perfTrackState(stateDurUs);
+  perfTrackOled(oledDurUs);
+  perfTrackConfig(configDurUs);
+  perfTrackReset(resetDurUs);
+  perfTrackWeb(webDurUs);
   if (PERFORMANCE_DEBUG) {
     const uint32_t loopDurUs = micros() - loopStartUs;
-    perfMaxLedUs = max(perfMaxLedUs, ledDurUs);
-    perfMaxScaleUs = max(perfMaxScaleUs, scaleDurUs);
-    perfMaxStateUs = max(perfMaxStateUs, stateDurUs);
-    perfMaxOledUs = max(perfMaxOledUs, oledDurUs);
-    perfMaxConfigUs = max(perfMaxConfigUs, configDurUs);
-    perfMaxResetUs = max(perfMaxResetUs, resetDurUs);
-    perfMaxWebUs = max(perfMaxWebUs, webDurUs);
-    perfMaxLoopUs = max(perfMaxLoopUs, loopDurUs);
-
-    if (now - perfLastLogMs >= 1000) {
-      perfLastLogMs = now;
-      Serial.print("[PERF] scale=");
-      Serial.print(scaleDurUs);
-      Serial.print("us led=");
-      Serial.print(ledDurUs);
-      Serial.print("us state=");
-      Serial.print(stateDurUs);
-      Serial.print("us oled=");
-      Serial.print(oledDurUs);
-      Serial.print("us cfg=");
-      Serial.print(configDurUs);
-      Serial.print("us reset=");
-      Serial.print(resetDurUs);
-      Serial.print("us web=");
-      Serial.print(webDurUs);
-      Serial.print("us loop=");
-      Serial.print(loopDurUs);
-      Serial.print("us max(scale/led/state/oled/cfg/reset/web/loop)=");
-      Serial.print(perfMaxScaleUs);
-      Serial.print('/');
-      Serial.print(perfMaxLedUs);
-      Serial.print('/');
-      Serial.print(perfMaxStateUs);
-      Serial.print('/');
-      Serial.print(perfMaxOledUs);
-      Serial.print('/');
-      Serial.print(perfMaxConfigUs);
-      Serial.print('/');
-      Serial.print(perfMaxResetUs);
-      Serial.print('/');
-      Serial.print(perfMaxWebUs);
-      Serial.print('/');
-      Serial.println(perfMaxLoopUs);
-      perfMaxScaleUs = perfMaxLedUs = perfMaxStateUs = perfMaxOledUs = perfMaxConfigUs = perfMaxResetUs = perfMaxWebUs = perfMaxLoopUs = 0;
-    }
+    perfTrackLoop(loopDurUs);
   }
+  perfLog(now);
 
   if (activeConfig.debugMode) oledDebugWeights();
 
