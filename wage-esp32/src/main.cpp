@@ -115,7 +115,7 @@ static void finalizeTiming(uint32_t now) {
   setState(State::SHOW_RESULT);
 }
 
-static void showStatusstatic void showStatus(const char* line1, const char* line2) {
+static void showStatus(const char* line1, const char* line2) {
   if (activeConfig.debugMode) return;
   oledMsg2(line1, line2);
 }

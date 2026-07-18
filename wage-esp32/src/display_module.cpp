@@ -142,7 +142,14 @@ void oledMsg2(const char* line1, const char* line2) {
   oledLastLine2[sizeof(oledLastLine2) - 1] = '\0';
   oledMsgValid = true;
 
-  const uint8_t textScale = oledTextSizeFromScale();
+  // Schriftgröße automatisch anpassen: kleiner wenn Text zu lang für die Zeile
+  uint8_t textScale = oledTextSizeFromScale();
+  const uint8_t charsPerLine = display.width() / (6u * textScale);
+  const uint8_t maxLen = (uint8_t)(strlen(line1) > strlen(line2) ? strlen(line1) : strlen(line2));
+  if (maxLen > charsPerLine && textScale > 1) {
+    textScale = 1;  // Fallback auf kleinste Schriftgröße damit alles passt
+  }
+
   const int lineHeight = (int)textScale * 8;
   const int gap = 4;
   int line2Y = lineHeight + gap;
