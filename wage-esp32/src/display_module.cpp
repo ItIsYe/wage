@@ -167,10 +167,12 @@ void oledMsg2(const char* line1, const char* line2) {
 }
 
 void showNetworkStatus(const char* line1, const String& ip) {
-  Serial.print("[NET] ");
-  Serial.print(line1);
-  Serial.print(" IP: ");
-  Serial.println(ip);
+  if (MASTER_DEBUG_LOG) {
+    Serial.print("[NET] ");
+    Serial.print(line1);
+    Serial.print(" IP: ");
+    Serial.println(ip);
+  }
   if (!oledReady) return;
   oledMsg2(line1, ip.c_str());
   delay(1200);
