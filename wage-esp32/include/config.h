@@ -6,7 +6,7 @@
 // =========================================================
 // Debug / Logging
 // =========================================================
-static constexpr bool MASTER_DEBUG_LOG = true;
+static constexpr bool MASTER_DEBUG_LOG = false;
 static constexpr bool PERFORMANCE_DEBUG = false;
 
 // =========================================================
@@ -65,7 +65,7 @@ static constexpr int SCREEN_H = 64;
 static constexpr uint8_t LED_STRIP_PIN = 5;
 static constexpr uint16_t PIXEL_COUNT = 160;
 static constexpr uint8_t PIXEL_GROUP_SIZE = 3;                        // je 3 physische Pixel = 1 logische Gruppe
-static constexpr uint16_t PIXEL_GROUPS = PIXEL_COUNT / PIXEL_GROUP_SIZE; // 83 Gruppen
+static constexpr uint16_t PIXEL_GROUPS = PIXEL_COUNT / PIXEL_GROUP_SIZE; // 53 Gruppen bei 160 Pixeln
 static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
 static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90;
 static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
