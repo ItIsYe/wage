@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-wage-pi-screen-save: Schaltet den Pi-Bildschirm (HDMI) aus wenn kein Lauf
-für X Minuten eingegangen ist. Aktiviert ihn bei neuem Lauf wieder.
+wage-pi-screen-save: Schaltet den Pi-Bildschirm (DSI) aus wenn kein Lauf
+für X Minuten eingegangen ist. Aktiviert ihn bei neuem Lauf oder Touch wieder.
 """
 import os
 import sqlite3
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +15,7 @@ DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 POLL_SECONDS = 10.0
 
 _screen_off = False
+_touch_wakeup = False
 
 
 def _get_config() -> dict:
@@ -45,16 +47,13 @@ def _is_power_save() -> bool:
 
 
 def _screen_off_cmd():
-    """DSI Display-Backlight ausschalten."""
     env = {**os.environ, "DISPLAY": ":0", "XAUTHORITY": f"/home/{os.getenv('USER','pi')}/.Xauthority"}
     try:
-        # DSI Display (Ribbon-Kabel): Backlight aus
         subprocess.run(["vcgencmd", "display_power", "0", "7"],
                        timeout=5, capture_output=True)
     except Exception:
         pass
     try:
-        # Fallback: xset dpms für X11
         subprocess.run(["xset", "-display", ":0", "dpms", "force", "off"],
                        env=env, timeout=5, capture_output=True)
     except Exception:
@@ -62,10 +61,8 @@ def _screen_off_cmd():
 
 
 def _screen_on_cmd():
-    """DSI Display-Backlight einschalten."""
     env = {**os.environ, "DISPLAY": ":0", "XAUTHORITY": f"/home/{os.getenv('USER','pi')}/.Xauthority"}
     try:
-        # DSI Display (Ribbon-Kabel): Backlight an
         subprocess.run(["vcgencmd", "display_power", "1", "7"],
                        timeout=5, capture_output=True)
     except Exception:
@@ -77,17 +74,65 @@ def _screen_on_cmd():
         pass
 
 
+def _touch_watcher():
+    """Überwacht Touch-Events und setzt _touch_wakeup=True bei Berührung."""
+    global _touch_wakeup
+    try:
+        import evdev
+        # Erstes Touch-Device finden
+        devices = [evdev.InputDevice(p) for p in evdev.list_devices()]
+        touch_dev = None
+        for d in devices:
+            caps = d.capabilities()
+            if evdev.ecodes.EV_ABS in caps:
+                touch_dev = d
+                break
+        if touch_dev is None:
+            return
+        for event in touch_dev.read_loop():
+            if event.type == evdev.ecodes.EV_ABS:
+                _touch_wakeup = True
+    except Exception:
+        pass
+
+
 def main():
-    global _screen_off
+    global _screen_off, _touch_wakeup
+
+    # Touch-Watcher in Hintergrund-Thread starten
+    t = threading.Thread(target=_touch_watcher, daemon=True)
+    t.start()
+
     while True:
         try:
             should_save = _is_power_save()
-            if should_save and not _screen_off:
+
+            # Touch-Event: Bildschirm wecken und Timer zurücksetzen
+            if _touch_wakeup:
+                _touch_wakeup = False
+                if _screen_off:
+                    _screen_on_cmd()
+                    _screen_off = False
+                # last_run_received_at aktualisieren damit Timer zurückgesetzt wird
+                try:
+                    with sqlite3.connect(DB) as c:
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        c.execute(
+                            "INSERT INTO app_state(key,value) VALUES('last_run_received_at',?) "
+                            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                            (now_iso,)
+                        )
+                        c.commit()
+                except Exception:
+                    pass
+
+            elif should_save and not _screen_off:
                 _screen_off_cmd()
                 _screen_off = True
             elif not should_save and _screen_off:
                 _screen_on_cmd()
                 _screen_off = False
+
         except Exception:
             pass
         time.sleep(POLL_SECONDS)
