@@ -90,6 +90,8 @@ if __name__ == "__main__":
     strip = None
     Color = None
     last_init_try = 0.0
+    last_led_count = None
+    last_led_brightness = None
     last_run_id = None
     blink_until = 0.0
     blink_toggle = False
@@ -100,10 +102,25 @@ if __name__ == "__main__":
             last_init_try = now
             try:
                 strip, Color = make_strip()
+                last_led_count = _get_led_count()
+                last_led_brightness = _get_led_brightness()
                 fill(strip, Color(90, 90, 90))
                 set_state("led_status", "starting:white")
             except Exception as exc:
                 set_state("led_status", f"degraded:{type(exc).__name__}")
+
+        # Konfigurationsänderung erkennen -> Strip neu initialisieren
+        if strip is not None:
+            current_count = _get_led_count()
+            current_brightness = _get_led_brightness()
+            if current_count != last_led_count or current_brightness != last_led_brightness:
+                try:
+                    fill(strip, Color(0, 0, 0))
+                    strip = None
+                    last_init_try = 0.0
+                except Exception:
+                    strip = None
+                continue
 
         try:
             s = get_status()
