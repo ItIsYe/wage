@@ -31,15 +31,14 @@ def _get_led_brightness() -> int:
 
 
 def _is_power_save() -> bool:
-    """True wenn letzter Lauf länger als power_save_after_minutes zurückliegt."""
     try:
         hw = _get_hw_config()
         minutes = int(hw.get("power_save_after_minutes", "1"))
         if minutes == 0:
-            return False  # 0 = deaktiviert
+            return False
         last_run = hw.get("last_run_received_at", "")
         if not last_run:
-            return False
+            return False  # Noch kein Lauf -> kein Power-Save
         from datetime import datetime, timezone
         last = datetime.fromisoformat(last_run)
         elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60

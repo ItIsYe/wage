@@ -16,7 +16,7 @@ pip install -r "$ROOT/requirements.txt"
 mkdir -p "$ROOT/data" "$ROOT/logs"
 
 bash "$ROOT/scripts/create_services.sh"
-sudo systemctl enable wage-pi-backend wage-pi-oled wage-pi-leds wage-pi-kiosk
+sudo systemctl enable wage-pi-backend wage-pi-oled wage-pi-leds wage-pi-kiosk wage-pi-screen-save
 
 # NetworkManager Dispatcher: Default-Route auf eth0 wenn LAN im AP-Modus
 sudo install -m 0755 "$ROOT/scripts/nm_dispatcher_eth_route.sh" /etc/NetworkManager/dispatcher.d/99-wage-eth-route

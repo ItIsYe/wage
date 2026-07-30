@@ -28,7 +28,7 @@ def _is_power_save() -> bool:
             return False
         last_run = hw.get("last_run_received_at", "")
         if not last_run:
-            return False
+            return False  # Noch kein Lauf -> kein Power-Save
         from datetime import datetime, timezone
         last = datetime.fromisoformat(last_run)
         elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60

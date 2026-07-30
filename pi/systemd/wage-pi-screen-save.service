@@ -1,0 +1,16 @@
+[Unit]
+Description=WAGE Pi Screen Power Save
+After=graphical.target wage-pi-backend.service
+Wants=wage-pi-backend.service
+
+[Service]
+Type=simple
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+ExecStart=/home/pi/wage/pi/.venv/bin/python3 /home/pi/wage/pi/screen/screen_save.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
