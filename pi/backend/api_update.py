@@ -200,16 +200,17 @@ def _persist_update_state(status: str, local_commit: str, remote_commit: str, ch
 
 
 def _response_payload(mode: str, state: dict[str, str], local_commit: str, remote_commit: str, changed: list[str], obsolete: list[str], protected_runtime: list[str], ui_state: str, ui_message: str, progress_step: str = "", progress_percent: int = 0, can_apply: bool = False) -> dict:
+    internet = _has_internet()
     return {
         "ok": True,
-        "allowed": mode == "client",
+        "allowed": internet,
         "network_mode": mode,
         "update_scope": UPDATE_SCOPE,
         "local_commit": local_commit,
         "remote_commit": remote_commit,
         "ui_state": ui_state,
         "ui_message": ui_message,
-        "can_check": mode == "client",
+        "can_check": internet,
         "can_apply": can_apply,
         "progress_step": progress_step or state.get("last_update_progress_step", ""),
         "progress_percent": progress_percent if progress_percent else int(state.get("last_update_progress_percent", "0") or 0),
