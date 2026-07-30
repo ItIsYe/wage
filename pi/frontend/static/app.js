@@ -894,6 +894,8 @@ async function loadHardwareConfig() {
     document.getElementById('pi-led-count').value = d.pi_led_count ?? 8;
     document.getElementById('pi-led-brightness').value = d.pi_led_brightness ?? 32;
     document.getElementById('pi-oled-rotation').value = d.pi_oled_rotation ?? 0;
+    const psEl = document.getElementById('power-save-after-minutes');
+    if (psEl) psEl.value = d.power_save_after_minutes ?? 1;
   } catch (e) {
     const el = document.getElementById('hardware-msg');
     if (el) { el.textContent = 'Laden fehlgeschlagen: ' + e.message; el.className = 'msg msg-err'; }
@@ -907,6 +909,7 @@ async function saveHardwareConfig() {
       pi_led_count: parseInt(document.getElementById('pi-led-count').value),
       pi_led_brightness: parseInt(document.getElementById('pi-led-brightness').value),
       pi_oled_rotation: parseInt(document.getElementById('pi-oled-rotation').value),
+      power_save_after_minutes: parseInt(document.getElementById('power-save-after-minutes')?.value ?? '1'),
     };
     const d = await api('/api/v1/config/hardware', {
       method: 'POST',

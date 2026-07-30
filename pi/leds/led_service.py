@@ -13,7 +13,7 @@ def _get_hw_config() -> dict:
     try:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
-                "SELECT key, value FROM app_state WHERE key IN ('pi_led_count','pi_led_brightness')"
+                "SELECT key, value FROM app_state WHERE key IN ('pi_led_count','pi_led_brightness','power_save_after_minutes','last_run_received_at')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
     except Exception:
@@ -28,6 +28,24 @@ def _get_led_count() -> int:
 def _get_led_brightness() -> int:
     hw = _get_hw_config()
     return max(0, min(255, int(hw.get("pi_led_brightness", os.getenv("WAGE_PI_LED_BRIGHTNESS", "32")))))
+
+
+def _is_power_save() -> bool:
+    """True wenn letzter Lauf länger als power_save_after_minutes zurückliegt."""
+    try:
+        hw = _get_hw_config()
+        minutes = int(hw.get("power_save_after_minutes", "1"))
+        if minutes == 0:
+            return False  # 0 = deaktiviert
+        last_run = hw.get("last_run_received_at", "")
+        if not last_run:
+            return False
+        from datetime import datetime, timezone
+        last = datetime.fromisoformat(last_run)
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60
+        return elapsed >= minutes
+    except Exception:
+        return False
 
 try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
@@ -144,7 +162,12 @@ if __name__ == "__main__":
                 status = "event:run_received"
 
             if strip and Color:
-                if status == "event:run_received":
+                power_save = _is_power_save()
+                if power_save and now >= blink_until:
+                    # Energiesparmodus: sehr gedimmt (ca. 5% Helligkeit)
+                    fill(strip, Color(6, 6, 6))
+                    set_state("led_status", "power_save")
+                elif status == "event:run_received":
                     fill(strip, Color(0, 180, 0))  # grün für 5s
                 elif status == "fatal:red_blink":
                     blink_toggle = not blink_toggle
@@ -160,7 +183,8 @@ if __name__ == "__main__":
                 else:
                     fill(strip, Color(20, 20, 20))
 
-            set_state("led_status", status if strip else "degraded:NoHardware")
+            if not (strip and Color and _is_power_save() and now >= blink_until):
+                set_state("led_status", status if strip else "degraded:NoHardware")
         except Exception as exc:
             set_state("led_status", f"degraded:{type(exc).__name__}")
             strip = None

@@ -13,11 +13,28 @@ def _get_hw_config() -> dict:
     try:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
-                "SELECT key, value FROM app_state WHERE key IN ('pi_oled_rotation')"
+                "SELECT key, value FROM app_state WHERE key IN ('pi_oled_rotation','power_save_after_minutes','last_run_received_at')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
     except Exception:
         return {}
+
+
+def _is_power_save() -> bool:
+    try:
+        hw = _get_hw_config()
+        minutes = int(hw.get("power_save_after_minutes", "1"))
+        if minutes == 0:
+            return False
+        last_run = hw.get("last_run_received_at", "")
+        if not last_run:
+            return False
+        from datetime import datetime, timezone
+        last = datetime.fromisoformat(last_run)
+        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60
+        return elapsed >= minutes
+    except Exception:
+        return False
 
 try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
@@ -123,6 +140,15 @@ if __name__ == "__main__":
             if dev is None:
                 time.sleep(2)
                 continue
+
+            # Energiesparmodus: Display aus
+            if _is_power_save():
+                dev.hide()
+                set_status("power_save")
+                time.sleep(5)
+                continue
+            else:
+                dev.show()
 
             s = get_runtime_status()
             img = Image.new("1", dev.size)
