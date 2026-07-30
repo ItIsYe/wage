@@ -45,26 +45,28 @@ def _is_power_save() -> bool:
 
 
 def _screen_off_cmd():
-    """HDMI und Display-Backlight ausschalten."""
+    """DSI Display-Backlight ausschalten."""
     env = {**os.environ, "DISPLAY": ":0", "XAUTHORITY": f"/home/{os.getenv('USER','pi')}/.Xauthority"}
     try:
-        subprocess.run(["xset", "-display", ":0", "dpms", "force", "off"],
-                       env=env, timeout=5, capture_output=True)
+        # DSI Display (Ribbon-Kabel): Backlight aus
+        subprocess.run(["vcgencmd", "display_power", "0", "7"],
+                       timeout=5, capture_output=True)
     except Exception:
         pass
     try:
-        # Raspberry Pi HDMI aus (funktioniert auch ohne X)
-        subprocess.run(["vcgencmd", "display_power", "0"],
-                       timeout=5, capture_output=True)
+        # Fallback: xset dpms für X11
+        subprocess.run(["xset", "-display", ":0", "dpms", "force", "off"],
+                       env=env, timeout=5, capture_output=True)
     except Exception:
         pass
 
 
 def _screen_on_cmd():
-    """HDMI und Display-Backlight einschalten."""
+    """DSI Display-Backlight einschalten."""
     env = {**os.environ, "DISPLAY": ":0", "XAUTHORITY": f"/home/{os.getenv('USER','pi')}/.Xauthority"}
     try:
-        subprocess.run(["vcgencmd", "display_power", "1"],
+        # DSI Display (Ribbon-Kabel): Backlight an
+        subprocess.run(["vcgencmd", "display_power", "1", "7"],
                        timeout=5, capture_output=True)
     except Exception:
         pass
