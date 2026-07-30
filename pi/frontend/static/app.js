@@ -474,33 +474,39 @@ async function applyPiUpdate() {
     }
   }, 1500);
 
+  const finishUpdate = async () => {
+    clearInterval(overlayPoll);
+    showUpdateOverlay('Backend startet neu...', 'Bitte warten...', 90);
+    const ok = await waitForBackendAfterUpdate();
+    if (ok) {
+      showUpdateOverlay('Update abgeschlossen!', 'Backend ist wieder erreichbar', 100);
+      setTimeout(hideUpdateOverlay, 2000);
+      await loadUpdateStatus();
+    } else {
+      showUpdateOverlay('Timeout — Backend nicht erreichbar', 'Bitte Seite neu laden', 100);
+      flash('Backend war nicht rechtzeitig erreichbar.', false);
+    }
+    updateBusy = false;
+    await loadUpdateStatus(true);
+  };
+
   try {
     const data = await api('/api/v1/system/update/apply', {method: 'POST'});
     renderUpdateStatus(data);
-    setUpdatePolling(true);
+    // Apply liefert Antwort bevor Neustart — warten bis Backend neu startet
+    await finishUpdate();
   } catch (e) {
     const msg = String(e.message || '').toLowerCase();
     if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
-      showUpdateOverlay('Backend startet neu...', 'Bitte warten...', 90);
-      const ok = await waitForBackendAfterUpdate();
-      clearInterval(overlayPoll);
-      if (ok) {
-        showUpdateOverlay('Update abgeschlossen!', 'Backend ist wieder erreichbar', 100);
-        setTimeout(hideUpdateOverlay, 2000);
-        await loadUpdateStatus();
-      } else {
-        showUpdateOverlay('Timeout — Backend nicht erreichbar', 'Bitte Seite neu laden', 100);
-        flash('Backend war nicht rechtzeitig erreichbar.', false);
-      }
+      // Backend bereits neu gestartet bevor Antwort
+      await finishUpdate();
     } else {
       clearInterval(overlayPoll);
       hideUpdateOverlay();
+      updateBusy = false;
       flash(`Pi-Update fehlgeschlagen: ${e.message}`);
+      await loadUpdateStatus(true);
     }
-  } finally {
-    clearInterval(overlayPoll);
-    updateBusy = false;
-    await loadUpdateStatus(true);
   }
 }
 
