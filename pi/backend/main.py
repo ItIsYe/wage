@@ -14,6 +14,7 @@ from .api_status import router as status_router
 from .api_network_config import router as network_config_router
 from .api_update import router as update_router
 from .api_esp_firmware import router as esp_firmware_router
+from .api_hardware_config import router as hardware_config_router
 from .api_esp_proxy import router as esp_proxy_router
 from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
@@ -58,6 +59,7 @@ app.include_router(status_router)
 app.include_router(network_config_router)
 app.include_router(update_router)
 app.include_router(esp_firmware_router)
+app.include_router(hardware_config_router)
 app.include_router(esp_proxy_router)
 
 
@@ -86,7 +88,17 @@ async def page_ota(request: Request):
     return templates.TemplateResponse("ota.html", {"request": request})
 
 
-@app.get("/waage-config", response_class=HTMLResponse)
+@app.post("/api/v1/system/restart-services")
+async def restart_services():
+    import subprocess
+    try:
+        subprocess.Popen(
+            ["sudo", "systemctl", "restart", "wage-pi-leds", "wage-pi-oled"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "detail": str(e)}
 async def page_waage_config(request: Request):
     return templates.TemplateResponse("waage_config.html", {"request": request})
 

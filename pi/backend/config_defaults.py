@@ -13,4 +13,8 @@ DEFAULTS = {
     "client_dhcp_enabled": "true",
     "last_network_apply_status": "never",
     "last_network_apply_at": "",
+    # Pi Hardware
+    "pi_led_count": "8",
+    "pi_led_brightness": "32",
+    "pi_oled_rotation": "0",
 }

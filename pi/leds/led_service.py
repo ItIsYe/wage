@@ -7,8 +7,27 @@ from pathlib import Path
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 POLL_SECONDS = 1.0
 REINIT_SECONDS = 10.0
-LED_COUNT = int(os.getenv("WAGE_PI_LED_COUNT", "8"))
-LED_BRIGHTNESS = max(0, min(255, int(os.getenv("WAGE_PI_LED_BRIGHTNESS", "32"))))
+
+
+def _get_hw_config() -> dict:
+    try:
+        with sqlite3.connect(DB) as c:
+            rows = c.execute(
+                "SELECT key, value FROM app_state WHERE key IN ('pi_led_count','pi_led_brightness')"
+            ).fetchall()
+            return {r[0]: r[1] for r in rows}
+    except Exception:
+        return {}
+
+
+def _get_led_count() -> int:
+    hw = _get_hw_config()
+    return int(hw.get("pi_led_count", os.getenv("WAGE_PI_LED_COUNT", "8")))
+
+
+def _get_led_brightness() -> int:
+    hw = _get_hw_config()
+    return max(0, min(255, int(hw.get("pi_led_brightness", os.getenv("WAGE_PI_LED_BRIGHTNESS", "32")))))
 
 try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
@@ -54,7 +73,7 @@ def is_online(last_seen: str | None) -> bool:
 def make_strip():
     from rpi_ws281x import Color, PixelStrip
 
-    strip = PixelStrip(LED_COUNT, 18, brightness=LED_BRIGHTNESS)
+    strip = PixelStrip(_get_led_count(), 18, brightness=_get_led_brightness())
     strip.begin()
     return strip, Color
 

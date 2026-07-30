@@ -877,3 +877,42 @@ function setOtaStatus(msg, percent) {
     if (pct) pct.textContent = percent + '%';
   }
 }
+
+
+// === Pi Hardware Konfiguration ===
+
+async function loadHardwareConfig() {
+  if (!document.getElementById('pi-led-count')) return;
+  try {
+    const d = await api('/api/v1/config/hardware');
+    document.getElementById('pi-led-count').value = d.pi_led_count ?? 8;
+    document.getElementById('pi-led-brightness').value = d.pi_led_brightness ?? 32;
+    document.getElementById('pi-oled-rotation').value = d.pi_oled_rotation ?? 0;
+  } catch (e) {
+    const el = document.getElementById('hardware-msg');
+    if (el) { el.textContent = 'Laden fehlgeschlagen: ' + e.message; el.className = 'msg msg-err'; }
+  }
+}
+
+async function saveHardwareConfig() {
+  const el = document.getElementById('hardware-msg');
+  try {
+    const payload = {
+      pi_led_count: parseInt(document.getElementById('pi-led-count').value),
+      pi_led_brightness: parseInt(document.getElementById('pi-led-brightness').value),
+      pi_oled_rotation: parseInt(document.getElementById('pi-oled-rotation').value),
+    };
+    const d = await api('/api/v1/config/hardware', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    if (el) { el.textContent = d.message || 'Gespeichert.'; el.className = 'msg msg-ok'; }
+    // Dienste neu starten
+    await fetch('/api/v1/system/restart-services', { method: 'POST' }).catch(() => {});
+  } catch (e) {
+    if (el) { el.textContent = 'Fehler: ' + e.message; el.className = 'msg msg-err'; }
+  }
+}
+
+loadHardwareConfig();

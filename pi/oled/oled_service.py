@@ -8,6 +8,17 @@ DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 OLED_ADDRESS = int(os.getenv("WAGE_PI_OLED_ADDRESS", "0x3c"), 16)
 REINIT_SECONDS = 10
 
+
+def _get_hw_config() -> dict:
+    try:
+        with sqlite3.connect(DB) as c:
+            rows = c.execute(
+                "SELECT key, value FROM app_state WHERE key IN ('pi_oled_rotation')"
+            ).fetchall()
+            return {r[0]: r[1] for r in rows}
+    except Exception:
+        return {}
+
 try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
 except Exception:
@@ -95,11 +106,13 @@ if __name__ == "__main__":
                     qrcode = None
 
                 serial = i2c(port=1, address=OLED_ADDRESS)
+                hw = _get_hw_config()
+                rotation = int(hw.get("pi_oled_rotation", "0"))
                 try:
-                    dev = ssd1306(serial)
+                    dev = ssd1306(serial, rotate=rotation)
                     driver = "ssd1306"
                 except Exception:
-                    dev = sh1106(serial)
+                    dev = sh1106(serial, rotate=rotation)
                     driver = "sh1106"
                 set_status(f"running:{driver}")
             except Exception as exc:
