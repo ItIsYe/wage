@@ -268,6 +268,27 @@ def _run_background_update_job() -> None:
 def update_status():
     state = _read_state(["last_update_status", "last_update_at", "last_update_ui_state", "last_update_ui_message", "last_update_progress_step", "last_update_progress_percent"])
     mode = _network_mode()
+
+    # Wenn ui_state "updating" ist aber kein aktiver Job läuft (nach Neustart),
+    # auf no_update zurücksetzen damit der Browser nicht ewig bei X% hängt
+    persisted_ui_state = state.get("last_update_ui_state", "")
+    if persisted_ui_state == "updating":
+        # Prüfen ob der Background-Job noch läuft
+        import subprocess as _sp
+        try:
+            result = _sp.run(["pgrep", "-f", "run-update-job"], capture_output=True, timeout=3)
+            job_running = result.returncode == 0
+        except Exception:
+            job_running = False
+        if not job_running:
+            # Job läuft nicht mehr aber State ist noch "updating" -> Neustart hat ihn abgebrochen
+            _persist_update_state(
+                "unterbrochen durch Neustart", "", "", [], [], sorted(PROTECTED_RUNTIME_FILES),
+                ui_state="error", ui_message="Update wurde durch Neustart unterbrochen. Bitte erneut prüfen.",
+                progress_step="Unterbrochen", progress_percent=0
+            )
+            state = _read_state(["last_update_status", "last_update_at", "last_update_ui_state", "last_update_ui_message", "last_update_progress_step", "last_update_progress_percent"])
+
     if not _has_internet():
         return _response_payload(mode, state, "", "", [], [], sorted(PROTECTED_RUNTIME_FILES), ui_state="blocked", ui_message="Kein Internet verfügbar. Bitte LAN-Kabel einstecken.")
     _ensure_repo_and_git()
