@@ -20,7 +20,13 @@ def _get_hw_config() -> dict:
         return {}
 
 
+_service_start = time.time()
+STARTUP_GRACE_SECONDS = 120
+
+
 def _is_power_save() -> bool:
+    if time.time() - _service_start < STARTUP_GRACE_SECONDS:
+        return False
     try:
         hw = _get_hw_config()
         minutes = int(hw.get("power_save_after_minutes", "1"))

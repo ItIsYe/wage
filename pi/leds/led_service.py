@@ -30,7 +30,13 @@ def _get_led_brightness() -> int:
     return max(0, min(255, int(hw.get("pi_led_brightness", os.getenv("WAGE_PI_LED_BRIGHTNESS", "32")))))
 
 
+_service_start = time.time()
+STARTUP_GRACE_SECONDS = 120
+
+
 def _is_power_save() -> bool:
+    if time.time() - _service_start < STARTUP_GRACE_SECONDS:
+        return False
     try:
         hw = _get_hw_config()
         minutes = int(hw.get("power_save_after_minutes", "1"))
@@ -95,6 +101,17 @@ def make_strip():
     return strip, Color
 
 
+def boot_sequence(strip, Color):
+    """Langsames Hochdimmen beim Start: 0 -> volle Helligkeit in 2 Sekunden."""
+    steps = 20
+    for i in range(steps + 1):
+        brightness = int(255 * i / steps)
+        for j in range(strip.numPixels()):
+            strip.setPixelColor(j, Color(brightness // 3, brightness // 3, brightness // 3))
+        strip.show()
+        time.sleep(2.0 / steps)
+
+
 def fill(strip, value):
     for i in range(strip.numPixels()):
         strip.setPixelColor(i, value)
@@ -121,7 +138,7 @@ if __name__ == "__main__":
                 strip, Color = make_strip()
                 last_led_count = _get_led_count()
                 last_led_brightness = _get_led_brightness()
-                fill(strip, Color(90, 90, 90))
+                boot_sequence(strip, Color)
                 set_state("led_status", "starting:white")
             except Exception as exc:
                 set_state("led_status", f"degraded:{type(exc).__name__}")

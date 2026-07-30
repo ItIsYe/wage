@@ -13,9 +13,11 @@ from pathlib import Path
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 POLL_SECONDS = 10.0
+STARTUP_GRACE_SECONDS = 120  # Keine Power-Save in den ersten 2 Minuten nach Boot
 
 _screen_off = False
 _touch_wakeup = False
+_start_time = time.monotonic()
 
 
 def _get_config() -> dict:
@@ -31,6 +33,9 @@ def _get_config() -> dict:
 
 
 def _is_power_save() -> bool:
+    # Keine Power-Save in den ersten 2 Minuten nach Boot
+    if time.monotonic() - _start_time < STARTUP_GRACE_SECONDS:
+        return False
     try:
         cfg = _get_config()
         minutes = int(cfg.get("power_save_after_minutes", "1"))
@@ -46,32 +51,71 @@ def _is_power_save() -> bool:
         return False
 
 
-def _screen_off_cmd():
-    env = {**os.environ, "DISPLAY": ":0", "XAUTHORITY": f"/home/{os.getenv('USER','pi')}/.Xauthority"}
+def _set_backlight(on: bool) -> bool:
+    """Versucht verschiedene Methoden um das Display-Backlight zu steuern."""
+    value = "255" if on else "0"
+    power = "1" if on else "0"
+
+    # Methode 1: /sys/class/backlight (Waveshare DSI)
+    import glob
+    for bl_path in glob.glob("/sys/class/backlight/*/brightness"):
+        try:
+            with open(bl_path, "w") as f:
+                f.write(value)
+            return True
+        except Exception:
+            pass
+
+    # Methode 2: rpi_backlight (Raspberry Pi offizieller Touchscreen)
     try:
-        subprocess.run(["vcgencmd", "display_power", "0", "7"],
-                       timeout=5, capture_output=True)
+        with open("/sys/class/backlight/rpi_backlight/brightness", "w") as f:
+            f.write(value)
+        return True
     except Exception:
         pass
+
+    # Methode 3: vcgencmd mit DSI Display ID 7
     try:
-        subprocess.run(["xset", "-display", ":0", "dpms", "force", "off"],
+        result = subprocess.run(
+            ["vcgencmd", "display_power", power, "7"],
+            timeout=5, capture_output=True
+        )
+        if result.returncode == 0:
+            return True
+    except Exception:
+        pass
+
+    # Methode 4: vcgencmd ohne Display ID
+    try:
+        result = subprocess.run(
+            ["vcgencmd", "display_power", power],
+            timeout=5, capture_output=True
+        )
+        if result.returncode == 0:
+            return True
+    except Exception:
+        pass
+
+    # Methode 5: xset dpms (X11 Fallback)
+    try:
+        env = {**os.environ, "DISPLAY": ":0",
+               "XAUTHORITY": f"/home/{os.getenv('USER','pi')}/.Xauthority"}
+        action = "on" if on else "off"
+        subprocess.run(["xset", "-display", ":0", "dpms", "force", action],
                        env=env, timeout=5, capture_output=True)
+        return True
     except Exception:
         pass
+
+    return False
+
+
+def _screen_off_cmd():
+    _set_backlight(False)
 
 
 def _screen_on_cmd():
-    env = {**os.environ, "DISPLAY": ":0", "XAUTHORITY": f"/home/{os.getenv('USER','pi')}/.Xauthority"}
-    try:
-        subprocess.run(["vcgencmd", "display_power", "1", "7"],
-                       timeout=5, capture_output=True)
-    except Exception:
-        pass
-    try:
-        subprocess.run(["xset", "-display", ":0", "dpms", "force", "on"],
-                       env=env, timeout=5, capture_output=True)
-    except Exception:
-        pass
+    _set_backlight(True)
 
 
 def _touch_watcher():
