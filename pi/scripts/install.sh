@@ -31,3 +31,8 @@ echo "Cronjob eingerichtet: ESP-Firmware-Sync alle 5 Minuten"
 echo "Installation abgeschlossen"
 echo "Start: sudo systemctl start wage-pi-backend wage-pi-oled wage-pi-leds"
 echo "Web:  http://<pi-ip>:8000"
+
+# Backlight Schreibrechte für wage User (für Screen-Save Service)
+echo 'SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chmod 666 /sys/class/backlight/%k/brightness"' | sudo tee /etc/udev/rules.d/99-backlight.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger

@@ -143,6 +143,19 @@ def _touch_watcher():
 def main():
     global _screen_off, _touch_wakeup
 
+    # Beim Start: last_run_received_at auf jetzt setzen damit nicht sofort Power-Save aktiv ist
+    try:
+        with sqlite3.connect(DB) as c:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            c.execute(
+                "INSERT INTO app_state(key,value) VALUES('last_run_received_at',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (now_iso,)
+            )
+            c.commit()
+    except Exception:
+        pass
+
     # Touch-Watcher in Hintergrund-Thread starten
     t = threading.Thread(target=_touch_watcher, daemon=True)
     t.start()
