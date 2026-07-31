@@ -5,10 +5,10 @@ Wants=wage-pi-backend.service
 
 [Service]
 Type=simple
-User=pi
+User=wage
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
-ExecStart=/home/pi/wage/pi/scripts/kiosk_start.sh
+Environment=XAUTHORITY=/home/wage/.Xauthority
+ExecStart=/home/wage/wage/pi/scripts/kiosk_start.sh
 Restart=always
 RestartSec=5
 
