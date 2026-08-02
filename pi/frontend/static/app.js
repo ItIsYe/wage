@@ -162,9 +162,11 @@ async function loadPersons() {
         <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:12px">${p.run_count || 0} Läufe</div>
         <div style="display:flex;flex-direction:column;gap:6px">
           <div style="display:flex;gap:6px">
-            <input id="rename-${p.id}" value="${esc(p.name)}" style="flex:1" ${p.id===1?"disabled":""}>
-            <button onclick="renamePerson(${p.id})" ${p.id===1?"disabled":""}>OK</button>
+            <input id="rename-${p.id}" value="${esc(p.name)}" style="flex:1" ${p.id===1?"disabled":""}  placeholder="Name">
+            <button onclick="renamePerson(${p.id})" ${p.id===1?"disabled":""}>✓</button>
           </div>
+          <input id="tags-${p.id}" value="${esc(p.tags||'')}" placeholder="Tags (kommagetrennt, z.B. Profi, Team A)" ${p.id===1?"disabled":""}>
+          <textarea id="note-${p.id}" rows="2" style="background:var(--bg-card2);border:1px solid var(--border);border-radius:6px;padding:8px;color:var(--text);font-size:.9rem;resize:vertical" placeholder="Notiz" ${p.id===1?"disabled":""}>${esc(p.note||'')}</textarea>
           <div style="display:flex;gap:6px">
             <button onclick="activatePerson(${p.id})" ${isActive?"disabled":""} style="flex:1">${isActive ? "Aktiv" : "Aktiv setzen"}</button>
             <button class="btn-danger" onclick="deletePerson(${p.id})" ${p.id===1?"disabled":""}>✕</button>
@@ -184,7 +186,16 @@ async function addPerson() {
   } catch (e) { flash(`Person konnte nicht angelegt werden: ${e.message}`); }
 }
 async function renamePerson(id) {
-  try { await api(`/api/v1/persons/${id}`, {method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify({name: byId(`rename-${id}`).value})}); await loadPersons(); flash("Person umbenannt.", true);} catch (e) { flash(`Umbenennen fehlgeschlagen: ${e.message}`); }
+  try {
+    const payload = {
+      name: byId(`rename-${id}`).value,
+      tags: (byId(`tags-${id}`)?.value || ''),
+      note: (byId(`note-${id}`)?.value || ''),
+    };
+    await api(`/api/v1/persons/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    await loadPersons();
+    flash('Person gespeichert.', true);
+  } catch (e) { flash(`Speichern fehlgeschlagen: ${e.message}`); }
 }
 async function deletePerson(id) {
   if (!confirm("Person wirklich löschen?")) return;

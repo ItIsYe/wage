@@ -24,7 +24,9 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS persons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                tags TEXT DEFAULT '',
+                note TEXT DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS devices (
@@ -88,6 +90,13 @@ def init_db() -> None:
                 conn.execute("ALTER TABLE devices ADD COLUMN last_ip TEXT")
             except sqlite3.OperationalError:
                 pass
+        per_cols = {row[0] for row in conn.execute("PRAGMA table_info(persons)").fetchall()}
+        for col, typedef in [("tags", "TEXT DEFAULT ''"), ("note", "TEXT DEFAULT ''")]:
+            if col not in per_cols:
+                try:
+                    conn.execute(f"ALTER TABLE persons ADD COLUMN {col} {typedef}")
+                except sqlite3.OperationalError:
+                    pass
         conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
         conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")

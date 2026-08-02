@@ -43,6 +43,8 @@ class PersonCreate(BaseModel):
 
 class PersonUpdate(BaseModel):
     name: str
+    tags: str = ""
+    note: str = ""
 
     @field_validator("name")
     @classmethod

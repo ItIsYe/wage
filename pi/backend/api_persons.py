@@ -48,7 +48,10 @@ def rename_person(person_id: int, payload: PersonUpdate):
         raise HTTPException(status_code=400, detail="Standardperson darf nicht umbenannt werden")
     with db_cursor() as (_, cur):
         try:
-            cur.execute("UPDATE persons SET name=? WHERE id=?", (payload.name, person_id))
+            cur.execute(
+                "UPDATE persons SET name=?, tags=?, note=? WHERE id=?",
+                (payload.name, payload.tags.strip(), payload.note.strip(), person_id)
+            )
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="Name existiert bereits")
         if cur.rowcount == 0:
