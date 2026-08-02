@@ -1007,3 +1007,35 @@ async function submitManualRun() {
 }
 
 initRunNew();
+
+async function guardEspPage() {
+  // Auf ESP-abhängigen Seiten: Buttons sperren wenn Waage offline
+  const espButtons = ['btn-ota-check','btn-ota-apply','btn-ota-sync'];
+  const hasEspButtons = espButtons.some(id => document.getElementById(id));
+  if (!hasEspButtons && !document.getElementById('esp-frame')) return;
+
+  try {
+    const s = await api('/api/v1/status');
+    if (!s.scale_online) {
+      // Warnung anzeigen
+      const msg = document.getElementById('msg');
+      if (msg) {
+        msg.textContent = '⚠️ Waage ist offline — Aktionen gesperrt. Bitte Waage einschalten und mit wage-net verbinden.';
+        msg.className = 'msg msg-err';
+      }
+      // Alle ESP-Buttons deaktivieren
+      espButtons.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) { btn.disabled = true; btn.title = 'Waage offline'; }
+      });
+      const reloadBtn = document.querySelector('button[onclick="reloadFrame()"]');
+      if (reloadBtn) { reloadBtn.disabled = true; reloadBtn.title = 'Waage offline'; }
+      // iFrame nicht laden
+      const frame = document.getElementById('esp-frame');
+      const loading = document.getElementById('esp-frame-loading');
+      if (loading) loading.textContent = 'Waage offline — iFrame nicht verfügbar.';
+    }
+  } catch (_) {}
+}
+
+guardEspPage();
