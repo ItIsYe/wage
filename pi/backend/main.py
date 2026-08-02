@@ -80,6 +80,11 @@ async def page_run_new(request: Request):
     return templates.TemplateResponse("run_new.html", {"request": request})
 
 
+@app.get("/runs/{run_id}", response_class=HTMLResponse)
+async def page_run_detail(request: Request, run_id: int):
+    return templates.TemplateResponse("run_detail.html", {"request": request, "run_id": run_id})
+
+
 @app.get("/runs", response_class=HTMLResponse)
 def runs_page(request: Request):
     return templates.TemplateResponse("runs.html", {"request": request})

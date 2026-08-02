@@ -124,6 +124,7 @@ async function loadRuns() {
         <td>${esc(r.received_at)}</td><td>${esc(r.status)}</td>
         <td><input id="run-note-${r.id}" value="${esc(r.note || "")}" maxlength="200"></td>
         <td>
+          <button onclick="window.location.href='/runs/'+${r.id}" style="background:var(--bg-card2);border:1px solid var(--border);color:var(--text)">Details</button>
           <button onclick="saveRun(${r.id})">Speichern</button>
           <button class="btn-danger" onclick="deleteRun(${r.id})">Löschen</button>
         </td>
@@ -1159,3 +1160,70 @@ async function loadStats(period = 'all') {
 }
 
 loadStats('all');
+
+
+// === Lauf-Detail Seite ===
+
+async function loadRunDetail() {
+  const idEl = document.getElementById('run-id');
+  if (!idEl) return;
+  const runId = idEl.textContent.trim();
+
+  try {
+    const d = await api(`/api/v1/runs/${runId}`);
+    const r = d.run;
+
+    // Messung
+    byId('d-weight').textContent = r.start_weight_g != null ? r.start_weight_g + ' g' : '—';
+    byId('d-min-weight').textContent = r.min_weight_g != null ? r.min_weight_g + ' g' : '—';
+    byId('d-time').textContent = r.time_ms != null ? (r.time_ms / 1000).toFixed(3) + ' s (' + r.time_ms + ' ms)' : '—';
+    byId('d-start-thr').textContent = r.start_drop_threshold_g != null ? r.start_drop_threshold_g + ' g' : '—';
+    byId('d-stop-thr').textContent = r.stop_rise_threshold_g != null ? r.stop_rise_threshold_g + ' g' : '—';
+    byId('d-status').textContent = r.status || '—';
+
+    // Gerät
+    byId('d-device').textContent = r.device_id || '—';
+    byId('d-firmware').textContent = r.firmware_version || '—';
+    byId('d-boot').textContent = r.boot_id || '—';
+    byId('d-run-nr').textContent = r.run_number || '—';
+    byId('d-event').textContent = r.event_id || '—';
+    byId('d-received').textContent = r.received_at ? r.received_at.replace('T', ' ').slice(0, 19) : '—';
+
+    // Status Badge
+    const badge = byId('run-status-badge');
+    if (badge) {
+      const ok = r.status === 'ok' || r.status === 'manual';
+      badge.innerHTML = `<span style="background:${ok ? 'var(--ok)' : 'var(--err)'};color:#fff;font-size:.75rem;font-weight:700;padding:3px 10px;border-radius:999px">${esc(r.status || '?')}</span>`;
+    }
+
+    // Bearbeiten
+    const sel = byId('edit-person');
+    sel.innerHTML = '<option value="">— keine Person —</option>' +
+      d.persons.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    if (r.person_id) sel.value = String(r.person_id);
+    byId('edit-note').value = r.note || '';
+
+  } catch (e) {
+    flash('Lauf konnte nicht geladen werden: ' + e.message);
+  }
+}
+
+async function saveRunDetail() {
+  const runId = document.getElementById('run-id')?.textContent.trim();
+  if (!runId) return;
+  try {
+    await api(`/api/v1/runs/${runId}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        person_id: parseInt(byId('edit-person').value) || null,
+        note: byId('edit-note').value,
+      }),
+    });
+    flash('Gespeichert.', true);
+  } catch (e) {
+    flash('Fehler: ' + e.message);
+  }
+}
+
+loadRunDetail();

@@ -206,6 +206,16 @@ def list_runs(limit: int = 50, search: str | None = None, person_id: int | None 
     return {"runs": rows, "count": len(rows)}
 
 
+@router.get("/{run_id}")
+def get_run(run_id: int):
+    with db_cursor() as (_, cur):
+        row = cur.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+        persons = [dict(p) for p in cur.execute("SELECT id, name FROM persons ORDER BY name").fetchall()]
+    return {"run": dict(row), "persons": persons}
+
+
 @router.put("/{run_id}")
 def update_run(run_id: int, payload: RunUpdate):
     with db_cursor() as (_, cur):

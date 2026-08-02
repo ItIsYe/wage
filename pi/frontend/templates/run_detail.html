@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+  <a href="/runs" style="color:var(--text-muted);text-decoration:none;font-size:1.2rem">←</a>
+  <h1 style="margin:0">Lauf #<span id="run-id">{{ run_id }}</span></h1>
+  <span id="run-status-badge"></span>
+</div>
+<div id="msg" class="msg"></div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+
+  <div class="card">
+    <h2>Messung</h2>
+    <table style="width:100%">
+      <tr><td style="color:var(--text-muted);width:50%">Startgewicht</td><td id="d-weight" style="font-family:monospace;font-weight:700"></td></tr>
+      <tr><td style="color:var(--text-muted)">Minimalgewicht</td><td id="d-min-weight" style="font-family:monospace"></td></tr>
+      <tr><td style="color:var(--text-muted)">Zeit</td><td id="d-time" style="font-family:monospace;font-weight:700"></td></tr>
+      <tr><td style="color:var(--text-muted)">Start-Schwelle</td><td id="d-start-thr" style="font-family:monospace"></td></tr>
+      <tr><td style="color:var(--text-muted)">Stop-Schwelle</td><td id="d-stop-thr" style="font-family:monospace"></td></tr>
+      <tr><td style="color:var(--text-muted)">Status</td><td id="d-status"></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Gerät</h2>
+    <table style="width:100%">
+      <tr><td style="color:var(--text-muted);width:50%">Gerät</td><td id="d-device"></td></tr>
+      <tr><td style="color:var(--text-muted)">Firmware</td><td id="d-firmware" style="font-family:monospace"></td></tr>
+      <tr><td style="color:var(--text-muted)">Boot-ID</td><td id="d-boot" style="font-family:monospace;font-size:.8rem"></td></tr>
+      <tr><td style="color:var(--text-muted)">Lauf-Nr.</td><td id="d-run-nr"></td></tr>
+      <tr><td style="color:var(--text-muted)">Event-ID</td><td id="d-event" style="font-family:monospace;font-size:.75rem;word-break:break-all"></td></tr>
+      <tr><td style="color:var(--text-muted)">Empfangen</td><td id="d-received" style="font-size:.85rem"></td></tr>
+    </table>
+  </div>
+
+</div>
+
+<div class="card">
+  <h2>Bearbeiten</h2>
+  <div class="pw-field">
+    <div>
+      <label>Person</label>
+      <select id="edit-person" style="width:100%"></select>
+    </div>
+    <div style="flex:2">
+      <label>Notiz</label>
+      <input type="text" id="edit-note" placeholder="Notiz..." maxlength="200" style="width:100%">
+    </div>
+    <button onclick="saveRunDetail()" style="align-self:flex-end">Speichern</button>
+  </div>
+</div>
+{% endblock %}
