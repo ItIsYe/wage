@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Statistiken</h1>
+<div id="msg" class="msg"></div>
+
+<div class="toolbar">
+  <button onclick="loadStats('today')" id="btn-today">Heute</button>
+  <button onclick="loadStats('week')"  id="btn-week">7 Tage</button>
+  <button onclick="loadStats('month')" id="btn-month">30 Tage</button>
+  <button onclick="loadStats('all')"   id="btn-all" style="background:var(--accent)">Gesamt</button>
+</div>
+
+<div class="grid" id="stats-kpis" style="margin-bottom:16px;"></div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+  <div class="card">
+    <h2>Läufe pro Person</h2>
+    <div id="stats-persons"></div>
+  </div>
+  <div class="card">
+    <h2>Letzte 7 Tage</h2>
+    <div id="stats-daily"></div>
+  </div>
+</div>
+{% endblock %}

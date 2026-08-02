@@ -15,6 +15,7 @@ from .api_network_config import router as network_config_router
 from .api_update import router as update_router
 from .api_esp_firmware import router as esp_firmware_router
 from .api_hardware_config import router as hardware_config_router
+from .api_stats import router as stats_router
 from .api_esp_proxy import router as esp_proxy_router
 from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
@@ -60,6 +61,12 @@ app.include_router(network_config_router)
 app.include_router(update_router)
 app.include_router(esp_firmware_router)
 app.include_router(hardware_config_router)
+app.include_router(stats_router)
+
+
+@app.get("/stats", response_class=HTMLResponse)
+async def page_stats(request: Request):
+    return templates.TemplateResponse("stats.html", {"request": request})
 app.include_router(esp_proxy_router)
 
 

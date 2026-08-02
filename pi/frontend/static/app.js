@@ -1062,3 +1062,76 @@ async function guardEspPage() {
 }
 
 guardEspPage();
+
+
+// === Statistiken ===
+
+async function loadStats(period = 'all') {
+  if (!document.getElementById('stats-kpis')) return;
+
+  // Aktiven Button markieren
+  ['today','week','month','all'].forEach(p => {
+    const btn = document.getElementById('btn-' + p);
+    if (btn) btn.style.background = p === period ? 'var(--ok)' : 'var(--accent)';
+  });
+
+  try {
+    const s = await api(`/api/v1/stats?period=${period}`);
+
+    // KPI Cards
+    document.getElementById('stats-kpis').innerHTML = `
+      <div class="card status-info">
+        <h3>Läufe gesamt</h3>
+        <div class="kpi">${s.total_runs}</div>
+      </div>
+      <div class="card status-info">
+        <h3>Ø Gewicht</h3>
+        <div class="kpi">${s.avg_weight_g !== null ? s.avg_weight_g + ' g' : '—'}</div>
+      </div>
+      <div class="card status-info">
+        <h3>Ø Zeit</h3>
+        <div class="kpi">${s.avg_time_ms !== null ? (s.avg_time_ms / 1000).toFixed(2) + ' s' : '—'}</div>
+      </div>
+      <div class="card status-ok">
+        <h3>Häufigste Person</h3>
+        <div class="kpi" style="font-size:1.2rem">${s.top_person ? esc(s.top_person.name) : '—'}</div>
+        ${s.top_person ? `<div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">${s.top_person.count} Läufe</div>` : ''}
+      </div>
+    `;
+
+    // Personen-Balken
+    const maxCnt = Math.max(...(s.per_person.map(p => p.count)), 1);
+    document.getElementById('stats-persons').innerHTML = s.per_person.length
+      ? s.per_person.map(p => `
+          <div style="margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:3px">
+              <span>${esc(p.name)}</span>
+              <span style="color:var(--text-muted)">${p.count}</span>
+            </div>
+            <div class="progress">
+              <div class="progress-bar" style="width:${Math.round(p.count/maxCnt*100)}%;background:var(--ok)"></div>
+            </div>
+          </div>`).join('')
+      : '<div style="color:var(--text-muted)">Keine Daten</div>';
+
+    // Tagesverlauf
+    const maxDay = Math.max(...(s.daily.map(d => d.count)), 1);
+    document.getElementById('stats-daily').innerHTML = s.daily.length
+      ? s.daily.map(d => `
+          <div style="margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:3px">
+              <span>${esc(d.day)}</span>
+              <span style="color:var(--text-muted)">${d.count}</span>
+            </div>
+            <div class="progress">
+              <div class="progress-bar" style="width:${Math.round(d.count/maxDay*100)}%"></div>
+            </div>
+          </div>`).join('')
+      : '<div style="color:var(--text-muted)">Keine Daten der letzten 7 Tage</div>';
+
+  } catch (e) {
+    flash('Statistiken konnten nicht geladen werden: ' + e.message);
+  }
+}
+
+loadStats('all');
