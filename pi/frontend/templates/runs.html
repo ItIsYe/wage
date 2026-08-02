@@ -3,7 +3,8 @@
 <h1>Läufe</h1>
 <div id="msg" class="msg"></div>
 <div class="toolbar">
-  <button onclick="window.location.href='/runs/new'" style="background:#2563eb;">+ Lauf erfassen</button>
+  <button onclick="window.location.href='/runs/new'" style="background:var(--ok);">+ Lauf erfassen</button>
+  <a href="/api/v1/runs/export/csv" download><button style="background:var(--bg-card2);border:1px solid var(--border);color:var(--text)">↓ CSV Export</button></a>
   <input id="search" placeholder="Suche (event/device/person/notiz)">
   <select id="person-filter"></select>
   <select id="status-filter"><option value="">Status alle</option><option value="ok">ok</option><option value="error">error</option></select>

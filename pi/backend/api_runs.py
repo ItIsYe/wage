@@ -239,3 +239,38 @@ def delete_run(run_id: int):
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
     return {"deleted": True}
+
+
+@router.get("/export/csv")
+def export_runs_csv():
+    """Alle Läufe als CSV-Download."""
+    import csv, io
+    from fastapi.responses import StreamingResponse
+
+    with db_cursor() as (_, cur):
+        rows = cur.execute(
+            "SELECT id, device_id, run_number, event_id, time_ms, start_weight_g, "
+            "min_weight_g, start_drop_threshold_g, stop_rise_threshold_g, "
+            "status, firmware_version, queue_depth, received_at, "
+            "person_id, person_name, note FROM runs ORDER BY id"
+        ).fetchall()
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow([
+        "id", "device_id", "run_number", "event_id", "time_ms", "start_weight_g",
+        "min_weight_g", "start_drop_threshold_g", "stop_rise_threshold_g",
+        "status", "firmware_version", "queue_depth", "received_at",
+        "person_id", "person_name", "note"
+    ])
+    for row in rows:
+        writer.writerow(list(row))
+
+    output.seek(0)
+    from datetime import datetime, timezone
+    filename = f"wage_runs_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
