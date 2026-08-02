@@ -20,6 +20,12 @@ def list_persons():
     with db_cursor() as (_, cur):
         persons = [dict(r) for r in cur.execute("SELECT * FROM persons ORDER BY id").fetchall()]
         active = cur.execute("SELECT value FROM app_state WHERE key='active_person_id'").fetchone()
+        # Laufanzahl pro Person
+        counts = {r[0]: r[1] for r in cur.execute(
+            "SELECT person_id, COUNT(*) FROM runs WHERE person_id IS NOT NULL GROUP BY person_id"
+        ).fetchall()}
+    for p in persons:
+        p["run_count"] = counts.get(p["id"], 0)
     return {"persons": persons, "active_person_id": int(active[0]) if active else 1}
 
 

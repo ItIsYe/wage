@@ -152,13 +152,26 @@ async function loadPersons() {
     const d = await api("/api/v1/persons");
     if (filter) filter.innerHTML = `<option value="">alle Personen</option>` + d.persons.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
     if (!root) return;
-    root.innerHTML = d.persons.map((p) => `<div class="card"><div class="kpi">${esc(p.name)}</div>
-      <div class="toolbar">
-        <input id="rename-${p.id}" value="${esc(p.name)}" ${p.id===1?"disabled":""}>
-        <button onclick="activatePerson(${p.id})" ${d.active_person_id===p.id?"disabled":""}>${d.active_person_id===p.id?"Aktiv":"Aktiv setzen"}</button>
-        <button onclick="renamePerson(${p.id})" ${p.id===1?"disabled":""}>Umbenennen</button>
-        <button class="btn-danger" onclick="deletePerson(${p.id})" ${p.id===1?"disabled":""}>Löschen</button>
-      </div></div>`).join("");
+    root.innerHTML = d.persons.map((p) => {
+      const isActive = d.active_person_id === p.id;
+      return `<div class="card ${isActive ? 'status-ok' : ''}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div class="kpi" style="font-size:1.3rem">${esc(p.name)}</div>
+          ${isActive ? '<span style="background:var(--ok);color:#fff;font-size:.75rem;font-weight:700;padding:3px 8px;border-radius:999px">AKTIV</span>' : ''}
+        </div>
+        <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:12px">${p.run_count || 0} Läufe</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;gap:6px">
+            <input id="rename-${p.id}" value="${esc(p.name)}" style="flex:1" ${p.id===1?"disabled":""}>
+            <button onclick="renamePerson(${p.id})" ${p.id===1?"disabled":""}>OK</button>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button onclick="activatePerson(${p.id})" ${isActive?"disabled":""} style="flex:1">${isActive ? "Aktiv" : "Aktiv setzen"}</button>
+            <button class="btn-danger" onclick="deletePerson(${p.id})" ${p.id===1?"disabled":""}>✕</button>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
   } catch (e) { flash(`Personen konnten nicht geladen werden: ${e.message}`); }
 }
 
