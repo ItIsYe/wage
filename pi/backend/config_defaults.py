@@ -16,6 +16,8 @@ DEFAULTS = {
     # Pi Hardware
     "pi_led_count": "8",
     "pi_led_brightness": "32",
+    "pi_led_strip_count": "4",
+    "pi_led_strip_pixels": "40",
     "pi_oled_rotation": "0",
     "power_save_after_minutes": "1",
 }

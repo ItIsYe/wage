@@ -909,7 +909,10 @@ async function loadHardwareConfig() {
   if (!document.getElementById('pi-led-count')) return;
   try {
     const d = await api('/api/v1/config/hardware');
-    document.getElementById('pi-led-count').value = d.pi_led_count ?? 8;
+    const stripCountEl = document.getElementById('pi-led-strip-count');
+    if (stripCountEl) stripCountEl.value = d.pi_led_strip_count ?? 4;
+    const stripPixelsEl = document.getElementById('pi-led-strip-pixels');
+    if (stripPixelsEl) stripPixelsEl.value = d.pi_led_strip_pixels ?? 40;
     document.getElementById('pi-led-brightness').value = d.pi_led_brightness ?? 32;
     document.getElementById('pi-oled-rotation').value = d.pi_oled_rotation ?? 0;
     const psEl = document.getElementById('power-save-after-minutes');
@@ -924,7 +927,8 @@ async function saveHardwareConfig() {
   const el = document.getElementById('hardware-msg');
   try {
     const payload = {
-      pi_led_count: parseInt(document.getElementById('pi-led-count').value),
+      pi_led_strip_count: parseInt(document.getElementById('pi-led-strip-count')?.value ?? '4'),
+      pi_led_strip_pixels: parseInt(document.getElementById('pi-led-strip-pixels')?.value ?? '40'),
       pi_led_brightness: parseInt(document.getElementById('pi-led-brightness').value),
       pi_oled_rotation: parseInt(document.getElementById('pi-oled-rotation').value),
       power_save_after_minutes: parseInt(document.getElementById('power-save-after-minutes')?.value ?? '1'),

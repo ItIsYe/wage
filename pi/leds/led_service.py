@@ -13,16 +13,26 @@ def _get_hw_config() -> dict:
     try:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
-                "SELECT key, value FROM app_state WHERE key IN ('pi_led_count','pi_led_brightness','power_save_after_minutes','last_run_received_at')"
+                "SELECT key, value FROM app_state WHERE key IN "
+                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels',"
+                "'power_save_after_minutes','last_run_received_at')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
     except Exception:
         return {}
 
 
-def _get_led_count() -> int:
+def _get_strip_config() -> tuple[int, int]:
+    """Gibt (strip_count, pixels_per_strip) zurück."""
     hw = _get_hw_config()
-    return int(hw.get("pi_led_count", os.getenv("WAGE_PI_LED_COUNT", "8")))
+    strip_count = int(hw.get("pi_led_strip_count", "4"))
+    strip_pixels = int(hw.get("pi_led_strip_pixels", "40"))
+    return strip_count, strip_pixels
+
+
+def _get_led_count() -> int:
+    strip_count, strip_pixels = _get_strip_config()
+    return strip_count * strip_pixels
 
 
 def _get_led_brightness() -> int:
@@ -116,6 +126,33 @@ def fill(strip, value):
     for i in range(strip.numPixels()):
         strip.setPixelColor(i, value)
     strip.show()
+
+
+def fill_strip(strip, strip_index: int, value, strip_pixels: int):
+    """Einen einzelnen Streifen füllen."""
+    start = strip_index * strip_pixels
+    end = start + strip_pixels
+    for i in range(start, min(end, strip.numPixels())):
+        strip.setPixelColor(i, value)
+    strip.show()
+
+
+def fill_strips(strip, values: list, strip_pixels: int):
+    """Jeden Streifen mit eigenem Wert füllen. values = Liste von Colors."""
+    for idx, color in enumerate(values):
+        start = idx * strip_pixels
+        end = start + strip_pixels
+        for i in range(start, min(end, strip.numPixels())):
+            strip.setPixelColor(i, color)
+    strip.show()
+
+
+def set_pixel(strip, strip_index: int, pixel_index: int, value, strip_pixels: int):
+    """Einzelnen Pixel auf einem Streifen setzen."""
+    pos = strip_index * strip_pixels + pixel_index
+    if pos < strip.numPixels():
+        strip.setPixelColor(pos, value)
+        strip.show()
 
 
 if __name__ == "__main__":
