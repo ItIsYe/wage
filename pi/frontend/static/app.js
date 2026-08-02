@@ -226,16 +226,35 @@ function renderDashboardData(s) {
   const root = byId("dash-main");
   if (!root) return;
   const last = s.last_run || {};
+  const onlineCls = s.scale_online ? "status-ok" : "status-err";
+  const apiCls = (s.api_status === "ok" && s.database_status === "ok") ? "status-ok" : "status-err";
   root.innerHTML = `
-    <div class="card ${statusTone(s.scale_online)}"><h3>Waage</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Letzter Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
-    <div class="card ${statusTone(s.api_status)}"><h3>API / Datenbank</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div><div>${esc(s.pi_url || "-")}</div></div>
-    <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status || "-")}</div><div>last_event: ${esc(s.last_event || "-")}</div></div>
-    <div class="card ${statusTone(s.oled_status)}"><h3>OLED</h3><div class="kpi">${esc(s.oled_status || "-")}</div><div>Aktive Person: ${esc(s.active_person?.name || "-")}</div></div>
-    <div class="card status-info"><h3>Letzter Lauf</h3><div class="kpi">#${esc(last.id || "-")}</div><div>Zeit: ${esc(last.time_ms || "-")} ms · Start: ${esc(last.start_weight_g || "-")} g</div></div>
+    <div class="card ${onlineCls}">
+      <h3>Waage</h3>
+      <div class="kpi">${s.scale_online ? "Online" : "Offline"}</div>
+      <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">${esc(s.last_contact_to_scale ? s.last_contact_to_scale.replace("T"," ").slice(0,19) : "—")}</div>
+    </div>
+    <div class="card ${apiCls}">
+      <h3>System</h3>
+      <div class="kpi">${esc(s.api_status || "—")}</div>
+      <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">${esc(s.pi_url || "—")}</div>
+    </div>
+    <div class="card status-info">
+      <h3>Aktive Person</h3>
+      <div class="kpi" style="font-size:1.3rem">${esc(s.active_person?.name || "—")}</div>
+    </div>
+    <div class="card status-info">
+      <h3>Letzter Lauf</h3>
+      <div class="kpi">${last.id ? "#" + esc(last.id) : "—"}</div>
+      <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">${last.start_weight_g ? esc(last.start_weight_g) + " g · " + esc(last.time_ms) + " ms" : ""}</div>
+    </div>
   `;
   byId("dash-runs").innerHTML = (s.recent_runs || []).map((r) =>
-    `<div class="list-row">#${esc(r.id)} · Lauf ${esc(r.run_number)} · ${esc(r.person_name || "-")} · ${esc(r.start_weight_g)} g · ${esc(r.received_at)}</div>`
-  ).join("") || "Keine Läufe vorhanden.";
+    `<div class="list-row" style="display:flex;justify-content:space-between;align-items:center">
+      <span><strong>#${esc(r.id)}</strong> &nbsp; ${esc(r.person_name || "—")}</span>
+      <span style="color:var(--text-muted);font-size:.85rem">${esc(r.start_weight_g)} g &nbsp;·&nbsp; ${esc(r.received_at ? r.received_at.replace("T"," ").slice(0,19) : "—")}</span>
+    </div>`
+  ).join("") || '<div style="color:var(--text-muted);padding:12px 0">Noch keine Läufe vorhanden.</div>';
 }
 
 
