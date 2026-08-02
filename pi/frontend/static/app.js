@@ -925,3 +925,67 @@ async function saveHardwareConfig() {
 }
 
 loadHardwareConfig();
+
+
+// === Manueller Lauf ===
+
+async function initRunNew() {
+  if (!byId('manual-weight')) return;
+
+  // Datum/Zeit auf jetzt vorausfüllen
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString().slice(0, 16);
+  byId('manual-datetime').value = local;
+
+  // Personen laden
+  try {
+    const data = await api('/api/v1/persons');
+    const sel = byId('manual-person');
+    sel.innerHTML = '<option value="">— keine Person —</option>';
+    (data.persons || []).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      sel.appendChild(o);
+    });
+  } catch (_) {}
+}
+
+async function submitManualRun() {
+  const weight = parseFloat(byId('manual-weight').value);
+  if (isNaN(weight) || weight <= 0) {
+    flash('Bitte ein gültiges Gewicht eingeben.');
+    return;
+  }
+
+  const datetimeVal = byId('manual-datetime').value;
+  let receivedAt = null;
+  if (datetimeVal) {
+    receivedAt = new Date(datetimeVal).toISOString();
+  }
+
+  const payload = {
+    start_weight_g: weight,
+    time_ms: parseInt(byId('manual-time-ms').value) || 0,
+    person_id: byId('manual-person').value || null,
+    received_at: receivedAt,
+    note: byId('manual-note').value || '',
+    status: byId('manual-status').value || 'manual',
+  };
+
+  try {
+    const result = await api('/api/v1/runs/manual', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (result.ok) {
+      window.location.href = '/runs';
+    }
+  } catch (e) {
+    flash('Fehler beim Speichern: ' + e.message);
+  }
+}
+
+initRunNew();

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Lauf erfassen</h1>
+<div id="msg" class="msg"></div>
+
+<div class="card">
+  <div class="pw-field">
+    <label>Startgewicht (g) *</label>
+    <input type="number" id="manual-weight" step="0.001" min="0" placeholder="z.B. 1335.286" autofocus>
+  </div>
+  <div class="pw-field">
+    <label>Zeit (ms) — Dauer des Laufs</label>
+    <input type="number" id="manual-time-ms" min="0" value="0" placeholder="0">
+  </div>
+  <div class="pw-field">
+    <label>Person</label>
+    <select id="manual-person"></select>
+  </div>
+  <div class="pw-field">
+    <label>Datum / Uhrzeit</label>
+    <input type="datetime-local" id="manual-datetime">
+  </div>
+  <div class="pw-field">
+    <label>Notiz</label>
+    <input type="text" id="manual-note" placeholder="Optional">
+  </div>
+  <div class="pw-field">
+    <label>Status</label>
+    <select id="manual-status">
+      <option value="ok">ok</option>
+      <option value="manual">manual</option>
+      <option value="error">error</option>
+    </select>
+  </div>
+
+  <div class="toolbar" style="margin-top:16px;">
+    <button onclick="submitManualRun()">Lauf speichern</button>
+    <button onclick="window.location.href='/runs'" class="btn-secondary">Abbrechen</button>
+  </div>
+</div>
+{% endblock %}

@@ -68,6 +68,11 @@ def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 
+@app.get("/runs/new", response_class=HTMLResponse)
+async def page_run_new(request: Request):
+    return templates.TemplateResponse("run_new.html", {"request": request})
+
+
 @app.get("/runs", response_class=HTMLResponse)
 def runs_page(request: Request):
     return templates.TemplateResponse("runs.html", {"request": request})

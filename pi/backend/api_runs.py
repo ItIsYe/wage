@@ -130,6 +130,54 @@ def receive_batch(payload: RunBatchIn):
     return {"accepted": True, "count": len(results), "results": results}
 
 
+@router.post("/manual", status_code=201)
+def create_manual_run(payload: dict):
+    """Manuell erfassten Lauf in die DB eintragen."""
+    weight = payload.get("start_weight_g")
+    if weight is None:
+        raise HTTPException(status_code=400, detail="start_weight_g fehlt")
+    try:
+        weight = float(weight)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="start_weight_g muss eine Zahl sein")
+
+    received_at = payload.get("received_at") or utc_now_iso()
+    person_id = payload.get("person_id")
+    person_name = None
+    if person_id:
+        with db_cursor() as (_, cur):
+            p = cur.execute("SELECT name FROM persons WHERE id=?", (int(person_id),)).fetchone()
+            if p:
+                person_name = p["name"]
+
+    import uuid
+    event_id = f"manual-{uuid.uuid4().hex[:12]}"
+
+    with db_cursor() as (_, cur):
+        cur.execute(
+            """INSERT INTO runs (device_id, boot_id, run_number, event_id, time_ms, start_weight_g,
+            status, firmware_version, queue_depth, received_at, person_id, person_name, note)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "manual",
+                0,
+                0,
+                event_id,
+                int(payload.get("time_ms", 0)),
+                weight,
+                payload.get("status", "manual"),
+                "manual",
+                0,
+                received_at,
+                int(person_id) if person_id else None,
+                person_name,
+                payload.get("note", ""),
+            ),
+        )
+        run_id = cur.lastrowid
+    return {"ok": True, "id": run_id}
+
+
 @router.get("")
 def list_runs(limit: int = 50, search: str | None = None, person_id: int | None = None, status: str | None = None, sort: str = "id_desc"):
     query = "SELECT * FROM runs WHERE 1=1"
