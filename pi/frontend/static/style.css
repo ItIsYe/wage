@@ -45,3 +45,5 @@ body.touch-keyboard-open{padding-bottom:var(--touch-keyboard-height,0)}
 #update-overlay .ov-bar-wrap{width:300px;background:rgba(255,255,255,0.15);border-radius:8px;height:18px;overflow:hidden}
 #update-overlay .ov-bar{height:100%;border-radius:8px;background:linear-gradient(90deg,#2a7,#4cf);width:0%;transition:width 0.4s}
 #update-overlay .ov-percent{color:#fff;font-size:0.85em}
+
+nav a.disabled{opacity:.35;pointer-events:none;cursor:not-allowed;}

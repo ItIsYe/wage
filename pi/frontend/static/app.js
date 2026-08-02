@@ -72,9 +72,11 @@ function statusTone(v) {
 }
 
 async function loadDashboard() {
-  if (!byId("dash-main")) return;
+  // Status auch auf Nicht-Dashboard-Seiten für Nav-Links laden
   try {
     const s = await api("/api/v1/status");
+    updateWaageNavLinks(s.scale_online);
+    if (!byId("dash-main")) return;
     renderDashboardData(s);
     flash("", true);
   } catch (e) {
@@ -204,7 +206,23 @@ loadRuns();
   connect();
 })();
 
+function updateWaageNavLinks(online) {
+  const ids = ['nav-waage-config', 'nav-ota'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (online) {
+      el.classList.remove('disabled');
+      el.removeAttribute('title');
+    } else {
+      el.classList.add('disabled');
+      el.setAttribute('title', 'Waage ist offline');
+    }
+  });
+}
+
 function renderDashboardData(s) {
+  updateWaageNavLinks(s.scale_online);
   const root = byId("dash-main");
   if (!root) return;
   const last = s.last_run || {};
