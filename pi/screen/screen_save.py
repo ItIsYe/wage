@@ -14,6 +14,7 @@ DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 BACKLIGHT = Path("/sys/class/backlight/10-0045/brightness")
 POLL_SECONDS = 10.0
 STARTUP_GRACE_SECONDS = 120
+SHUTDOWN_AFTER_MINUTES = 10
 
 _screen_off = False
 _touch_wakeup = False
@@ -33,7 +34,6 @@ def _get_config() -> dict:
 
 
 def _is_power_save() -> bool:
-    # Keine Power-Save in den ersten 2 Minuten nach Boot
     if time.monotonic() - _start_time < STARTUP_GRACE_SECONDS:
         return False
     try:
@@ -49,6 +49,28 @@ def _is_power_save() -> bool:
         return elapsed >= minutes
     except Exception:
         return False
+
+
+def _inactivity_minutes() -> float:
+    """Gibt zurück wie viele Minuten seit dem letzten Lauf vergangen sind."""
+    try:
+        cfg = _get_config()
+        last_run = cfg.get("last_run_received_at", "")
+        if not last_run:
+            return 0.0
+        last = datetime.fromisoformat(last_run)
+        return (datetime.now(timezone.utc) - last).total_seconds() / 60
+    except Exception:
+        return 0.0
+
+
+def _shutdown():
+    """Pi herunterfahren."""
+    import subprocess
+    try:
+        subprocess.run(["sudo", "shutdown", "-h", "now"], timeout=10)
+    except Exception:
+        pass
 
 
 def _screen_off_cmd():
@@ -136,6 +158,11 @@ def main():
             elif not should_save and _screen_off:
                 _screen_on_cmd()
                 _screen_off = False
+
+            # Auto-Shutdown nach 10 Minuten Inaktivität
+            if time.monotonic() - _start_time >= STARTUP_GRACE_SECONDS:
+                if _inactivity_minutes() >= SHUTDOWN_AFTER_MINUTES:
+                    _shutdown()
 
         except Exception:
             pass
