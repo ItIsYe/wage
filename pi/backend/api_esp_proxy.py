@@ -1,24 +1,49 @@
 from __future__ import annotations
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Request
+from fastapi.responses import HTMLResponse, Response
 
 from .database import db_cursor
 
 router = APIRouter(prefix="/esp-proxy", tags=["esp-proxy"])
 
-PROXY_TIMEOUT = 8.0
+PROXY_TIMEOUT = 5.0
+
+_ERROR_PAGE = """<!doctype html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Waage nicht erreichbar</title>
+<style>
+body{{font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;
+justify-content:center;min-height:60vh;margin:0;background:#f4f6f8;color:#1f2937}}
+.card{{background:#fff;border-radius:12px;padding:2em 2.5em;box-shadow:0 2px 8px rgba(0,0,0,.08);
+text-align:center;max-width:400px}}
+h2{{color:#dc2626;margin-top:0}}
+p{{color:#6b7280}}
+a{{display:inline-block;margin-top:1em;padding:.6em 1.4em;background:#2563eb;color:#fff;
+text-decoration:none;border-radius:8px;font-weight:700}}
+</style></head><body>
+<div class="card">
+<h2>⚠️ Waage nicht erreichbar</h2>
+<p>{detail}</p>
+<p>Bitte sicherstellen dass die Waage eingeschaltet und mit <strong>wage-net</strong> verbunden ist.</p>
+<a href="/runs">← Zurück zu den Läufen</a>
+</div></body></html>"""
 
 
-def _get_esp_ip() -> str:
-    with db_cursor() as (_, cur):
-        row = cur.execute(
-            "SELECT last_ip FROM devices WHERE last_ip IS NOT NULL ORDER BY last_seen_at DESC LIMIT 1"
-        ).fetchone()
-    if not row or not row["last_ip"]:
-        raise HTTPException(status_code=503, detail="ESP-IP unbekannt — noch kein Heartbeat empfangen.")
-    return row["last_ip"]
+def _get_esp_ip() -> str | None:
+    try:
+        with db_cursor() as (_, cur):
+            row = cur.execute(
+                "SELECT last_ip FROM devices WHERE last_ip IS NOT NULL ORDER BY last_seen_at DESC LIMIT 1"
+            ).fetchone()
+        return row["last_ip"] if row and row["last_ip"] else None
+    except Exception:
+        return None
+
+
+def _error_page(detail: str) -> HTMLResponse:
+    return HTMLResponse(content=_ERROR_PAGE.format(detail=detail), status_code=200)
 
 
 @router.get("/", operation_id="esp_proxy_get_root")
@@ -37,9 +62,10 @@ async def proxy_to_esp_post(path: str, request: Request):
 
 
 async def _proxy(path: str, request: Request):
-    """Proxied alle Anfragen transparent an das ESP32-Webinterface.
-    Funktioniert unabhängig vom Netzwerkmodus des Pi."""
     esp_ip = _get_esp_ip()
+    if not esp_ip:
+        return _error_page("ESP-IP unbekannt — noch kein Heartbeat empfangen.")
+
     url = f"http://{esp_ip}/{path}"
     if request.url.query:
         url += f"?{request.url.query}"
@@ -57,9 +83,11 @@ async def _proxy(path: str, request: Request):
                 follow_redirects=True,
             )
     except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail=f"ESP nicht erreichbar unter {esp_ip}")
+        return _error_page(f"Verbindung zu {esp_ip} fehlgeschlagen.")
     except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Timeout beim Verbinden mit dem ESP")
+        return _error_page(f"Timeout beim Verbinden mit {esp_ip}.")
+    except Exception as e:
+        return _error_page(f"Unbekannter Fehler: {e}")
 
     content_type = esp_response.headers.get("content-type", "text/html; charset=utf-8")
     content = esp_response.content
