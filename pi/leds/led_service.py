@@ -111,7 +111,31 @@ def make_strip():
     return strip, Color
 
 
-def boot_sequence(strip, Color):
+def green_wave(strip, Color, strip_count: int, strip_pixels: int):
+    """Grüne Welle läuft nacheinander durch alle Streifen nach einem Lauf."""
+    tail = 8  # Schweif-Länge
+    speed = 0.02  # Sekunden pro Schritt
+
+    for s in range(strip_count):
+        start = s * strip_pixels
+        # Streifen davor dunkel lassen
+        for pos in range(strip_pixels + tail):
+            # Pixel vor dem Kopf aufleuchten, Schweif abdimmen
+            for t in range(tail + 1):
+                pixel = start + pos - t
+                if 0 <= pixel < start + strip_pixels and pixel < strip.numPixels():
+                    brightness = int(180 * (1 - t / tail))
+                    strip.setPixelColor(pixel, Color(0, brightness, 0))
+            # Hinter dem Schweif löschen
+            clear_pos = start + pos - tail - 1
+            if start <= clear_pos < start + strip_pixels and clear_pos < strip.numPixels():
+                strip.setPixelColor(clear_pos, Color(0, 0, 0))
+            strip.show()
+            time.sleep(speed)
+        # Streifen nach Welle löschen
+        for i in range(start, min(start + strip_pixels, strip.numPixels())):
+            strip.setPixelColor(i, Color(0, 0, 0))
+        strip.show()
     """Langsames Hochdimmen beim Start: 0 -> volle Helligkeit in 2 Sekunden."""
     steps = 20
     for i in range(steps + 1):
@@ -209,6 +233,10 @@ if __name__ == "__main__":
             new_run_id = s["last_run_id"]
             if last_run_id is not None and new_run_id and new_run_id != last_run_id:
                 blink_until = now + 5.0
+                # Grüne Welle sofort auslösen
+                if strip and Color:
+                    sc, sp = _get_strip_config()
+                    green_wave(strip, Color, sc, sp)
             last_run_id = new_run_id
 
             if now < blink_until:
@@ -221,7 +249,7 @@ if __name__ == "__main__":
                     fill(strip, Color(6, 6, 6))
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
-                    fill(strip, Color(0, 180, 0))  # grün für 5s
+                    pass  # Welle wurde bereits beim Erkennen abgespielt
                 elif status == "fatal:red_blink":
                     blink_toggle = not blink_toggle
                     fill(strip, Color(150 if blink_toggle else 0, 0, 0))
