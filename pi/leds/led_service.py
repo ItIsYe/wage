@@ -136,6 +136,9 @@ def green_wave(strip, Color, strip_count: int, strip_pixels: int):
         for i in range(start, min(start + strip_pixels, strip.numPixels())):
             strip.setPixelColor(i, Color(0, 0, 0))
         strip.show()
+
+
+def boot_sequence(strip, Color):
     """Langsames Hochdimmen beim Start: 0 -> volle Helligkeit in 2 Sekunden."""
     steps = 20
     for i in range(steps + 1):
@@ -144,6 +147,51 @@ def green_wave(strip, Color, strip_count: int, strip_pixels: int):
             strip.setPixelColor(j, Color(brightness // 3, brightness // 3, brightness // 3))
         strip.show()
         time.sleep(2.0 / steps)
+        time.sleep(2.0 / steps)
+
+
+
+# === LED Patterns (nicht-blockierend via State) ===
+
+class RainbowState:
+    def __init__(self): self.hue = 0
+
+class PulseState:
+    def __init__(self, color_fn): self.phase = 0.0; self.color_fn = color_fn
+
+
+def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
+    """Regenbogen: jeder Pixel hat leicht versetzten Farbton."""
+    import math
+    for i in range(total_pixels):
+        hue = (state.hue + i * 256 // total_pixels) % 256
+        # HSV -> RGB vereinfacht
+        h = hue / 255.0 * 6.0
+        s = int(h) % 6
+        f = h - int(h)
+        v = 120
+        if s == 0:   r,g,b = v, int(v*f), 0
+        elif s == 1: r,g,b = int(v*(1-f)), v, 0
+        elif s == 2: r,g,b = 0, v, int(v*f)
+        elif s == 3: r,g,b = 0, int(v*(1-f)), v
+        elif s == 4: r,g,b = int(v*f), 0, v
+        else:        r,g,b = v, 0, int(v*(1-f))
+        if i < strip.numPixels():
+            strip.setPixelColor(i, Color(r, g, b))
+    strip.show()
+    state.hue = (state.hue + 2) % 256
+
+
+def pulse_tick(strip, Color, state: PulseState, total_pixels: int):
+    """Pulsen/Atmen: Helligkeit sinusförmig."""
+    import math
+    brightness = int((math.sin(state.phase) + 1) / 2 * 80 + 10)
+    r, g, b = state.color_fn(brightness)
+    for i in range(total_pixels):
+        if i < strip.numPixels():
+            strip.setPixelColor(i, Color(r, g, b))
+    strip.show()
+    state.phase = (state.phase + 0.08) % (2 * math.pi)
 
 
 def fill(strip, value):
@@ -190,6 +238,9 @@ if __name__ == "__main__":
     last_run_id = None
     blink_until = 0.0
     blink_toggle = False
+    rainbow_state = RainbowState()
+    pulse_online_state = PulseState(lambda b: (0, b, 0))       # grün pulsend (online, Standby)
+    pulse_offline_state = PulseState(lambda b: (b, b//2, 0))   # gelb pulsend (offline)
 
     while True:
         now = time.time()
@@ -243,26 +294,29 @@ if __name__ == "__main__":
                 status = "event:run_received"
 
             if strip and Color:
+                sc, sp = _get_strip_config()
+                total = strip.numPixels()
                 power_save = _is_power_save()
+
                 if power_save and now >= blink_until:
-                    # Energiesparmodus: sehr gedimmt (ca. 5% Helligkeit)
-                    fill(strip, Color(6, 6, 6))
+                    # Energiesparmodus: sehr gedimmt atmen
+                    pulse_tick(strip, Color, PulseState(lambda b: (b//8, b//8, b//8)), total)
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
                     pass  # Welle wurde bereits beim Erkennen abgespielt
                 elif status == "fatal:red_blink":
                     blink_toggle = not blink_toggle
                     fill(strip, Color(150 if blink_toggle else 0, 0, 0))
-                elif status == "running:green":
-                    fill(strip, Color(0, 120, 0))
-                elif status == "running:yellow":
-                    fill(strip, Color(120, 120, 0))
-                elif status == "running:blue":
-                    fill(strip, Color(0, 0, 110))
                 elif status == "error:red":
                     fill(strip, Color(150, 0, 0))
+                elif not online:
+                    # Waage offline: gelb pulsend
+                    pulse_tick(strip, Color, pulse_offline_state, total)
+                elif status == "running:green":
+                    # Waage online: Regenbogen
+                    rainbow_tick(strip, Color, rainbow_state, total)
                 else:
-                    fill(strip, Color(20, 20, 20))
+                    rainbow_tick(strip, Color, rainbow_state, total)
 
             if not (strip and Color and _is_power_save() and now >= blink_until):
                 set_state("led_status", status if strip else "degraded:NoHardware")
