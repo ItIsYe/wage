@@ -206,40 +206,6 @@ def list_runs(limit: int = 50, search: str | None = None, person_id: int | None 
     return {"runs": rows, "count": len(rows)}
 
 
-@router.get("/{run_id}")
-def get_run(run_id: int):
-    with db_cursor() as (_, cur):
-        row = cur.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
-        persons = [dict(p) for p in cur.execute("SELECT id, name FROM persons ORDER BY name").fetchall()]
-    return {"run": dict(row), "persons": persons}
-
-
-@router.put("/{run_id}")
-def update_run(run_id: int, payload: RunUpdate):
-    with db_cursor() as (_, cur):
-        exists = cur.execute("SELECT id FROM runs WHERE id=?", (run_id,)).fetchone()
-        if not exists:
-            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
-        if payload.person_id is not None:
-            person = cur.execute("SELECT name FROM persons WHERE id=?", (payload.person_id,)).fetchone()
-            if not person:
-                raise HTTPException(status_code=404, detail="Person nicht gefunden")
-            cur.execute("UPDATE runs SET person_id=?, person_name=? WHERE id=?", (payload.person_id, person[0], run_id))
-        if payload.note is not None:
-            cur.execute("UPDATE runs SET note=? WHERE id=?", (payload.note, run_id))
-    return {"updated": True}
-
-
-@router.delete("/{run_id}")
-def delete_run(run_id: int):
-    with db_cursor() as (_, cur):
-        cur.execute("DELETE FROM runs WHERE id=?", (run_id,))
-        if cur.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
-    return {"deleted": True}
-
 
 @router.get("/export/csv")
 def export_runs_csv():
@@ -274,3 +240,38 @@ def export_runs_csv():
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+
+@router.get("/{run_id}")
+def get_run(run_id: int):
+    with db_cursor() as (_, cur):
+        row = cur.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+        persons = [dict(p) for p in cur.execute("SELECT id, name FROM persons ORDER BY name").fetchall()]
+    return {"run": dict(row), "persons": persons}
+
+
+@router.put("/{run_id}")
+def update_run(run_id: int, payload: RunUpdate):
+    with db_cursor() as (_, cur):
+        exists = cur.execute("SELECT id FROM runs WHERE id=?", (run_id,)).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+        if payload.person_id is not None:
+            person = cur.execute("SELECT name FROM persons WHERE id=?", (payload.person_id,)).fetchone()
+            if not person:
+                raise HTTPException(status_code=404, detail="Person nicht gefunden")
+            cur.execute("UPDATE runs SET person_id=?, person_name=? WHERE id=?", (payload.person_id, person[0], run_id))
+        if payload.note is not None:
+            cur.execute("UPDATE runs SET note=? WHERE id=?", (payload.note, run_id))
+    return {"updated": True}
+
+
+@router.delete("/{run_id}")
+def delete_run(run_id: int):
+    with db_cursor() as (_, cur):
+        cur.execute("DELETE FROM runs WHERE id=?", (run_id,))
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
+    return {"deleted": True}
