@@ -9,6 +9,12 @@ if [ -z "$BROWSER" ]; then
   exit 1
 fi
 
+# Alte Kiosk-Session löschen damit keine "existing browser session" entsteht
+rm -rf /tmp/wage-kiosk
+# Eventuell noch laufende Chromium-Prozesse beenden
+pkill -f "user-data-dir=/tmp/wage-kiosk" 2>/dev/null || true
+sleep 1
+
 # Warten bis Backend erreichbar ist (max. 60s)
 echo "Warte auf Backend unter $URL ..."
 for i in $(seq 1 60); do
@@ -28,4 +34,18 @@ exec "$BROWSER" \
   --enable-features=VirtualKeyboard \
   --disable-features=TranslateUI \
   --user-data-dir=/tmp/wage-kiosk \
+  --disable-dev-shm-usage \
+  --no-sandbox \
+  --disable-gpu-sandbox \
+  --disable-software-rasterizer \
+  --disable-background-networking \
+  --disable-default-apps \
+  --disable-extensions \
+  --disable-sync \
+  --disable-translate \
+  --disable-background-timer-throttling \
+  --disable-renderer-backgrounding \
+  --disable-backgrounding-occluded-windows \
+  --memory-pressure-off \
+  --max-old-space-size=128 \
   --app="$URL"
