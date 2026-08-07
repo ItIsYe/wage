@@ -8,8 +8,6 @@ router = APIRouter(prefix="/api/v1/config/hardware", tags=["hardware-config"])
 
 class HardwareConfig(BaseModel):
     pi_led_brightness: int = Field(ge=0, le=255)
-    pi_led_strip_count: int = Field(ge=1, le=16)
-    pi_led_strip_pixels: int = Field(ge=1, le=500)
     pi_led_strip_sizes: str = Field(default="80,80,82,82")
     pi_oled_rotation: int = Field(ge=0, le=3)
     power_save_after_minutes: int = Field(ge=0, le=1440)

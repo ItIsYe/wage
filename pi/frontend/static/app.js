@@ -971,7 +971,6 @@ async function saveHardwareConfig() {
   const el = document.getElementById('hardware-msg');
   try {
     const payload = {
-      pi_led_strip_count: parseInt(document.getElementById('pi-led-strip-count')?.value ?? '4'),
       pi_led_strip_sizes: document.getElementById('pi-led-strip-sizes')?.value ?? '80,80,82,82',
       pi_led_brightness: parseInt(document.getElementById('pi-led-brightness').value),
       pi_oled_rotation: parseInt(document.getElementById('pi-oled-rotation').value),
