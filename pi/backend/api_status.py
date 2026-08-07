@@ -14,7 +14,16 @@ from .api_network_config import _read_config
 router = APIRouter(prefix="/api/v1/status", tags=["status"])
 
 
+_ip_cache: str = ""
+_ip_cache_at: float = 0.0
+_IP_CACHE_TTL = 30.0  # IP nur alle 30s neu abfragen
+
+
 def get_pi_ip() -> str:
+    global _ip_cache, _ip_cache_at
+    import time
+    if _ip_cache and (time.monotonic() - _ip_cache_at) < _IP_CACHE_TTL:
+        return _ip_cache
     try:
         import subprocess
         out = subprocess.check_output(
@@ -25,19 +34,38 @@ def get_pi_ip() -> str:
             if line.startswith("IP4.ADDRESS"):
                 addr = line.split(":")[-1].split("/")[0].strip()
                 if addr and not addr.startswith("127."):
-                    return addr
+                    _ip_cache = addr
+                    _ip_cache_at = time.monotonic()
+                    return _ip_cache
     except Exception:
         pass
     try:
-        return os.popen("hostname -I").read().strip().split()[0]
+        _ip_cache = os.popen("hostname -I").read().strip().split()[0]
+        _ip_cache_at = time.monotonic()
+        return _ip_cache
     except Exception:
         return "127.0.0.1"
 
 
+_status_cache: dict = {}
+_status_cache_at: float = 0.0
+_STATUS_CACHE_TTL = 1.0  # Max 1s alter Status-Cache
+
+
 def _build_status() -> dict:
+    global _status_cache, _status_cache_at
+    import time
+    if _status_cache and (time.monotonic() - _status_cache_at) < _STATUS_CACHE_TTL:
+        return _status_cache
     now = datetime.now(timezone.utc)
     with db_cursor() as (_, cur):
-        app = {r["key"]: r["value"] for r in cur.execute("SELECT key,value FROM app_state")}
+        # Nur benötigte Keys laden statt alle
+        needed = ("active_person_id","last_run_id","last_run_received_at","last_event",
+                  "api_status","database_status","led_status","oled_status")
+        app = {r["key"]: r["value"] for r in cur.execute(
+            f"SELECT key,value FROM app_state WHERE key IN ({','.join('?'*len(needed))})",
+            needed
+        )}
         active_id = int(app.get("active_person_id", "1"))
         active_person = cur.execute("SELECT id, name FROM persons WHERE id=?", (active_id,)).fetchone()
         last_run = cur.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
@@ -57,7 +85,7 @@ def _build_status() -> dict:
     net = _read_config()
     network_mode = net.get("network_mode", "ap")
     api_target_for_esp = f"http://{net.get('ap_ip','192.168.50.1')}:8000/api/v1/runs" if network_mode == "ap" else f"http://{ip}:8000/api/v1/runs"
-    return {
+    result = {
         "api_status": app.get("api_status", "ok"),
         "database_status": app.get("database_status", "ok"),
         "pi_ip": ip,
@@ -78,6 +106,9 @@ def _build_status() -> dict:
         "ap_ssid": net.get("ap_ssid", "wage-net"),
         "api_target_for_esp": api_target_for_esp,
     }
+    _status_cache = result
+    _status_cache_at = time.monotonic()
+    return result
 
 
 @router.get("")
@@ -103,7 +134,7 @@ async def status_stream():
                         yield ": heartbeat\n\n"
                 except Exception:
                     yield ": error\n\n"
-                await asyncio.sleep(2)
+                await asyncio.sleep(2 if online_now else 5)
         except asyncio.CancelledError:
             pass
 
