@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-/home/wage/.Xauthority}"
 URL="${WAGE_PI_KIOSK_URL:-http://localhost:8000}"
 BROWSER="$(command -v chromium-browser || command -v chromium || true)"
 if [ -z "$BROWSER" ]; then
