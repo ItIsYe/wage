@@ -302,7 +302,7 @@ if __name__ == "__main__":
                 status = "event:run_received"
 
             if strip and Color:
-                sc, sp = _get_strip_config()
+                strip_sizes = _get_strip_config()
                 total = strip.numPixels()
                 power_save = _is_power_save()
 
