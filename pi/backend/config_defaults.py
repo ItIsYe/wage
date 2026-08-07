@@ -18,6 +18,7 @@ DEFAULTS = {
     "pi_led_brightness": "32",
     "pi_led_strip_count": "4",
     "pi_led_strip_pixels": "40",
+    "pi_led_strip_sizes": "80,80,82,82",
     "pi_oled_rotation": "0",
     "power_save_after_minutes": "1",
 }

@@ -14,7 +14,7 @@ def _get_hw_config() -> dict:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
                 "SELECT key, value FROM app_state WHERE key IN "
-                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels',"
+                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes',"
                 "'power_save_after_minutes','last_run_received_at')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
@@ -22,17 +22,26 @@ def _get_hw_config() -> dict:
         return {}
 
 
-def _get_strip_config() -> tuple[int, int]:
-    """Gibt (strip_count, pixels_per_strip) zurück."""
+def _get_strip_config() -> list[int]:
+    """Gibt Liste mit Pixel-Anzahl pro Streifen zurück."""
     hw = _get_hw_config()
-    strip_count = int(hw.get("pi_led_strip_count", "4"))
-    strip_pixels = int(hw.get("pi_led_strip_pixels", "40"))
-    return strip_count, strip_pixels
+    # Individuelle Größen als kommagetrennte Liste, z.B. "80,80,82,82"
+    sizes_str = hw.get("pi_led_strip_sizes", "")
+    if sizes_str:
+        try:
+            sizes = [max(1, int(x.strip())) for x in sizes_str.split(",") if x.strip()]
+            if sizes:
+                return sizes
+        except ValueError:
+            pass
+    # Fallback: gleichmäßige Aufteilung
+    count = int(hw.get("pi_led_strip_count", "4"))
+    pixels = int(hw.get("pi_led_strip_pixels", "40"))
+    return [pixels] * count
 
 
 def _get_led_count() -> int:
-    strip_count, strip_pixels = _get_strip_config()
-    return strip_count * strip_pixels
+    return sum(_get_strip_config())
 
 
 def _get_led_brightness() -> int:
@@ -111,31 +120,27 @@ def make_strip():
     return strip, Color
 
 
-def green_wave(strip, Color, strip_count: int, strip_pixels: int):
+def green_wave(strip, Color, strip_sizes: list):
     """Grüne Welle läuft nacheinander durch alle Streifen nach einem Lauf."""
-    tail = 8  # Schweif-Länge
-    speed = 0.02  # Sekunden pro Schritt
-
-    for s in range(strip_count):
-        start = s * strip_pixels
-        # Streifen davor dunkel lassen
-        for pos in range(strip_pixels + tail):
-            # Pixel vor dem Kopf aufleuchten, Schweif abdimmen
+    tail = 8
+    speed = 0.02
+    start = 0
+    for sp in strip_sizes:
+        for pos in range(sp + tail):
             for t in range(tail + 1):
                 pixel = start + pos - t
-                if 0 <= pixel < start + strip_pixels and pixel < strip.numPixels():
+                if start <= pixel < start + sp and pixel < strip.numPixels():
                     brightness = int(180 * (1 - t / tail))
                     strip.setPixelColor(pixel, Color(0, brightness, 0))
-            # Hinter dem Schweif löschen
             clear_pos = start + pos - tail - 1
-            if start <= clear_pos < start + strip_pixels and clear_pos < strip.numPixels():
+            if start <= clear_pos < start + sp and clear_pos < strip.numPixels():
                 strip.setPixelColor(clear_pos, Color(0, 0, 0))
             strip.show()
             time.sleep(speed)
-        # Streifen nach Welle löschen
-        for i in range(start, min(start + strip_pixels, strip.numPixels())):
+        for i in range(start, min(start + sp, strip.numPixels())):
             strip.setPixelColor(i, Color(0, 0, 0))
         strip.show()
+        start += sp
 
 
 def boot_sequence(strip, Color):
@@ -200,28 +205,32 @@ def fill(strip, value):
     strip.show()
 
 
-def fill_strip(strip, strip_index: int, value, strip_pixels: int):
+def _strip_start(strip_sizes: list, strip_index: int) -> int:
+    return sum(strip_sizes[:strip_index])
+
+
+def fill_strip(strip, strip_index: int, value, strip_sizes: list):
     """Einen einzelnen Streifen füllen."""
-    start = strip_index * strip_pixels
-    end = start + strip_pixels
+    start = _strip_start(strip_sizes, strip_index)
+    end = start + strip_sizes[strip_index]
     for i in range(start, min(end, strip.numPixels())):
         strip.setPixelColor(i, value)
     strip.show()
 
 
-def fill_strips(strip, values: list, strip_pixels: int):
+def fill_strips(strip, values: list, strip_sizes: list):
     """Jeden Streifen mit eigenem Wert füllen. values = Liste von Colors."""
-    for idx, color in enumerate(values):
-        start = idx * strip_pixels
-        end = start + strip_pixels
-        for i in range(start, min(end, strip.numPixels())):
+    start = 0
+    for idx, (color, sp) in enumerate(zip(values, strip_sizes)):
+        for i in range(start, min(start + sp, strip.numPixels())):
             strip.setPixelColor(i, color)
+        start += sp
     strip.show()
 
 
-def set_pixel(strip, strip_index: int, pixel_index: int, value, strip_pixels: int):
+def set_pixel(strip, strip_index: int, pixel_index: int, value, strip_sizes: list):
     """Einzelnen Pixel auf einem Streifen setzen."""
-    pos = strip_index * strip_pixels + pixel_index
+    pos = _strip_start(strip_sizes, strip_index) + pixel_index
     if pos < strip.numPixels():
         strip.setPixelColor(pos, value)
         strip.show()
@@ -284,10 +293,9 @@ if __name__ == "__main__":
             new_run_id = s["last_run_id"]
             if last_run_id is not None and new_run_id and new_run_id != last_run_id:
                 blink_until = now + 5.0
-                # Grüne Welle sofort auslösen
                 if strip and Color:
-                    sc, sp = _get_strip_config()
-                    green_wave(strip, Color, sc, sp)
+                    strip_sizes = _get_strip_config()
+                    green_wave(strip, Color, strip_sizes)
             last_run_id = new_run_id
 
             if now < blink_until:
