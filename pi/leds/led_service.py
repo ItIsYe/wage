@@ -159,22 +159,33 @@ def boot_sequence(strip, Color):
 # === LED Patterns (nicht-blockierend via State) ===
 
 class RainbowState:
-    def __init__(self): self.hue = 0
+    def __init__(self):
+        self.hue = 0
+        self.reveal = 0.0
 
 class PulseState:
     def __init__(self, color_fn): self.phase = 0.0; self.color_fn = color_fn
 
 
 def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
-    """Regenbogen: jeder Pixel hat leicht versetzten Farbton."""
+    """Organischer Regenbogen: baut sich von unten nach oben auf, fliesst dann."""
     import math
+    if state.reveal < 1.0:
+        state.reveal = min(1.0, state.reveal + 0.008)
+    visible = int(state.reveal * total_pixels)
+
     for i in range(total_pixels):
-        hue = (state.hue + i * 256 // total_pixels) % 256
-        # HSV -> RGB vereinfacht
+        if i >= visible:
+            if i < strip.numPixels():
+                strip.setPixelColor(i, Color(0, 0, 0))
+            continue
+        position_offset = int(i * 256 / max(total_pixels, 1))
+        hue = (state.hue + position_offset) % 256
         h = hue / 255.0 * 6.0
         s = int(h) % 6
         f = h - int(h)
-        v = 120
+        v = int(100 + 30 * math.sin(state.hue / 40.0 + i / 15.0))
+        v = max(60, min(140, v))
         if s == 0:   r,g,b = v, int(v*f), 0
         elif s == 1: r,g,b = int(v*(1-f)), v, 0
         elif s == 2: r,g,b = 0, v, int(v*f)
@@ -184,7 +195,7 @@ def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
         if i < strip.numPixels():
             strip.setPixelColor(i, Color(r, g, b))
     strip.show()
-    state.hue = (state.hue + 2) % 256
+    state.hue = (state.hue + 1) % 256
 
 
 def pulse_tick(strip, Color, state: PulseState, total_pixels: int):
