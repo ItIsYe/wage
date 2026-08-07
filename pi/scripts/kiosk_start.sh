@@ -27,4 +27,5 @@ exec "$BROWSER" \
   --touch-events=enabled \
   --enable-features=VirtualKeyboard \
   --disable-features=TranslateUI \
+  --user-data-dir=/tmp/wage-kiosk \
   --app="$URL"
