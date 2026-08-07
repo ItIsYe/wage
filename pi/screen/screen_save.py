@@ -13,7 +13,7 @@ from pathlib import Path
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 BACKLIGHT = Path("/sys/class/backlight/10-0045/brightness")
 POLL_SECONDS = 10.0
-STARTUP_GRACE_SECONDS = 120
+STARTUP_GRACE_SECONDS = 300  # 5 Minuten nach Boot kein Power-Save
 SHUTDOWN_AFTER_MINUTES = 10
 
 _screen_off = False
