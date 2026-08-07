@@ -112,7 +112,8 @@ def _touch_watcher():
 def main():
     global _screen_off, _touch_wakeup
 
-    # Beim Start: last_run_received_at auf jetzt setzen damit nicht sofort Power-Save aktiv ist
+    # Beim Start: Bildschirm einschalten und last_run_received_at auf jetzt setzen
+    _screen_on_cmd()
     try:
         with sqlite3.connect(DB) as c:
             now_iso = datetime.now(timezone.utc).isoformat()
