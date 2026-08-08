@@ -1,0 +1,14 @@
+[Unit]
+Description=WAGE Pi Hardware Power Management
+After=basic.target
+Before=wage-pi-backend.service wage-pi-leds.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/wage/wage/pi/scripts/hw_power_mgmt.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

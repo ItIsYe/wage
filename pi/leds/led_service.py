@@ -311,6 +311,7 @@ if __name__ == "__main__":
     last_db_poll = 0.0
     status = "running:blue"
     online = False
+    _in_power_save = False
     rainbow_state = RainbowState()
     pulse_online_state = PulseState(lambda b: (0, b, 0))       # grün pulsend (online, Standby)
     pulse_offline_state = PulseState(lambda b: (b, b//2, 0))   # gelb pulsend (offline)
