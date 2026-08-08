@@ -151,7 +151,7 @@ if __name__ == "__main__":
             if _is_power_save():
                 dev.hide()
                 set_status("power_save")
-                time.sleep(5)
+                time.sleep(10)  # Im Power-Save seltener prüfen
                 continue
             else:
                 dev.show()

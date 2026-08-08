@@ -5,8 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
-POLL_SECONDS = 1.0      # DB-Status alle 1s abfragen
-ANIM_SECONDS = 0.05     # LED-Animation alle 50ms (20 FPS)
+POLL_SECONDS = 1.0           # DB-Status alle 1s abfragen
+POLL_SECONDS_POWERSAVE = 10.0 # DB-Status im Power-Save alle 10s
+ANIM_SECONDS = 0.05          # LED-Animation alle 50ms (20 FPS)
+ANIM_SECONDS_POWERSAVE = 0.5  # Power-Save: 2 FPS reichen
 REINIT_SECONDS = 10.0
 
 
@@ -340,7 +342,8 @@ if __name__ == "__main__":
                 continue
 
         # DB-Status alle POLL_SECONDS abfragen
-        if now - last_db_poll >= POLL_SECONDS:
+        _poll_interval = POLL_SECONDS_POWERSAVE if _is_power_save() else POLL_SECONDS
+        if now - last_db_poll >= _poll_interval:
             last_db_poll = now
             try:
                 s = get_status()
@@ -396,4 +399,6 @@ if __name__ == "__main__":
                 strip = None
                 Color = None
 
-        time.sleep(ANIM_SECONDS)
+        # Im Power-Save: langsamer schlafen spart CPU
+        _in_power_save = (status == "power_save" or _is_power_save())
+        time.sleep(ANIM_SECONDS_POWERSAVE if _in_power_save else ANIM_SECONDS)
