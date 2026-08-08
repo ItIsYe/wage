@@ -65,8 +65,44 @@ def _inactivity_minutes() -> float:
 
 
 def _shutdown():
-    """Pi herunterfahren."""
+    """Pi herunterfahren — vorher OLED und LEDs ausschalten."""
     import subprocess
+    # LEDs ausschalten
+    try:
+        with sqlite3.connect(DB) as c:
+            c.execute(
+                "INSERT INTO app_state(key,value) VALUES('led_shutdown','1') "
+                "ON CONFLICT(key) DO UPDATE SET value='1'"
+            )
+            c.commit()
+    except Exception:
+        pass
+    # Direkt über rpi_ws281x alle Pixel schwarz setzen
+    try:
+        subprocess.run(
+            ["python3", "-c",
+             "from rpi_ws281x import PixelStrip,Color; "
+             "import sqlite3; "
+             "db=sqlite3.connect('/home/wage/wage/pi/data/wage_pi.sqlite3'); "
+             "n=sum(int(x) for x in (db.execute(\"SELECT value FROM app_state WHERE key='pi_led_strip_sizes'\").fetchone() or ('80,80,82,82',))[0].split(',')); "
+             "s=PixelStrip(n,18); s.begin(); "
+             "[s.setPixelColor(i,Color(0,0,0)) for i in range(n)]; s.show()"],
+            timeout=5, capture_output=True
+        )
+    except Exception:
+        pass
+    # OLED ausschalten über systemd
+    try:
+        subprocess.run(["sudo", "systemctl", "stop", "wage-pi-oled"], timeout=5, capture_output=True)
+    except Exception:
+        pass
+    # Backlight aus
+    try:
+        BACKLIGHT.write_text("0\n")
+    except Exception:
+        pass
+    import time
+    time.sleep(1)
     try:
         subprocess.run(["sudo", "shutdown", "-h", "now"], timeout=10)
     except Exception:

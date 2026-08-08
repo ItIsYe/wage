@@ -347,6 +347,13 @@ if __name__ == "__main__":
         if now - last_db_poll >= _poll_interval:
             last_db_poll = now
             try:
+                # Shutdown-Signal prüfen
+                with __import__('sqlite3').connect(DB) as _c:
+                    _sd = _c.execute("SELECT value FROM app_state WHERE key='led_shutdown'").fetchone()
+                    if _sd and _sd[0] == '1':
+                        if strip and Color:
+                            fill(strip, Color(0, 0, 0))
+                        break
                 s = get_status()
                 app = s["app"]
                 online = is_online(s["last_seen"])
