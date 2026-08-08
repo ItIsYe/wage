@@ -35,6 +35,10 @@ echo "Web:  http://<pi-ip>:8000"
 # shutdown ohne Passwort für wage User (Auto-Shutdown)
 echo "wage ALL=(ALL) NOPASSWD: /sbin/shutdown" | sudo tee /etc/sudoers.d/wage-shutdown
 sudo chmod 440 /etc/sudoers.d/wage-shutdown
+
+# systemctl und install für Update-Script
+echo "wage ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/sbin/systemctl" | sudo tee /etc/sudoers.d/wage-update
+sudo chmod 440 /etc/sudoers.d/wage-update
 echo 'SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chmod 666 /sys/class/backlight/%k/brightness"' | sudo tee /etc/udev/rules.d/99-backlight.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger
