@@ -19,6 +19,13 @@ DEFAULTS = {
     "pi_led_strip_count": "4",
     "pi_led_strip_pixels": "40",
     "pi_led_strip_sizes": "80,80,82,82",
+    # LED Pattern Helligkeiten (0-255, bei 22W Powerbank empfohlen max ~80)
+    "led_brightness_rainbow": "80",
+    "led_brightness_pulse_offline": "60",
+    "led_brightness_wave": "120",
+    "led_brightness_power_save": "12",
+    "led_brightness_boot": "40",
+    "led_brightness_error": "100",
     "pi_oled_rotation": "0",
     "power_save_after_minutes": "1",
 }

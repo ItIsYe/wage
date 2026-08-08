@@ -15,8 +15,7 @@ def _get_hw_config() -> dict:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
                 "SELECT key, value FROM app_state WHERE key IN "
-                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes',"
-                "'power_save_after_minutes','last_run_received_at')"
+                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes','power_save_after_minutes','last_run_received_at','led_brightness_rainbow','led_brightness_pulse_offline','led_brightness_wave','led_brightness_power_save','led_brightness_boot','led_brightness_error')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
     except Exception:
@@ -168,12 +167,12 @@ class PulseState:
     def __init__(self, color_fn): self.phase = 0.0; self.color_fn = color_fn
 
 
-def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
+def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int, max_brightness: int = 80):
     """Organischer Regenbogen mit numpy-Vektorisierung für NEON/SIMD."""
     import math
     try:
         import numpy as np
-        _rainbow_tick_np(strip, Color, state, total_pixels)
+        _rainbow_tick_np(strip, Color, state, total_pixels, max_brightness)
         return
     except ImportError:
         pass
@@ -192,7 +191,7 @@ def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
         h = hue_deg / 60.0
         s_idx = int(h) % 6
         f = h - int(h)
-        v = int(brightness * 180)
+        v = int(brightness * max_brightness)
         q = int(v * (1 - f))
         t = int(v * f)
         if s_idx == 0:   r, g, b = v, t, 0
@@ -207,7 +206,7 @@ def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
     state.hue = (state.hue + 1) % 180
 
 
-def _rainbow_tick_np(strip, Color, state: RainbowState, total_pixels: int):
+def _rainbow_tick_np(strip, Color, state: RainbowState, total_pixels: int, max_brightness: int = 80):
     """numpy-vektorisierte Version: alle Pixel auf einmal berechnen."""
     import numpy as np
     import math
@@ -223,7 +222,7 @@ def _rainbow_tick_np(strip, Color, state: RainbowState, total_pixels: int):
     h = hue_deg / 60.0
     s_idx = h.astype(np.int32) % 6
     f = h - h.astype(np.int32)
-    v = (brightness * 180).astype(np.int32)
+    v = (brightness * max_brightness).astype(np.int32)
     q = (v * (1 - f)).astype(np.int32)
     t = (v * f).astype(np.int32)
     z = np.zeros(n, dtype=np.int32)
@@ -241,16 +240,22 @@ def _rainbow_tick_np(strip, Color, state: RainbowState, total_pixels: int):
     state.hue = (state.hue + 1) % 180
 
 
-def pulse_tick(strip, Color, state: PulseState, total_pixels: int):
+def pulse_tick(strip, Color, state: PulseState, total_pixels: int, max_brightness: int = 80):
     """Pulsen/Atmen: Helligkeit sinusförmig."""
     import math
-    brightness = int((math.sin(state.phase) + 1) / 2 * 80 + 10)
+    brightness = int((math.sin(state.phase) + 1) / 2 * max_brightness + max(1, max_brightness // 8))
     r, g, b = state.color_fn(brightness)
     for i in range(total_pixels):
         if i < strip.numPixels():
             strip.setPixelColor(i, Color(r, g, b))
     strip.show()
     state.phase = (state.phase + 0.08) % (2 * math.pi)
+
+def _get_led_brightness_for(key: str, default: int) -> int:
+    """Liest Pattern-spezifische Helligkeit aus der DB."""
+    hw = _get_hw_config()
+    return max(0, min(255, int(hw.get(key, str(default)))))
+
 
 
 def fill(strip, value):
@@ -371,19 +376,19 @@ if __name__ == "__main__":
                 total = strip.numPixels()
                 power_save = _is_power_save()
                 if power_save and now >= blink_until:
-                    pulse_tick(strip, Color, PulseState(lambda b: (b//8, b//8, b//8)), total)
+                    pulse_tick(strip, Color, PulseState(lambda b: (b//8, b//8, b//8)), total, _get_led_brightness_for("led_brightness_power_save", 12))
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
                     pass
                 elif status == "fatal:red_blink":
                     blink_toggle = not blink_toggle
-                    fill(strip, Color(150 if blink_toggle else 0, 0, 0))
+                    fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100) if blink_toggle else 0, 0, 0))
                 elif status == "error:red":
-                    fill(strip, Color(150, 0, 0))
+                    fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100), 0, 0))
                 elif not online:
-                    pulse_tick(strip, Color, pulse_offline_state, total)
+                    pulse_tick(strip, Color, pulse_offline_state, total, _get_led_brightness_for("led_brightness_pulse_offline", 60))
                 else:
-                    rainbow_tick(strip, Color, rainbow_state, total)
+                    rainbow_tick(strip, Color, rainbow_state, total, _get_led_brightness_for("led_brightness_rainbow", 80))
                 if not power_save or now < blink_until:
                     set_state("led_status", status)
             except Exception as exc:

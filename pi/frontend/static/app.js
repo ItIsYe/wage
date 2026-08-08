@@ -1226,3 +1226,56 @@ async function saveRunDetail() {
 }
 
 loadRunDetail();
+
+
+// === LED Konfiguration ===
+
+async function loadLedConfig() {
+  if (!document.getElementById('led-rainbow')) return;
+  try {
+    const d = await api('/api/v1/config/leds');
+    const set = (id, valId, val) => {
+      const el = document.getElementById(id);
+      const valEl = document.getElementById(valId);
+      if (el) { el.value = val; }
+      if (valEl) { valEl.textContent = val; }
+    };
+    const sizesEl = document.getElementById('pi-led-strip-sizes');
+    if (sizesEl) sizesEl.value = d.pi_led_strip_sizes ?? '80,80,82,82';
+    set('led-rainbow', 'led-rainbow-val', d.led_brightness_rainbow ?? 80);
+    set('led-pulse-offline', 'led-pulse-offline-val', d.led_brightness_pulse_offline ?? 60);
+    set('led-wave', 'led-wave-val', d.led_brightness_wave ?? 120);
+    set('led-power-save', 'led-power-save-val', d.led_brightness_power_save ?? 12);
+    set('led-boot', 'led-boot-val', d.led_brightness_boot ?? 40);
+    set('led-error', 'led-error-val', d.led_brightness_error ?? 100);
+  } catch (e) {
+    flash('LED-Config konnte nicht geladen werden: ' + e.message);
+  }
+}
+
+async function saveLedConfig() {
+  const el = document.getElementById('msg');
+  try {
+    const payload = {
+      pi_led_strip_sizes: document.getElementById('pi-led-strip-sizes')?.value ?? '80,80,82,82',
+      pi_led_brightness: 32,
+      led_brightness_rainbow: parseInt(document.getElementById('led-rainbow').value),
+      led_brightness_pulse_offline: parseInt(document.getElementById('led-pulse-offline').value),
+      led_brightness_wave: parseInt(document.getElementById('led-wave').value),
+      led_brightness_power_save: parseInt(document.getElementById('led-power-save').value),
+      led_brightness_boot: parseInt(document.getElementById('led-boot').value),
+      led_brightness_error: parseInt(document.getElementById('led-error').value),
+    };
+    const d = await api('/api/v1/config/leds', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (el) { el.textContent = d.message || 'Gespeichert.'; el.className = 'msg msg-ok'; }
+    await fetch('/api/v1/system/restart-services', { method: 'POST' }).catch(() => {});
+  } catch (e) {
+    if (el) { el.textContent = 'Fehler: ' + e.message; el.className = 'msg msg-err'; }
+  }
+}
+
+loadLedConfig();

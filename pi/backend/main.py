@@ -22,6 +22,7 @@ from .api_update import router as update_router
 from .api_esp_firmware import router as esp_firmware_router
 from .api_hardware_config import router as hardware_config_router
 from .api_stats import router as stats_router
+from .api_led_config import router as led_config_router
 from .api_esp_proxy import router as esp_proxy_router
 from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
@@ -68,6 +69,12 @@ app.include_router(update_router)
 app.include_router(esp_firmware_router)
 app.include_router(hardware_config_router)
 app.include_router(stats_router)
+app.include_router(led_config_router)
+
+
+@app.get("/config/leds", response_class=HTMLResponse)
+async def page_led_config(request: Request):
+    return templates.TemplateResponse("led_config.html", {"request": request})
 
 
 @app.get("/stats", response_class=HTMLResponse)
