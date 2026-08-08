@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
-POLL_SECONDS = 1.0
+POLL_SECONDS = 1.0      # DB-Status alle 1s abfragen
+ANIM_SECONDS = 0.05     # LED-Animation alle 50ms (20 FPS)
 REINIT_SECONDS = 10.0
 
 
@@ -171,7 +172,7 @@ def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
     """Organischer Regenbogen: baut sich von unten nach oben auf, fliesst dann."""
     import math
     if state.reveal < 1.0:
-        state.reveal = min(1.0, state.reveal + 0.008)
+        state.reveal = min(1.0, state.reveal + 0.004)  # Langsamer Aufbau
     visible = int(state.reveal * total_pixels)
 
     for i in range(total_pixels):
@@ -179,23 +180,33 @@ def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
             if i < strip.numPixels():
                 strip.setPixelColor(i, Color(0, 0, 0))
             continue
-        position_offset = int(i * 256 / max(total_pixels, 1))
-        hue = (state.hue + position_offset) % 256
-        h = hue / 255.0 * 6.0
-        s = int(h) % 6
+
+        # Voller Farbkreis: 0-360° über alle Pixel verteilt
+        hue_deg = (state.hue * 2 + i * 360 / max(total_pixels, 1)) % 360
+        # Sinusförmige Helligkeit für organisches Gefühl
+        brightness = 0.5 + 0.2 * math.sin(state.hue / 20.0 + i / 20.0)
+
+        # HSV -> RGB (voller Farbkreis, s=1, v=brightness)
+        h = hue_deg / 60.0
+        s_idx = int(h) % 6
         f = h - int(h)
-        v = int(100 + 30 * math.sin(state.hue / 40.0 + i / 15.0))
-        v = max(60, min(140, v))
-        if s == 0:   r,g,b = v, int(v*f), 0
-        elif s == 1: r,g,b = int(v*(1-f)), v, 0
-        elif s == 2: r,g,b = 0, v, int(v*f)
-        elif s == 3: r,g,b = 0, int(v*(1-f)), v
-        elif s == 4: r,g,b = int(v*f), 0, v
-        else:        r,g,b = v, 0, int(v*(1-f))
+        v = int(brightness * 180)
+        p = 0
+        q = int(v * (1 - f))
+        t = int(v * f)
+
+        if s_idx == 0:   r, g, b = v, t, p
+        elif s_idx == 1: r, g, b = q, v, p
+        elif s_idx == 2: r, g, b = p, v, t
+        elif s_idx == 3: r, g, b = p, q, v
+        elif s_idx == 4: r, g, b = t, p, v
+        else:            r, g, b = v, p, q
+
         if i < strip.numPixels():
             strip.setPixelColor(i, Color(r, g, b))
+
     strip.show()
-    state.hue = (state.hue + 1) % 256
+    state.hue = (state.hue + 1) % 180  # 180 Steps für volle Rotation
 
 
 def pulse_tick(strip, Color, state: PulseState, total_pixels: int):
@@ -258,6 +269,9 @@ if __name__ == "__main__":
     last_run_id = None
     blink_until = 0.0
     blink_toggle = False
+    last_db_poll = 0.0
+    status = "running:blue"
+    online = False
     rainbow_state = RainbowState()
     pulse_online_state = PulseState(lambda b: (0, b, 0))       # grün pulsend (online, Standby)
     pulse_offline_state = PulseState(lambda b: (b, b//2, 0))   # gelb pulsend (offline)
@@ -288,60 +302,61 @@ if __name__ == "__main__":
                     strip = None
                 continue
 
-        try:
-            s = get_status()
-            app = s["app"]
-            online = is_online(s["last_seen"])
-            api_ok = app.get("api_status", "ok") == "ok"
-            db_ok = app.get("database_status", "ok") == "ok"
+        # DB-Status alle POLL_SECONDS abfragen
+        if now - last_db_poll >= POLL_SECONDS:
+            last_db_poll = now
+            try:
+                s = get_status()
+                app = s["app"]
+                online = is_online(s["last_seen"])
+                api_ok = app.get("api_status", "ok") == "ok"
+                db_ok = app.get("database_status", "ok") == "ok"
 
-            status = "running:blue" if not s["last_seen"] else ("running:green" if online else "running:yellow")
-            if not (api_ok and db_ok):
-                status = "error:red"
-            if app.get("last_event") == "fatal_error":
-                status = "fatal:red_blink"
+                current_status = "running:blue" if not s["last_seen"] else ("running:green" if online else "running:yellow")
+                if not (api_ok and db_ok):
+                    current_status = "error:red"
+                if app.get("last_event") == "fatal_error":
+                    current_status = "fatal:red_blink"
 
-            new_run_id = s["last_run_id"]
-            if last_run_id is not None and new_run_id and new_run_id != last_run_id:
-                blink_until = now + 5.0
-                if strip and Color:
-                    strip_sizes = _get_strip_config()
-                    green_wave(strip, Color, strip_sizes)
-            last_run_id = new_run_id
+                new_run_id = s["last_run_id"]
+                if last_run_id is not None and new_run_id and new_run_id != last_run_id:
+                    blink_until = now + 5.0
+                    if strip and Color:
+                        green_wave(strip, Color, _get_strip_config())
+                last_run_id = new_run_id
 
-            if now < blink_until:
-                status = "event:run_received"
+                if now < blink_until:
+                    current_status = "event:run_received"
+                status = current_status
+            except Exception as exc:
+                set_state("led_status", f"degraded:{type(exc).__name__}")
+                strip = None
+                Color = None
 
-            if strip and Color:
-                strip_sizes = _get_strip_config()
+        # LED-Animation bei jedem ANIM_SECONDS Tick rendern
+        if strip and Color:
+            try:
                 total = strip.numPixels()
                 power_save = _is_power_save()
-
                 if power_save and now >= blink_until:
-                    # Energiesparmodus: sehr gedimmt atmen
                     pulse_tick(strip, Color, PulseState(lambda b: (b//8, b//8, b//8)), total)
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
-                    pass  # Welle wurde bereits beim Erkennen abgespielt
+                    pass
                 elif status == "fatal:red_blink":
                     blink_toggle = not blink_toggle
                     fill(strip, Color(150 if blink_toggle else 0, 0, 0))
                 elif status == "error:red":
                     fill(strip, Color(150, 0, 0))
                 elif not online:
-                    # Waage offline: gelb pulsend
                     pulse_tick(strip, Color, pulse_offline_state, total)
-                elif status == "running:green":
-                    # Waage online: Regenbogen
-                    rainbow_tick(strip, Color, rainbow_state, total)
                 else:
                     rainbow_tick(strip, Color, rainbow_state, total)
+                if not power_save or now < blink_until:
+                    set_state("led_status", status)
+            except Exception as exc:
+                set_state("led_status", f"degraded:{type(exc).__name__}")
+                strip = None
+                Color = None
 
-            if not (strip and Color and _is_power_save() and now >= blink_until):
-                set_state("led_status", status if strip else "degraded:NoHardware")
-        except Exception as exc:
-            set_state("led_status", f"degraded:{type(exc).__name__}")
-            strip = None
-            Color = None
-
-        time.sleep(POLL_SECONDS)
+        time.sleep(ANIM_SECONDS)
