@@ -29,8 +29,6 @@ uint32_t lastHeartbeatMs = 0;
 static uint8_t consecutiveFailures = 0;
 static bool piOffline = false;
 static constexpr uint8_t OFFLINE_THRESHOLD = 3;       // nach 3 Fehlern -> offline
-static constexpr uint32_t OFFLINE_PROBE_INTERVAL_MS = 60000;  // alle 60s kurzer Probe
-static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 30000;
 
 bool hasValidTarget() {
   return transportCfg.enabled && transportCfg.host[0] != '\0' && transportCfg.apiPath[0] != '\0';
