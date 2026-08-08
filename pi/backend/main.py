@@ -3,6 +3,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass
+
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
