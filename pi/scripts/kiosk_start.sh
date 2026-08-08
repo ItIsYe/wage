@@ -34,10 +34,9 @@ exec "$BROWSER" \
   --enable-features=VirtualKeyboard \
   --disable-features=TranslateUI \
   --user-data-dir=/tmp/wage-kiosk \
-  --disable-dev-shm-usage \
-  --no-sandbox \
-  --disable-gpu-sandbox \
-  --disable-software-rasterizer \
+  --enable-gpu-rasterization \
+  --enable-zero-copy \
+  --ignore-gpu-blocklist \
   --disable-background-networking \
   --disable-default-apps \
   --disable-extensions \
@@ -47,5 +46,5 @@ exec "$BROWSER" \
   --disable-renderer-backgrounding \
   --disable-backgrounding-occluded-windows \
   --memory-pressure-off \
-  --max-old-space-size=128 \
+  --max-old-space-size=256 \
   --app="$URL"

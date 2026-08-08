@@ -169,44 +169,76 @@ class PulseState:
 
 
 def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
-    """Organischer Regenbogen: baut sich von unten nach oben auf, fliesst dann."""
+    """Organischer Regenbogen mit numpy-Vektorisierung für NEON/SIMD."""
     import math
-    if state.reveal < 1.0:
-        state.reveal = min(1.0, state.reveal + 0.004)  # Langsamer Aufbau
-    visible = int(state.reveal * total_pixels)
+    try:
+        import numpy as np
+        _rainbow_tick_np(strip, Color, state, total_pixels)
+        return
+    except ImportError:
+        pass
 
+    # Fallback ohne numpy
+    if state.reveal < 1.0:
+        state.reveal = min(1.0, state.reveal + 0.004)
+    visible = int(state.reveal * total_pixels)
     for i in range(total_pixels):
         if i >= visible:
             if i < strip.numPixels():
                 strip.setPixelColor(i, Color(0, 0, 0))
             continue
-
-        # Voller Farbkreis: 0-360° über alle Pixel verteilt
         hue_deg = (state.hue * 2 + i * 360 / max(total_pixels, 1)) % 360
-        # Sinusförmige Helligkeit für organisches Gefühl
         brightness = 0.5 + 0.2 * math.sin(state.hue / 20.0 + i / 20.0)
-
-        # HSV -> RGB (voller Farbkreis, s=1, v=brightness)
         h = hue_deg / 60.0
         s_idx = int(h) % 6
         f = h - int(h)
         v = int(brightness * 180)
-        p = 0
         q = int(v * (1 - f))
         t = int(v * f)
-
-        if s_idx == 0:   r, g, b = v, t, p
-        elif s_idx == 1: r, g, b = q, v, p
-        elif s_idx == 2: r, g, b = p, v, t
-        elif s_idx == 3: r, g, b = p, q, v
-        elif s_idx == 4: r, g, b = t, p, v
-        else:            r, g, b = v, p, q
-
+        if s_idx == 0:   r, g, b = v, t, 0
+        elif s_idx == 1: r, g, b = q, v, 0
+        elif s_idx == 2: r, g, b = 0, v, t
+        elif s_idx == 3: r, g, b = 0, q, v
+        elif s_idx == 4: r, g, b = t, 0, v
+        else:            r, g, b = v, 0, q
         if i < strip.numPixels():
             strip.setPixelColor(i, Color(r, g, b))
-
     strip.show()
-    state.hue = (state.hue + 1) % 180  # 180 Steps für volle Rotation
+    state.hue = (state.hue + 1) % 180
+
+
+def _rainbow_tick_np(strip, Color, state: RainbowState, total_pixels: int):
+    """numpy-vektorisierte Version: alle Pixel auf einmal berechnen."""
+    import numpy as np
+    import math
+    if state.reveal < 1.0:
+        state.reveal = min(1.0, state.reveal + 0.004)
+    visible = int(state.reveal * total_pixels)
+    n = min(total_pixels, strip.numPixels())
+
+    idx = np.arange(n, dtype=np.float32)
+    hue_deg = (state.hue * 2 + idx * 360.0 / max(total_pixels, 1)) % 360.0
+    brightness = 0.5 + 0.2 * np.sin(state.hue / 20.0 + idx / 20.0)
+
+    h = hue_deg / 60.0
+    s_idx = h.astype(np.int32) % 6
+    f = h - h.astype(np.int32)
+    v = (brightness * 180).astype(np.int32)
+    q = (v * (1 - f)).astype(np.int32)
+    t = (v * f).astype(np.int32)
+    z = np.zeros(n, dtype=np.int32)
+
+    r = np.select([s_idx==0, s_idx==1, s_idx==2, s_idx==3, s_idx==4, s_idx==5], [v,q,z,z,t,v])
+    g = np.select([s_idx==0, s_idx==1, s_idx==2, s_idx==3, s_idx==4, s_idx==5], [t,v,v,q,z,z])
+    b = np.select([s_idx==0, s_idx==1, s_idx==2, s_idx==3, s_idx==4, s_idx==5], [z,z,t,v,v,q])
+
+    for i in range(n):
+        if i >= visible:
+            strip.setPixelColor(i, Color(0, 0, 0))
+        else:
+            strip.setPixelColor(i, Color(int(r[i]), int(g[i]), int(b[i])))
+    strip.show()
+    state.hue = (state.hue + 1) % 180
 
 
 def pulse_tick(strip, Color, state: PulseState, total_pixels: int):
