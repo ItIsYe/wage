@@ -299,8 +299,17 @@ if __name__ == "__main__":
     online = False
     _in_power_save = False
     rainbow_state = RainbowState()
-    pulse_online_state = PulseState(lambda b: (0, b, 0))       # grün pulsend (online, Standby)
-    pulse_offline_state = PulseState(lambda b: (b, b//2, 0))   # gelb pulsend (offline)
+    pulse_online_state = PulseState(lambda b: (0, b, 0))
+    pulse_offline_state = PulseState(lambda b: (b, b//2, 0))
+
+    # led_shutdown Flag beim Start zurücksetzen
+    try:
+        with __import__('sqlite3').connect(DB) as _c:
+            _c.execute("INSERT INTO app_state(key,value) VALUES('led_shutdown','0') "
+                      "ON CONFLICT(key) DO UPDATE SET value='0'")
+            _c.commit()
+    except Exception:
+        pass
 
     while True:
         now = time.time()
