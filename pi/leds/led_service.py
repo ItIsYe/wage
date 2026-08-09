@@ -198,11 +198,10 @@ def pulse_tick(strip, Color, state: PulseState, total_pixels: int, max_brightnes
     import math
     brightness = int((math.sin(state.phase) + 1) / 2 * max_brightness + max(1, max_brightness // 8))
     r, g, b = state.color_fn(brightness)
-    for i in range(total_pixels):
-        if i < strip.numPixels():
-            strip.setPixelColor(i, Color(r, g, b))
+    for i in range(min(total_pixels, strip.numPixels())):
+        strip.setPixelColor(i, Color(r, g, b))
     strip.show()
-    state.phase = (state.phase + 0.08) % (2 * math.pi)
+    state.phase = (state.phase + 0.04) % (2 * math.pi)  # Langsamer = flüssiger
 
 def _get_led_brightness_for(key: str, default: int) -> int:
     """Liest Pattern-spezifische Helligkeit aus der DB."""
@@ -265,7 +264,7 @@ if __name__ == "__main__":
     _in_power_save = False
     rainbow_state = RainbowState()
     pulse_online_state = PulseState(lambda b: (0, b, 0))
-    pulse_offline_state = PulseState(lambda b: (b, b//2, 0))
+    pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
 
     # led_shutdown Flag beim Start zurücksetzen
     try:
