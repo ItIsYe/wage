@@ -201,7 +201,7 @@ def pulse_tick(strip, Color, state: PulseState, total_pixels: int, max_brightnes
     for i in range(min(total_pixels, strip.numPixels())):
         strip.setPixelColor(i, Color(r, g, b))
     strip.show()
-    state.phase = (state.phase + 0.04) % (2 * math.pi)  # Langsamer = flüssiger
+    state.phase = (state.phase + 0.02) % (2 * math.pi)  # Sehr langsam = sehr flüssig
 
 def _get_led_brightness_for(key: str, default: int) -> int:
     """Liest Pattern-spezifische Helligkeit aus der DB."""
