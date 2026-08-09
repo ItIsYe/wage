@@ -5,6 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=root
 WorkingDirectory=/home/wage/wage/pi
 ExecStart=/home/wage/wage/pi/.venv/bin/python leds/led_service.py
 Restart=always
