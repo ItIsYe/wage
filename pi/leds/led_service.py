@@ -265,6 +265,7 @@ if __name__ == "__main__":
     rainbow_state = RainbowState()
     pulse_online_state = PulseState(lambda b: (0, b, 0))
     pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
+    pulse_powersave_state = PulseState(lambda b: (b, b, b))   # weißes Atmen
 
     # led_shutdown Flag beim Start zurücksetzen
     try:
@@ -346,7 +347,7 @@ if __name__ == "__main__":
                 total = strip.numPixels()
                 power_save = _is_power_save()
                 if power_save and now >= blink_until:
-                    pulse_tick(strip, Color, PulseState(lambda b: (b//8, b//8, b//8)), total, _get_led_brightness_for("led_brightness_power_save", 12))
+                    pulse_tick(strip, Color, pulse_powersave_state, total, _get_led_brightness_for("led_brightness_power_save", 12))
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
                     pass
