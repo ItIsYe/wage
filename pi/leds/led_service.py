@@ -7,7 +7,7 @@ from pathlib import Path
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 POLL_SECONDS = 1.0           # DB-Status alle 1s abfragen
 POLL_SECONDS_POWERSAVE = 10.0 # DB-Status im Power-Save alle 10s
-ANIM_SECONDS = 0.05          # LED-Animation alle 50ms (20 FPS)
+ANIM_SECONDS = 0.08          # LED-Animation alle 80ms (12 FPS) - stabiler bei 322 Pixeln
 ANIM_SECONDS_POWERSAVE = 0.5  # Power-Save: 2 FPS reichen
 REINIT_SECONDS = 10.0
 
@@ -182,48 +182,50 @@ def _wheel(pos: int) -> tuple:
 
 
 def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int, max_brightness: int = 80):
-    """Flüssiger Regenbogen nach Adafruit rainbowCycle - bewährt, kein Blinken."""
-    # Sanfter Aufbau beim Start
+    """Flüssiger Regenbogen - rainbowCycle mit korrekter wheel() Vektorisierung."""
     if state.brightness < 1.0:
         state.brightness = min(1.0, state.brightness + 0.025)
     scale = state.brightness * max_brightness / 255.0
-
     n = min(total_pixels, strip.numPixels())
 
     try:
         import numpy as np
-        # rainbowCycle: gleichmäßig über alle Pixel verteilt + globaler Offset
-        idx = np.arange(n, dtype=np.int32)
+        idx = np.arange(n, dtype=np.uint32)
+        # Gleichmäßig über alle Pixel + globaler Offset (Adafruit rainbowCycle)
         pos = ((idx * 256 // n) + state.offset) & 255
 
-        # wheel() vektorisiert
-        p0 = pos.copy(); p1 = pos - 85; p2 = pos - 170
+        # Korrekte wheel() Vektorisierung — 3 Segmente ohne Überlapp
         seg0 = pos < 85
         seg1 = (pos >= 85) & (pos < 170)
         seg2 = pos >= 170
+        p0 = pos.astype(np.int32)
+        p1 = (pos.astype(np.int32) - 85)
+        p2 = (pos.astype(np.int32) - 170)
 
         r = np.where(seg0, p0*3, np.where(seg1, 255-p1*3, np.zeros(n,np.int32)))
         g = np.where(seg0, 255-p0*3, np.where(seg1, np.zeros(n,np.int32), p2*3))
         b = np.where(seg0, np.zeros(n,np.int32), np.where(seg1, p1*3, 255-p2*3))
 
-        r = (r * scale).clip(0, 255).astype(np.uint8)
-        g = (g * scale).clip(0, 255).astype(np.uint8)
-        b = (b * scale).clip(0, 255).astype(np.uint8)
+        # seg2 fix: r sollte 0 sein, nicht zeros — bereits korrekt via np.zeros
+        # Helligkeit skalieren und clippen
+        r = np.clip(r * scale, 0, 255).astype(np.uint8)
+        g = np.clip(g * scale, 0, 255).astype(np.uint8)
+        b = np.clip(b * scale, 0, 255).astype(np.uint8)
 
+        # Alle Pixel auf einmal setzen
         for i in range(n):
             strip.setPixelColor(i, Color(int(r[i]), int(g[i]), int(b[i])))
 
     except ImportError:
         for i in range(n):
-            pos = ((i * 256 // n) + state.offset) & 255
-            rf, gf, bf = _wheel(pos)
-            strip.setPixelColor(i, Color(
-                int(rf * scale), int(gf * scale), int(bf * scale)
-            ))
+            pos = int((i * 256 // n + state.offset) & 255)
+            r, g, b = _wheel(pos)
+            strip.setPixelColor(i, Color(int(r*scale), int(g*scale), int(b*scale)))
 
     strip.show()
-    # 1 Schritt pro Frame bei 20 FPS = 256 Schritte / 20 FPS = 12.8s pro Runde
-    state.offset = (state.offset + 1) & 255
+    state._tick = getattr(state, "_tick", 0) + 1
+    if state._tick & 1 == 0:
+        state.offset = (state.offset + 1) & 255
 
 
 def pulse_tick(strip, Color, state: PulseState, total_pixels: int, max_brightness: int = 80):
