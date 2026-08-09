@@ -182,40 +182,13 @@ def _wheel(pos: int) -> tuple:
 
 
 def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int, max_brightness: int = 80):
-    """Flüssiger Regenbogen - Adafruit rainbowCycle, volle Farben."""
+    """Flüssiger Regenbogen - exakt wie funktionierender Direkttest."""
     n = min(total_pixels, strip.numPixels())
-
-    # Strip-Helligkeit dynamisch setzen
-    strip.setBrightness(max_brightness)
-
-    try:
-        import numpy as np
-        idx = np.arange(n, dtype=np.uint32)
-        pos = ((idx * 256 // n) + state.offset) & 255
-
-        seg0 = pos < 85
-        seg1 = (pos >= 85) & (pos < 170)
-        p0 = pos.astype(np.int32)
-        p1 = p0 - 85
-        p2 = p0 - 170
-
-        r = np.where(seg0, p0*3, np.where(seg1, 255-p1*3, np.zeros(n, np.int32)))
-        g = np.where(seg0, 255-p0*3, np.where(seg1, np.zeros(n, np.int32), p2*3))
-        b = np.where(seg0, np.zeros(n, np.int32), np.where(seg1, p1*3, 255-p2*3))
-
-        r = np.clip(r, 0, 255).astype(np.uint8)
-        g = np.clip(g, 0, 255).astype(np.uint8)
-        b = np.clip(b, 0, 255).astype(np.uint8)
-
-        for i in range(n):
-            strip.setPixelColor(i, Color(int(r[i]), int(g[i]), int(b[i])))
-
-    except ImportError:
-        for i in range(n):
-            pos = int((i * 256 // n + state.offset) & 255)
-            r, g, b = _wheel(pos)
-            strip.setPixelColor(i, Color(r, g, b))
-
+    offset = state.offset
+    for i in range(n):
+        pos = (i * 256 // n + offset) & 255
+        r, g, b = _wheel(pos)
+        strip.setPixelColor(i, Color(r, g, b))
     strip.show()
     state.offset = (state.offset + 1) & 255
 
