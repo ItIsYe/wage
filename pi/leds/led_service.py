@@ -262,6 +262,7 @@ if __name__ == "__main__":
     status = "running:blue"
     online = False
     _in_power_save = False
+    twinkle_state = None
     rainbow_state = RainbowState()
     pulse_online_state = PulseState(lambda b: (0, b, 0))
     pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
@@ -284,6 +285,8 @@ if __name__ == "__main__":
                 strip, Color = make_strip()
                 last_led_count = _get_led_count()
                 last_led_brightness = _get_led_brightness()
+                from leds.twinkle import TwinkleState
+                twinkle_state = TwinkleState(strip.numPixels())
                 boot_sequence(strip, Color)
                 set_state("led_status", "starting:white")
             except Exception as exc:
@@ -347,7 +350,10 @@ if __name__ == "__main__":
                 total = strip.numPixels()
                 power_save = _is_power_save()
                 if power_save and now >= blink_until:
-                    pulse_tick(strip, Color, pulse_powersave_state, total, _get_led_brightness_for("led_brightness_power_save", 12))
+                    if twinkle_state is None or twinkle_state.n != total:
+                        from leds.twinkle import TwinkleState
+                        twinkle_state = TwinkleState(total)
+                    twinkle_state.tick(strip, Color, _get_led_brightness_for("led_brightness_power_save", 12))
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
                     pass
