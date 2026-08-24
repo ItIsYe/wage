@@ -249,6 +249,7 @@ void ledsInit() {
     FastLED.addLeds<WS2812B, RING2_PIN, GRB>(ring2Leds, RING2_PIXEL_COUNT);
     ring2Init(ring2Leds);
   }
+  delay(100);  // Strip braucht Zeit zum Hochfahren
   FastLED.show();
 }
 
