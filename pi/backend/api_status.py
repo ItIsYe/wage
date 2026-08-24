@@ -122,9 +122,11 @@ async def status_stream():
     async def event_generator():
         last_run_id = None
         try:
+            online_now = False
             while True:
                 try:
                     data = _build_status()
+                    online_now = data.get("scale_online", False)
                     current_run_id = data.get("last_run_id")
                     if current_run_id != last_run_id:
                         last_run_id = current_run_id
