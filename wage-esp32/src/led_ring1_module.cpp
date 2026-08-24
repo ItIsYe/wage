@@ -190,7 +190,16 @@ bool ring1Service(uint32_t now) {
     case LedMode::RED_SOLID: if (ledFrameDirty) pixelsFill(colorRed); break;
     case LedMode::OK_ALT_GB:
       if (now - ledTickMs >= 450) { ledTickMs = now; ledFlip = !ledFlip; ledFrameDirty = true; }
-      if (ledFrameDirty) { pixelsClear(); if (ledFlip) pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), colorGreen); else pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), colorBlue); }
+      if (ledFrameDirty) {
+        pixelsClear();
+        if (ledFlip) {
+          pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), colorGreen);
+          pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), colorBlue);
+        } else {
+          pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), colorBlue);
+          pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), colorGreen);
+        }
+      }
       break;
     case LedMode::READY_GREEN_BLINK:
       if (now - ledTickMs >= 450) { ledTickMs = now; ledFlip = !ledFlip; ledFrameDirty = true; }
