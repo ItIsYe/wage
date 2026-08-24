@@ -107,12 +107,6 @@ def _shutdown():
         draw.text((0, 22), "Wird", fill=255)
         draw.text((0, 34), "ausgeschaltet...", fill=255)
         dev.display(img)
-        import time as _t; _t.sleep(2)
-    except Exception:
-        pass
-    # OLED ausschalten über systemd
-    try:
-        subprocess.run(["sudo", "systemctl", "stop", "wage-pi-oled"], timeout=5, capture_output=True)
     except Exception:
         pass
     # Backlight aus
