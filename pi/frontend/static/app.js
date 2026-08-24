@@ -1279,3 +1279,33 @@ async function saveLedConfig() {
 }
 
 loadLedConfig();
+
+
+// === WLAN Scan ===
+
+async function scanWifi() {
+  const btn = document.getElementById('btn-scan');
+  const list = document.getElementById('wifi-scan-list');
+  const msg = document.getElementById('wifi-scan-msg');
+  if (btn) { btn.disabled = true; btn.textContent = '🔍 Scanne...'; }
+  if (msg) { msg.textContent = 'Suche nach Netzwerken...'; msg.className = 'msg msg-info'; }
+  try {
+    const d = await api('/api/v1/config/network/scan');
+    if (d.error && !d.networks?.length) {
+      if (msg) { msg.textContent = 'Fehler: ' + d.error; msg.className = 'msg msg-err'; }
+      return;
+    }
+    if (list) {
+      list.innerHTML = '<option value="">— Netzwerk auswählen —</option>' +
+        (d.networks || []).map(n =>
+          `<option value="${esc(n.ssid)}">${esc(n.ssid)} (${n.signal}%) ${n.security ? '🔒' : ''}</option>`
+        ).join('');
+      list.style.display = 'block';
+    }
+    if (msg) { msg.textContent = `${d.networks?.length || 0} Netzwerke gefunden.`; msg.className = 'msg msg-ok'; }
+  } catch (e) {
+    if (msg) { msg.textContent = 'Scan fehlgeschlagen: ' + e.message; msg.className = 'msg msg-err'; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan'; }
+  }
+}

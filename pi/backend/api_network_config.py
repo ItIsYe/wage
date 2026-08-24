@@ -95,6 +95,43 @@ def _validate_network_config(cfg: dict[str, str]) -> None:
         raise HTTPException(status_code=400, detail="Client-SSID darf im Client-Modus nicht leer sein.")
 
 
+@router.get("/scan")
+def scan_wifi_networks():
+    """Verfügbare WLAN-Netzwerke scannen."""
+    try:
+        import subprocess
+        wlan = subprocess.check_output(
+            ["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"],
+            text=True, timeout=5
+        )
+        iface = next((l.split(":")[0] for l in wlan.splitlines() if "wifi" in l), None)
+        if not iface:
+            return {"networks": [], "error": "Kein WLAN-Interface gefunden"}
+        subprocess.run(["sudo", "nmcli", "device", "wifi", "rescan", "ifname", iface],
+                       timeout=10, capture_output=True)
+        out = subprocess.check_output(
+            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", iface],
+            text=True, timeout=10
+        )
+        seen = set()
+        networks = []
+        for line in out.splitlines():
+            parts = line.split(":")
+            if len(parts) >= 2:
+                ssid = parts[0].strip()
+                if ssid and ssid not in seen:
+                    seen.add(ssid)
+                    networks.append({
+                        "ssid": ssid,
+                        "signal": int(parts[1]) if parts[1].isdigit() else 0,
+                        "security": parts[2] if len(parts) > 2 else ""
+                    })
+        networks.sort(key=lambda x: x["signal"], reverse=True)
+        return {"networks": networks}
+    except Exception as e:
+        return {"networks": [], "error": str(e)}
+
+
 @router.get("")
 def get_network_config():
     ensure_config_defaults()
@@ -167,7 +204,7 @@ async def apply_network_config():
     else:
         try:
             proc = await asyncio.create_subprocess_exec(
-                str(SCRIPT_PATH),
+                "sudo", str(SCRIPT_PATH),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

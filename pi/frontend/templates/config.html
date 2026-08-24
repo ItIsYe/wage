@@ -38,7 +38,16 @@
   <div class="card">
     <h3>Haus-WLAN</h3>
     <div class="grid two">
-      <input id="client-ssid" placeholder="WLAN SSID">
+      <div>
+        <div style="display:flex;gap:6px;margin-bottom:6px">
+          <input id="client-ssid" placeholder="WLAN SSID" style="flex:1">
+          <button type="button" onclick="scanWifi()" id="btn-scan" class="btn-secondary">🔍 Scan</button>
+        </div>
+        <select id="wifi-scan-list" style="width:100%;display:none" onchange="if(this.value){document.getElementById('client-ssid').value=this.value}">
+          <option value="">— Netzwerk auswählen —</option>
+        </select>
+        <div id="wifi-scan-msg" class="msg" style="font-size:.8rem"></div>
+      </div>
       <div class="pw-field">
         <input id="client-password" type="password" placeholder="WLAN Passwort (leer = behalten)">
         <button type="button" id="toggle-client-password">anzeigen</button>
