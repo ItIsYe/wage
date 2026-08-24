@@ -97,9 +97,10 @@ def _validate_network_config(cfg: dict[str, str]) -> None:
 
 @router.get("/scan")
 def scan_wifi_networks():
-    """Verfügbare WLAN-Netzwerke scannen."""
+    """Verfügbare WLAN-Netzwerke scannen — funktioniert auch im AP-Modus."""
     try:
         import subprocess
+        # WLAN-Interface finden
         wlan = subprocess.check_output(
             ["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"],
             text=True, timeout=5
@@ -107,10 +108,19 @@ def scan_wifi_networks():
         iface = next((l.split(":")[0] for l in wlan.splitlines() if "wifi" in l), None)
         if not iface:
             return {"networks": [], "error": "Kein WLAN-Interface gefunden"}
-        subprocess.run(["sudo", "nmcli", "device", "wifi", "rescan", "ifname", iface],
-                       timeout=10, capture_output=True)
+
+        # Scan ohne rescan versuchen — im AP-Modus schlägt rescan fehl
+        try:
+            subprocess.run(
+                ["sudo", "nmcli", "device", "wifi", "rescan", "ifname", iface],
+                timeout=8, capture_output=True
+            )
+        except Exception:
+            pass  # Rescan im AP-Modus schlägt fehl, ignorieren
+
+        # Trotzdem cached Scan-Ergebnisse auslesen
         out = subprocess.check_output(
-            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", iface],
+            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"],
             text=True, timeout=10
         )
         seen = set()
