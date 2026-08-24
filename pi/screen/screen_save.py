@@ -91,6 +91,25 @@ def _shutdown():
         )
     except Exception:
         pass
+    # OLED: Shutdown-Meldung anzeigen
+    try:
+        from luma.core.interface.serial import i2c
+        from luma.oled.device import sh1106, ssd1306
+        from PIL import Image, ImageDraw, ImageFont
+        serial = i2c(port=1, address=0x3c)
+        try:
+            dev = ssd1306(serial)
+        except Exception:
+            dev = sh1106(serial)
+        img = Image.new("1", dev.size, 0)
+        draw = ImageDraw.Draw(img)
+        draw.text((0, 8),  "wage-pi", fill=255)
+        draw.text((0, 22), "Wird", fill=255)
+        draw.text((0, 34), "ausgeschaltet...", fill=255)
+        dev.display(img)
+        import time as _t; _t.sleep(2)
+    except Exception:
+        pass
     # OLED ausschalten über systemd
     try:
         subprocess.run(["sudo", "systemctl", "stop", "wage-pi-oled"], timeout=5, capture_output=True)
