@@ -34,7 +34,7 @@ def _get_config() -> dict:
 
 
 def _is_debug_mode() -> bool:
-    """Debug-Modus: kein Auto-Shutdown, kein Power-Save."""
+    """Debug-Modus: nur Auto-Shutdown deaktiviert."""
     try:
         cfg = _get_config()
         return cfg.get("debug_mode", "0") == "1"
@@ -43,8 +43,6 @@ def _is_debug_mode() -> bool:
 
 
 def _is_power_save() -> bool:
-    if _is_debug_mode():
-        return False
     if time.monotonic() - _start_time < STARTUP_GRACE_SECONDS:
         return False
     try:
