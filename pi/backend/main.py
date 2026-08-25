@@ -130,6 +130,25 @@ async def restart_services():
     except Exception as e:
         return {"ok": False, "detail": str(e)}
 
+
+@app.get("/api/v1/system/debug-mode")
+def get_debug_mode():
+    with db_cursor() as (_, cur):
+        row = cur.execute("SELECT value FROM app_state WHERE key='debug_mode'").fetchone()
+    return {"debug_mode": int(row["value"]) if row else 0}
+
+
+@app.post("/api/v1/system/debug-mode")
+async def set_debug_mode(request: Request):
+    payload = await request.json()
+    val = "1" if payload.get("enabled") else "0"
+    with db_cursor() as (_, cur):
+        cur.execute(
+            "INSERT INTO app_state(key,value) VALUES('debug_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (val,)
+        )
+    return {"ok": True, "debug_mode": int(val)}
+
 @app.get("/config", response_class=HTMLResponse)
 def config_page(request: Request):
     return templates.TemplateResponse("config.html", {"request": request})

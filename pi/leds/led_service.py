@@ -55,7 +55,18 @@ _service_start = time.time()
 STARTUP_GRACE_SECONDS = 120
 
 
+def _is_debug_mode() -> bool:
+    """Debug-Modus: kein Power-Save."""
+    try:
+        hw = _get_hw_config()
+        return hw.get("debug_mode", "0") == "1"
+    except Exception:
+        return False
+
+
 def _is_power_save() -> bool:
+    if _is_debug_mode():
+        return False
     if time.time() - _service_start < STARTUP_GRACE_SECONDS:
         return False
     try:

@@ -2,6 +2,18 @@
 {% block content %}
 <h1>Geräte / Status</h1>
 <div id="msg" class="msg"></div>
-<div class="card"><b>QR-Code-Ziel:</b> <span id="qr-url">-</span></div>
+<div class="card">
+  <b>QR-Code-Ziel:</b> <span id="qr-url">-</span>
+</div>
+<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <div>
+    <b>🛠 Debug-Modus</b>
+    <div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">Deaktiviert Auto-Shutdown und Power-Save</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="debug-mode-label" style="font-size:.85rem;color:var(--text-muted)">Aus</span>
+    <button id="btn-debug-toggle" onclick="toggleDebugMode()" style="min-width:100px">Laden...</button>
+  </div>
+</div>
 <div id="status-grid" class="grid"></div>
 {% endblock %}

@@ -1309,3 +1309,45 @@ async function scanWifi() {
     if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan'; }
   }
 }
+
+
+// === Debug-Modus ===
+
+async function loadDebugMode() {
+  try {
+    const d = await api('/api/v1/system/debug-mode');
+    _applyDebugMode(d.debug_mode === 1);
+  } catch (e) {}
+}
+
+function _applyDebugMode(active) {
+  const label = document.getElementById('debug-mode-label');
+  const btn = document.getElementById('btn-debug-toggle');
+  if (label) label.textContent = active ? '🟢 An' : '⚫ Aus';
+  if (btn) {
+    btn.textContent = active ? 'Deaktivieren' : 'Aktivieren';
+    btn.style.background = active ? 'var(--err)' : 'var(--ok)';
+  }
+}
+
+async function toggleDebugMode() {
+  const btn = document.getElementById('btn-debug-toggle');
+  if (btn) btn.disabled = true;
+  try {
+    const current = await api('/api/v1/system/debug-mode');
+    const newState = current.debug_mode !== 1;
+    await api('/api/v1/system/debug-mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ enabled: newState })
+    });
+    _applyDebugMode(newState);
+    flash(newState ? 'Debug-Modus aktiviert — kein Auto-Shutdown.' : 'Debug-Modus deaktiviert.', true);
+  } catch (e) {
+    flash('Fehler: ' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+loadDebugMode();

@@ -28,4 +28,5 @@ DEFAULTS = {
     "led_brightness_error": "100",
     "pi_oled_rotation": "0",
     "power_save_after_minutes": "1",
+    "debug_mode": "0",  # 0=aus, 1=an (kein Auto-Shutdown, kein Power-Save)
 }
