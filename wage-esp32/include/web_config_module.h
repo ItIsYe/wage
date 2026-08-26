@@ -17,7 +17,5 @@ bool webIsResetRequested();
 void webClearResetRequested();
 
 void webSetResetStatusMsg(const String& msg);
-String webGetResetStatusMsg();
 
 bool webIsWifiApMode();
-String webGetNetworkInfo();

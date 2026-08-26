@@ -876,9 +876,7 @@ void webClearPendingConfig() { pendingConfigValid = false; }
 bool webIsResetRequested() { return resetRequested; }
 void webClearResetRequested() { resetRequested = false; }
 void webSetResetStatusMsg(const String& msg) { resetStatusMsg = msg; }
-String webGetResetStatusMsg() { return resetStatusMsg; }
 bool webIsWifiApMode() { return wifiApMode; }
-String webGetNetworkInfo() { return networkInfo; }
 static const char* errToStrLocal(ErrCode e) {
   switch (e) {
     case ErrCode::OK: return "OK";

@@ -6,18 +6,18 @@
 // =========================================================
 // Debug / Logging
 // =========================================================
-static constexpr bool MASTER_DEBUG_LOG = false;
-static constexpr bool PERFORMANCE_DEBUG = false;
+static constexpr bool MASTER_DEBUG_LOG = false;   // Haupt-Debug-Log ein/aus (Serial)
+static constexpr bool PERFORMANCE_DEBUG = false;  // Timing-Messungen ausgeben
 
 // =========================================================
 // WLAN / Webinterface
 // =========================================================
-static constexpr bool WEB_CONFIG_ENABLED = true;
-static constexpr bool WIFI_STA_ENABLED = false;
+static constexpr bool WEB_CONFIG_ENABLED = true;  // ESP32 Webinterface aktiv
+static constexpr bool WIFI_STA_ENABLED = false;   // Haus-WLAN Client (normalerweise über Pi gesteuert)
 static const char* WIFI_SSID = "YOUR_WIFI_SSID";
 static const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 12000;
-static constexpr bool WIFI_USE_STATIC_IP = true;
+static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 12000; // Timeout für WLAN-Verbindung
+static constexpr bool WIFI_USE_STATIC_IP = true;  // Statische IP statt DHCP
 static const IPAddress WIFI_LOCAL_IP(192, 168, 178, 60);
 static const IPAddress WIFI_GATEWAY(192, 168, 178, 1);
 static const IPAddress WIFI_SUBNET(255, 255, 255, 0);
@@ -25,23 +25,23 @@ static const IPAddress WIFI_DNS1(192, 168, 178, 1);
 static const IPAddress WIFI_DNS2(8, 8, 8, 8);
 static const char* CONFIG_AP_SSID = "Waage-Config";
 static const char* CONFIG_AP_PASSWORD = "waagecfg1";
-static constexpr uint16_t WEB_SERVER_PORT = 80;
+static constexpr uint16_t WEB_SERVER_PORT = 80;   // HTTP-Port des Webinterfaces
 static constexpr uint32_t HEARTBEAT_INTERVAL_MS    = 30000;  // Heartbeat alle 30s
 static constexpr uint32_t OFFLINE_PROBE_INTERVAL_MS = 60000;  // Probe alle 60s wenn Pi offline
-static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 500;
-static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000;
+static constexpr uint32_t WEB_SERVICE_INTERVAL_IDLE_MS = 500;  // Webserver-Poll im Leerlauf
+static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000; // Webserver-Poll während Messung
 
 // =========================================================
 // Externe Schnittstelle
 // =========================================================
-static constexpr bool EXTERNAL_INTERFACE_ENABLED_DEFAULT = false;
+static constexpr bool EXTERNAL_INTERFACE_ENABLED_DEFAULT = false; // Pi-Kommunikation aktiv
 static const char* EXTERNAL_TARGET_HOST_DEFAULT = "";
 static constexpr uint16_t EXTERNAL_TARGET_PORT_DEFAULT = 80;
 static const char* EXTERNAL_API_PATH_DEFAULT = "/api/v1/runs";
 static const char* EXTERNAL_API_KEY_DEFAULT = "";
 static constexpr uint32_t EXTERNAL_SEND_TIMEOUT_MS = 2000;
 static constexpr uint32_t EXTERNAL_RETRY_INTERVAL_MS = 5000;
-static constexpr size_t EXTERNAL_QUEUE_MAX = 50;
+static constexpr size_t EXTERNAL_QUEUE_MAX = 50;  // Max. gepufferte Läufe wenn Pi offline
 
 // =========================================================
 // OLED
@@ -68,9 +68,9 @@ static constexpr uint8_t LED_STRIP_PIN = 5;
 static constexpr uint16_t PIXEL_COUNT = 160;
 static constexpr uint8_t PIXEL_GROUP_SIZE = 3;                        // je 3 physische Pixel = 1 logische Gruppe
 static constexpr uint16_t PIXEL_GROUPS = PIXEL_COUNT / PIXEL_GROUP_SIZE; // 53 Gruppen bei 160 Pixeln
-static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50;
-static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90;
-static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false;
+static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50; // Ring1 Helligkeit in %
+static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90; // Ring1 Helligkeit im Standby in %
+static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false; // Debug: alle Pixel einschalten
 
 // =========================================================
 // Ring 2 / Zusatz-LED-Ring
@@ -79,8 +79,8 @@ static constexpr bool RING2_ENABLED = true;
 // GPIO14: ESP32 nutzbarer Output, teilt sich aber JTAG-Funktion. Bei JTAG-Nutzung Konflikt möglich.
 static constexpr uint8_t RING2_PIN = 14;
 static constexpr uint16_t RING2_PIXEL_COUNT = 24;
-static constexpr bool RING2_BOOT_TEST = false;
-static constexpr bool RING2_FORCE_INDEPENDENT_TEST = false;
+static constexpr bool RING2_BOOT_TEST = false;             // Ring2 Boot-Selbsttest
+static constexpr bool RING2_FORCE_INDEPENDENT_TEST = false; // Ring2 immer unabhängig testen
 static constexpr bool DEFAULT_RING2_ENABLED = true;
 static constexpr uint8_t DEFAULT_RING2_BRIGHTNESS_PERCENT = 35;
 static constexpr uint8_t DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT = 25;
@@ -143,14 +143,14 @@ static constexpr uint8_t STANDBY_ON_MAX = 9;
 // =========================================================
 // Filter / Stabilität
 // =========================================================
-static constexpr uint8_t MA_N = 10;
-static constexpr float STABLE_BAND_G = 2.0f;
+static constexpr uint8_t MA_N = 10;        // Moving-Average Fenstergröße
+static constexpr float STABLE_BAND_G = 2.0f;     // Toleranzband für Stabilitätserkennung (g)
 static constexpr uint32_t STABLE_WINDOW_MS = 800;
 static constexpr uint32_t STABLE_HOLD_MS = 800;
 
 // =========================================================
 // Fehler / Recovery
 // =========================================================
-static constexpr float NEGATIVE_CLAMP_G = -3.0f;
-static constexpr float NEGATIVE_ERROR_G = -15.0f;
-static constexpr uint32_t RECOVER_WAIT_MS = 1200;
+static constexpr float NEGATIVE_CLAMP_G = -3.0f;  // Negativwerte bis hier toleriert
+static constexpr float NEGATIVE_ERROR_G = -15.0f; // Unterhalb: Fehler-Recovery auslösen
+static constexpr uint32_t RECOVER_WAIT_MS = 1200; // Wartezeit nach Fehler-Recovery

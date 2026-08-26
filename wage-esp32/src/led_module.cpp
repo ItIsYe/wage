@@ -342,10 +342,6 @@ void ledApplyBrightnessForCurrentMode() {
   ring1ApplyBrightnessForCurrentMode();
 }
 
-void ledMarkRing2Dirty() {
-  if (RING2_ENABLED) ring2MarkDirty();
-}
-
 void ledMarkAllDirty() {
   ring1MarkDirty();
   if (RING2_ENABLED) ring2MarkDirty();
