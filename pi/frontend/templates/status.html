@@ -15,5 +15,12 @@
     <button id="btn-debug-toggle" onclick="toggleDebugMode()" style="min-width:100px">Laden...</button>
   </div>
 </div>
+<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <div>
+    <b>⏻ Pi herunterfahren</b>
+    <div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">Fährt den Pi sauber herunter</div>
+  </div>
+  <button onclick="shutdownPi()" style="background:var(--err);min-width:100px">Herunterfahren</button>
+</div>
 <div id="status-grid" class="grid"></div>
 {% endblock %}

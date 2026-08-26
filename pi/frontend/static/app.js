@@ -1351,3 +1351,16 @@ async function toggleDebugMode() {
 }
 
 loadDebugMode();
+
+
+// === Pi Herunterfahren ===
+
+async function shutdownPi() {
+  if (!confirm('Pi wirklich herunterfahren?')) return;
+  try {
+    const d = await api('/api/v1/system/shutdown', { method: 'POST' });
+    flash(d.message || 'Pi wird heruntergefahren...', d.ok);
+  } catch (e) {
+    flash('Pi wird heruntergefahren...');
+  }
+}

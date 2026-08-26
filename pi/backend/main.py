@@ -149,6 +149,22 @@ async def set_debug_mode(request: Request):
         )
     return {"ok": True, "debug_mode": int(val)}
 
+
+@app.post("/api/v1/system/shutdown")
+async def system_shutdown():
+    """Pi herunterfahren."""
+    import subprocess
+    try:
+        # LED-Shutdown-Signal setzen
+        with db_cursor() as (_, cur):
+            cur.execute(
+                "INSERT INTO app_state(key,value) VALUES('led_shutdown','1') ON CONFLICT(key) DO UPDATE SET value='1'"
+            )
+        subprocess.Popen(["sudo", "shutdown", "-h", "now"])
+        return {"ok": True, "message": "Pi wird heruntergefahren..."}
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
 @app.get("/config", response_class=HTMLResponse)
 def config_page(request: Request):
     return templates.TemplateResponse("config.html", {"request": request})
