@@ -3,7 +3,6 @@
 wage-pi-screen-save: Schaltet den Pi-Bildschirm (DSI) aus wenn kein Lauf
 für X Minuten eingegangen ist. Aktiviert ihn bei neuem Lauf oder Touch wieder.
 """
-import os
 import sqlite3
 import threading
 import time
@@ -104,7 +103,7 @@ def _shutdown():
     try:
         from luma.core.interface.serial import i2c
         from luma.oled.device import sh1106, ssd1306
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw
         serial = i2c(port=1, address=0x3c)
         try:
             dev = ssd1306(serial)

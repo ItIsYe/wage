@@ -264,9 +264,7 @@ if __name__ == "__main__":
     _in_power_save = False
     twinkle_state = None
     rainbow_state = RainbowState()
-    pulse_online_state = PulseState(lambda b: (0, b, 0))
     pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
-    pulse_powersave_state = PulseState(lambda b: (b, b, b))   # weißes Atmen
 
     # led_shutdown Flag beim Start zurücksetzen
     try:

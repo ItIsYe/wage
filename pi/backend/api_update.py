@@ -276,7 +276,7 @@ def update_status():
         # Prüfen ob der Background-Job noch läuft
         import subprocess as _sp
         try:
-            result = _sp.run(["pgrep", "-f", "run-update-job"], capture_output=True, timeout=3)
+            result = _sp.run(["pgrep", "-f", "update.sh"], capture_output=True, timeout=3)
             job_running = result.returncode == 0
         except Exception:
             job_running = False
@@ -332,7 +332,3 @@ def update_apply():
     subprocess.Popen(["bash", update_script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return _response_payload(mode, _read_state(["last_update_status", "last_update_at", "last_update_progress_step", "last_update_progress_percent"]), local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Update wird durchgeführt...", progress_step="Update wird vorbereitet...", progress_percent=5, can_apply=False)
 
-
-if __name__ == "__main__":
-    if "--run-update-job" in sys.argv:
-        _run_background_update_job()
