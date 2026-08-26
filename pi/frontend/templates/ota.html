@@ -4,20 +4,32 @@
 <div id="msg" class="msg"></div>
 
 <div class="card">
-  <p>Aktuelle ESP-Firmware: <strong id="ota-current">-</strong></p>
-  <p>Verfügbare Firmware: <strong id="ota-available">-</strong></p>
-  <p>Status: <span id="ota-status">-</span></p>
-  <div id="ota-progress-wrap" style="display:none;margin:8px 0;">
-    <div style="background:#e0e0e0;border-radius:6px;height:14px;overflow:hidden;">
-      <div id="ota-progress-bar" style="height:100%;background:#2563eb;width:0%;transition:width .4s;border-radius:6px;"></div>
+  <div class="grid two">
+    <div class="form-group">
+      <label>Aktuelle ESP-Firmware</label>
+      <div style="font-family:monospace;padding:9px 0" id="ota-current">—</div>
     </div>
-    <span id="ota-progress-pct">0%</span>
+    <div class="form-group">
+      <label>Verfügbare Firmware</label>
+      <div style="font-family:monospace;padding:9px 0" id="ota-available">—</div>
+    </div>
   </div>
-  <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+
+  <div class="form-group">
+    <label>Status</label>
+    <div id="ota-status" style="padding:4px 0">—</div>
+  </div>
+
+  <div id="ota-progress-wrap" style="display:none;margin-bottom:14px">
+    <div class="progress"><div id="ota-progress-bar" class="progress-bar" style="width:0%"></div></div>
+    <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px"><span id="ota-progress-pct">0</span>%</div>
+  </div>
+
+  <div class="toolbar">
     <button id="btn-ota-check" onclick="otaCheck()">Auf Update prüfen</button>
     <button id="btn-ota-apply" onclick="otaApply()" disabled>Update installieren</button>
-    <button id="btn-ota-sync" onclick="otaSync()">Firmware von GitHub laden</button>
+    <button id="btn-ota-sync" onclick="otaSync()" class="btn-secondary">Von GitHub laden</button>
   </div>
-  <p style="margin-top:8px;font-size:0.85em;color:#a33;">Während des Updates nicht vom Strom trennen. Das Gerät startet nach dem Update automatisch neu.</p>
+  <p class="hint">Während des Updates nicht vom Strom trennen. Das Gerät startet nach dem Update automatisch neu.</p>
 </div>
 {% endblock %}

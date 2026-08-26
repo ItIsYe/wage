@@ -1,20 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Konfiguration / Netzwerk</h1>
+<h1>Konfiguration</h1>
 <div id="msg" class="msg"></div>
-<section class="config-section">
-  <h2>1) Netzwerk-Status</h2>
-  <div class="card warn">⚠️ Netzwerkänderungen können die Verbindung kurz trennen.</div>
-  <div id="network-status-grid" class="grid"></div>
-</section>
 
-<section class="config-section">
+<div class="section-group">
+  <h2>1) Netzwerk-Status</h2>
+  <div class="warn">⚠️ Netzwerkänderungen können die Verbindung kurz trennen.</div>
+  <div id="network-status-grid" class="grid"></div>
+</div>
+
+<div class="section-group">
   <h2>2) Netzwerk-Konfiguration</h2>
+
   <div class="card">
     <h3>Modus</h3>
-    <div class="toolbar mode-toolbar">
-      <label><input type="radio" name="network-mode" value="ap" checked> AP-Modus</label>
-      <label><input type="radio" name="network-mode" value="client"> Haus-WLAN-Client</label>
+    <div class="mode-group">
+      <label class="mode-label"><input type="radio" name="network-mode" value="ap" checked> AP-Modus</label>
+      <label class="mode-label"><input type="radio" name="network-mode" value="client"> Haus-WLAN-Client</label>
     </div>
   </div>
 
@@ -22,99 +24,123 @@
     <h3>AP-Einstellungen</h3>
     <div id="ap-password-hint" class="msg msg-warn" style="display:none"></div>
     <div class="grid two">
-      <input id="ap-ssid" placeholder="AP SSID">
-      <div class="pw-field">
-        <input id="ap-password" type="password" placeholder="AP Passwort (leer = behalten)">
-        <button type="button" id="toggle-ap-password">anzeigen</button>
-        <button type="button" id="load-ap-password">gespeichertes laden</button>
+      <div class="form-group">
+        <label>AP SSID</label>
+        <input id="ap-ssid" placeholder="wage-net">
       </div>
-      <div class="hint-line">Hinweis: mindestens 8 Zeichen.</div>
-      <input id="ap-ip" placeholder="AP IP">
-      <input id="ap-dhcp-start" placeholder="DHCP Start">
-      <input id="ap-dhcp-end" placeholder="DHCP Ende">
+      <div class="form-group">
+        <label>AP Passwort <span class="hint" style="display:inline">(min. 8 Zeichen)</span></label>
+        <div class="pw-field">
+          <div><input id="ap-password" type="password" placeholder="leer lassen = behalten"></div>
+          <button type="button" id="toggle-ap-password" class="btn-secondary">anzeigen</button>
+          <button type="button" id="load-ap-password" class="btn-secondary">laden</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>AP IP</label>
+        <input id="ap-ip" placeholder="192.168.50.1">
+      </div>
+      <div class="form-group">
+        <label>DHCP Start</label>
+        <input id="ap-dhcp-start" placeholder="192.168.50.50">
+      </div>
+      <div class="form-group">
+        <label>DHCP Ende</label>
+        <input id="ap-dhcp-end" placeholder="192.168.50.150">
+      </div>
     </div>
   </div>
 
   <div class="card">
     <h3>Haus-WLAN</h3>
     <div class="grid two">
-      <div>
-        <div style="display:flex;gap:6px;margin-bottom:6px">
-          <input id="client-ssid" placeholder="WLAN SSID" style="flex:1">
+      <div class="form-group">
+        <label>WLAN SSID</label>
+        <div style="display:flex;gap:8px">
+          <input id="client-ssid" placeholder="SSID eingeben oder scannen" style="flex:1">
           <button type="button" onclick="scanWifi()" id="btn-scan" class="btn-secondary">🔍 Scan</button>
         </div>
-        <select id="wifi-scan-list" style="width:100%;display:none" onchange="if(this.value){document.getElementById('client-ssid').value=this.value}">
+        <select id="wifi-scan-list" style="display:none;margin-top:6px" onchange="if(this.value) byId('client-ssid').value=this.value">
           <option value="">— Netzwerk auswählen —</option>
         </select>
-        <div id="wifi-scan-msg" class="msg" style="font-size:.8rem"></div>
+        <div id="wifi-scan-msg" class="msg" style="margin-top:4px;font-size:.8rem"></div>
       </div>
-      <div class="pw-field">
-        <input id="client-password" type="password" placeholder="WLAN Passwort (leer = behalten)">
-        <button type="button" id="toggle-client-password">anzeigen</button>
-        <button type="button" id="load-client-password">gespeichertes laden</button>
+      <div class="form-group">
+        <label>WLAN Passwort</label>
+        <div class="pw-field">
+          <div><input id="client-password" type="password" placeholder="leer lassen = behalten"></div>
+          <button type="button" id="toggle-client-password" class="btn-secondary">anzeigen</button>
+          <button type="button" id="load-client-password" class="btn-secondary">laden</button>
+        </div>
       </div>
     </div>
   </div>
-</section>
 
-<section class="config-section">
-  <h2>3) Netzwerk-Aktionen</h2>
   <div class="card">
     <div class="toolbar">
       <button id="btn-network-save" onclick="saveNetworkConfig()">Speichern</button>
       <button id="btn-network-apply" onclick="applyNetworkConfig()">Jetzt anwenden</button>
-      <button onclick="refreshConfigPage()">Status neu laden</button>
+      <button onclick="refreshConfigPage()" class="btn-secondary">Status neu laden</button>
     </div>
-    <div id="network-action-msg" class="msg msg-info"></div>
-    <div class="msg msg-info">Gespeichertes Passwort wird nur auf Knopfdruck angezeigt.</div>
-    <div class="msg msg-ok">Neustart empfohlen nach Netzwechsel.</div>
+    <div id="network-action-msg" class="msg"></div>
+    <p class="hint">Passwörter werden nur auf Knopfdruck angezeigt. Nach einem Netzwerkwechsel ist ein Neustart empfohlen.</p>
   </div>
-</section>
+</div>
 
-<section class="config-section">
-  <h2>3) Pi Hardware</h2>
-  <div class="config-section">
-    <a href="/config/leds"><button>LED-Konfiguration öffnen →</button></a>
+<div class="section-group">
+  <h2>3) LED-Konfiguration</h2>
+  <div class="card card-row">
+    <div class="card-row-info">
+      <b>LED-Helligkeiten und Streifengrößen</b>
+      <small>Regenbogen, Offline-Pulse, Grüne Welle, Power-Save, Boot, Fehler</small>
+    </div>
+    <a href="/config/leds"><button class="btn-secondary">LED-Konfiguration →</button></a>
   </div>
+</div>
 
-  <h2>4) Pi Hardware (Allgemein)</h2>
-  <div class="config-section">
-    <div class="pw-field">
-      <label>Anzahl LED-Streifen</label>
-      <input type="number" id="pi-led-strip-count" min="1" max="16" value="4">
+<div class="section-group">
+  <h2>4) Pi Hardware</h2>
+  <div class="card">
+    <div class="grid two">
+      <div class="form-group">
+        <label>Pixel pro Streifen (kommagetrennt)</label>
+        <input type="text" id="pi-led-strip-sizes" value="80,80,82,82" placeholder="z.B. 80,80,82,82">
+      </div>
+      <div class="form-group">
+        <label>LED-Helligkeit global (0–255)</label>
+        <input type="number" id="pi-led-brightness" min="0" max="255" value="32">
+      </div>
+      <div class="form-group">
+        <label>OLED-Rotation</label>
+        <select id="pi-oled-rotation">
+          <option value="0">0° (normal)</option>
+          <option value="1">90°</option>
+          <option value="2">180°</option>
+          <option value="3">270°</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Energiesparmodus nach Inaktivität (Minuten, 0 = deaktiviert)</label>
+        <input type="number" id="power-save-after-minutes" min="0" max="1440" value="1">
+      </div>
     </div>
-    <div class="pw-field">
-      <label>Pixel pro Streifen (kommagetrennt, z.B. 80,80,82,82)</label>
-      <input type="text" id="pi-led-strip-sizes" value="80,80,82,82" placeholder="80,80,82,82">
-    </div>
-    <div class="pw-field">
-      <label>LED-Helligkeit (0–255)</label>
-      <input type="number" id="pi-led-brightness" min="0" max="255" value="32">
-    </div>
-    <div class="pw-field">
-      <label>OLED-Rotation (0=normal, 1=90°, 2=180°, 3=270°)</label>
-      <input type="number" id="pi-oled-rotation" min="0" max="3" value="0">
-    </div>
-    <div class="pw-field">
-      <label>Energiesparmodus nach Inaktivität (Minuten, 0 = deaktiviert)</label>
-      <input type="number" id="power-save-after-minutes" min="0" max="1440" value="1">
-    </div>
-    <div class="toolbar" style="margin-top:12px;">
+    <div class="toolbar">
       <button onclick="saveHardwareConfig()">Speichern</button>
-      <small>Dienste werden nach dem Speichern automatisch neu gestartet.</small>
     </div>
     <div id="hardware-msg" class="msg"></div>
   </div>
+</div>
 
-  <h2>4) Pi-System-Update</h2>
+<div class="section-group">
+  <h2>5) System-Update</h2>
   <div class="card">
     <div id="update-hint" class="msg"></div>
     <div id="update-status-grid" class="grid"></div>
     <div class="toolbar">
       <button id="btn-update-check" onclick="checkPiUpdates()">Nach Updates prüfen</button>
       <button id="btn-update-apply" onclick="applyPiUpdate()" style="display:none">Jetzt updaten</button>
-      <button id="btn-update-refresh" onclick="loadUpdateStatus()">Status neu laden</button>
+      <button id="btn-update-refresh" onclick="loadUpdateStatus()" class="btn-secondary">Status neu laden</button>
     </div>
   </div>
-</section>
+</div>
 {% endblock %}

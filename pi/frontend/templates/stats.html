@@ -3,16 +3,16 @@
 <h1>Statistiken</h1>
 <div id="msg" class="msg"></div>
 
-<div class="toolbar">
-  <button onclick="loadStats('today')" id="btn-today">Heute</button>
-  <button onclick="loadStats('week')"  id="btn-week">7 Tage</button>
-  <button onclick="loadStats('month')" id="btn-month">30 Tage</button>
-  <button onclick="loadStats('all')"   id="btn-all" style="background:var(--accent)">Gesamt</button>
+<div class="toolbar" style="margin-bottom:16px">
+  <button onclick="loadStats('today')" id="btn-today" class="btn-secondary">Heute</button>
+  <button onclick="loadStats('week')"  id="btn-week"  class="btn-secondary">7 Tage</button>
+  <button onclick="loadStats('month')" id="btn-month" class="btn-secondary">30 Tage</button>
+  <button onclick="loadStats('all')"   id="btn-all">Gesamt</button>
 </div>
 
-<div class="grid" id="stats-kpis" style="margin-bottom:16px;"></div>
+<div class="grid" id="stats-kpis" style="margin-bottom:16px"></div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+<div class="grid two-fixed" style="margin-bottom:16px">
   <div class="card">
     <h2>Läufe pro Person</h2>
     <div id="stats-persons"></div>

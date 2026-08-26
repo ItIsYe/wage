@@ -2,15 +2,17 @@
 {% block content %}
 <h1>Personen</h1>
 <div id="msg" class="msg"></div>
-<div class="card" style="margin-bottom:16px;">
-  <h2>Person hinzufügen</h2>
+
+<div class="card" style="margin-bottom:16px">
+  <h3>Person hinzufügen</h3>
   <div class="toolbar">
-    <input id="new-person" placeholder="Name eingeben" style="flex:1;min-width:200px">
-    <label style="display:flex;align-items:center;gap:6px;font-size:.9rem;color:var(--text);margin:0">
+    <input id="new-person" placeholder="Name" style="flex:1;min-width:200px">
+    <label class="mode-label" style="padding:9px 14px">
       <input type="checkbox" id="activate"> Direkt aktivieren
     </label>
-    <button onclick="addPerson()">Hinzufügen</button>
+    <button onclick="addPerson()" class="btn-ok">Hinzufügen</button>
   </div>
 </div>
+
 <div id="persons-list" class="grid"></div>
 {% endblock %}

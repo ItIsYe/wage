@@ -3,72 +3,56 @@
 <h1>LED-Konfiguration</h1>
 <div id="msg" class="msg"></div>
 
-<div class="card" style="margin-bottom:12px;">
-  <div class="warn">
-    ⚡ Bei 22W Powerbank (4,4A): Pi braucht ~2-3A → max ~1-1,5A für LEDs.
-    Empfehlung: Regenbogen max 80, Welle max 120, Weiß/Boot max 40.
+<div class="warn">
+  ⚡ Bei 22W Powerbank (4,4A): Pi benötigt ~2–3A → max ~1–1,5A für LEDs.
+  Empfehlung: Regenbogen ≤ 80, Grüne Welle ≤ 120, Boot ≤ 40.
+</div>
+
+<div class="card">
+  <h3>Streifen</h3>
+  <div class="form-group">
+    <label>Pixel pro Streifen (kommagetrennt)</label>
+    <input type="text" id="pi-led-strip-sizes" value="80,80,82,82">
   </div>
 </div>
 
 <div class="card">
-  <h2>Streifen</h2>
-  <div class="pw-field">
-    <div>
-      <label>Pixel pro Streifen (kommagetrennt)</label>
-      <input type="text" id="pi-led-strip-sizes" value="80,80,82,82" style="width:100%">
-    </div>
+  <h3>Pattern-Helligkeiten (0–255)</h3>
+
+  <div class="slider-row">
+    <label>🌈 Regenbogen <small>— Waage online</small></label>
+    <input type="range" id="led-rainbow" min="0" max="255" value="80" oninput="byId('led-rainbow-val').textContent=this.value">
+    <span id="led-rainbow-val" class="slider-val">80</span>
+  </div>
+  <div class="slider-row">
+    <label>🟡 Gelb pulsend <small>— Waage offline</small></label>
+    <input type="range" id="led-pulse-offline" min="0" max="255" value="60" oninput="byId('led-pulse-offline-val').textContent=this.value">
+    <span id="led-pulse-offline-val" class="slider-val">60</span>
+  </div>
+  <div class="slider-row">
+    <label>💚 Grüne Welle <small>— nach Lauf</small></label>
+    <input type="range" id="led-wave" min="0" max="255" value="120" oninput="byId('led-wave-val').textContent=this.value">
+    <span id="led-wave-val" class="slider-val">120</span>
+  </div>
+  <div class="slider-row">
+    <label>✨ Sternenhimmel <small>— Power-Save</small></label>
+    <input type="range" id="led-power-save" min="0" max="255" value="12" oninput="byId('led-power-save-val').textContent=this.value">
+    <span id="led-power-save-val" class="slider-val">12</span>
+  </div>
+  <div class="slider-row">
+    <label>⚪ Boot <small>— Hochfahren</small></label>
+    <input type="range" id="led-boot" min="0" max="255" value="40" oninput="byId('led-boot-val').textContent=this.value">
+    <span id="led-boot-val" class="slider-val">40</span>
+  </div>
+  <div class="slider-row">
+    <label>🔴 Fehler</label>
+    <input type="range" id="led-error" min="0" max="255" value="100" oninput="byId('led-error-val').textContent=this.value">
+    <span id="led-error-val" class="slider-val">100</span>
   </div>
 
-  <h2 style="margin-top:20px">Pattern-Helligkeiten (0–255)</h2>
-
-  <div class="grid two" style="gap:10px;">
-    <div>
-      <label>🌈 Regenbogen (Online-Standby)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="range" id="led-rainbow" min="0" max="255" value="80" style="flex:1" oninput="byId('led-rainbow-val').textContent=this.value">
-        <span id="led-rainbow-val" style="font-family:monospace;min-width:30px">80</span>
-      </div>
-    </div>
-    <div>
-      <label>🟡 Gelb pulsend (Waage offline)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="range" id="led-pulse-offline" min="0" max="255" value="60" style="flex:1" oninput="byId('led-pulse-offline-val').textContent=this.value">
-        <span id="led-pulse-offline-val" style="font-family:monospace;min-width:30px">60</span>
-      </div>
-    </div>
-    <div>
-      <label>💚 Grüne Welle (nach Lauf)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="range" id="led-wave" min="0" max="255" value="120" style="flex:1" oninput="byId('led-wave-val').textContent=this.value">
-        <span id="led-wave-val" style="font-family:monospace;min-width:30px">120</span>
-      </div>
-    </div>
-    <div>
-      <label>⚫ Power-Save (Inaktiv)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="range" id="led-power-save" min="0" max="255" value="12" style="flex:1" oninput="byId('led-power-save-val').textContent=this.value">
-        <span id="led-power-save-val" style="font-family:monospace;min-width:30px">12</span>
-      </div>
-    </div>
-    <div>
-      <label>⚪ Boot (Hochfahren)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="range" id="led-boot" min="0" max="255" value="40" style="flex:1" oninput="byId('led-boot-val').textContent=this.value">
-        <span id="led-boot-val" style="font-family:monospace;min-width:30px">40</span>
-      </div>
-    </div>
-    <div>
-      <label>🔴 Fehler</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="range" id="led-error" min="0" max="255" value="100" style="flex:1" oninput="byId('led-error-val').textContent=this.value">
-        <span id="led-error-val" style="font-family:monospace;min-width:30px">100</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="toolbar" style="margin-top:16px;">
+  <div class="toolbar" style="margin-top:20px">
     <button onclick="saveLedConfig()">Speichern</button>
-    <button onclick="window.location.href='/config'" class="btn-secondary">Zurück</button>
+    <button onclick="window.location.href='/config'" class="btn-secondary">← Zurück</button>
   </div>
 </div>
 {% endblock %}

@@ -1,26 +1,33 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Geräte / Status</h1>
+<h1>Status</h1>
 <div id="msg" class="msg"></div>
-<div class="card">
-  <b>QR-Code-Ziel:</b> <span id="qr-url">-</span>
+
+<div class="card card-row">
+  <div class="card-row-info">
+    <b>QR-Code-Ziel</b>
+    <small id="qr-url">—</small>
+  </div>
 </div>
-<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-  <div>
+
+<div class="card card-row">
+  <div class="card-row-info">
     <b>🛠 Debug-Modus</b>
-    <div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">Deaktiviert nur den Auto-Shutdown (Power-Save bleibt aktiv)</div>
+    <small>Deaktiviert den Auto-Shutdown (Power-Save bleibt aktiv)</small>
   </div>
-  <div style="display:flex;align-items:center;gap:10px">
-    <span id="debug-mode-label" style="font-size:.85rem;color:var(--text-muted)">Aus</span>
-    <button id="btn-debug-toggle" onclick="toggleDebugMode()" style="min-width:100px">Laden...</button>
+  <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+    <span id="debug-mode-label" style="font-size:.85rem;color:var(--text-muted)">—</span>
+    <button id="btn-debug-toggle" onclick="toggleDebugMode()" class="btn-secondary">Laden...</button>
   </div>
 </div>
-<div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-  <div>
+
+<div class="card card-row">
+  <div class="card-row-info">
     <b>⏻ Pi herunterfahren</b>
-    <div style="font-size:.8rem;color:var(--text-muted);margin-top:2px">Fährt den Pi sauber herunter</div>
+    <small>Fährt den Pi sauber herunter — LEDs und OLED gehen vorher aus</small>
   </div>
-  <button onclick="shutdownPi()" style="background:var(--err);min-width:100px">Herunterfahren</button>
+  <button onclick="shutdownPi()" class="btn-danger" style="flex-shrink:0">Herunterfahren</button>
 </div>
+
 <div id="status-grid" class="grid"></div>
 {% endblock %}

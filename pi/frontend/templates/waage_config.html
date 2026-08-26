@@ -4,33 +4,45 @@
 <div id="msg" class="msg"></div>
 
 <div class="card">
-  <div class="toolbar">
-    <span>ESP32-Webinterface: <strong id="esp-url">-</strong></span>
-    <button onclick="reloadFrame()">Neu laden</button>
+  <div class="card-row">
+    <div class="card-row-info">
+      <b>ESP32-Webinterface</b>
+      <small id="esp-url">—</small>
+    </div>
+    <button onclick="reloadFrame()" class="btn-secondary">Neu laden</button>
   </div>
 </div>
 
 <div class="card">
   <h3>Firmware-Update (OTA)</h3>
-  <p>Aktuelle ESP-Firmware: <strong id="ota-current">-</strong></p>
-  <p>Verfügbare Firmware: <strong id="ota-available">-</strong></p>
-  <p>Status: <span id="ota-status">-</span></p>
-  <div id="ota-progress-wrap" style="display:none;margin:8px 0;">
-    <div style="background:#e0e0e0;border-radius:6px;height:14px;overflow:hidden;">
-      <div id="ota-progress-bar" style="height:100%;background:#2563eb;width:0%;transition:width .4s;border-radius:6px;"></div>
+  <div class="grid two">
+    <div class="form-group">
+      <label>Aktuelle Firmware</label>
+      <div style="font-family:monospace;padding:4px 0" id="ota-current">—</div>
     </div>
-    <span id="ota-progress-pct">0%</span>
+    <div class="form-group">
+      <label>Verfügbare Firmware</label>
+      <div style="font-family:monospace;padding:4px 0" id="ota-available">—</div>
+    </div>
   </div>
-  <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+  <div class="form-group">
+    <label>Status</label>
+    <div id="ota-status">—</div>
+  </div>
+  <div id="ota-progress-wrap" style="display:none;margin-bottom:14px">
+    <div class="progress"><div id="ota-progress-bar" class="progress-bar" style="width:0%"></div></div>
+    <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px"><span id="ota-progress-pct">0</span>%</div>
+  </div>
+  <div class="toolbar">
     <button id="btn-ota-check" onclick="otaCheck()">Auf Update prüfen</button>
     <button id="btn-ota-apply" onclick="otaApply()" disabled>Update installieren</button>
-    <button id="btn-ota-sync" onclick="otaSync()">Firmware von GitHub laden</button>
+    <button id="btn-ota-sync" onclick="otaSync()" class="btn-secondary">Von GitHub laden</button>
   </div>
-  <p class="msg-warn" style="margin-top:8px;font-size:0.85em;">Während des Updates nicht vom Strom trennen. Das Gerät startet nach dem Update automatisch neu.</p>
+  <p class="hint">Während des Updates nicht vom Strom trennen. Das Gerät startet nach dem Update automatisch neu.</p>
 </div>
 
-<div id="esp-frame-wrap" style="position:relative;width:100%;height:70vh;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--bg-card);margin-top:16px;">
-  <div id="esp-frame-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.1em;color:var(--text-muted);">Lade ESP-Webinterface...</div>
-  <iframe id="esp-frame" src="" style="width:100%;height:100%;border:none;display:none;" onload="onFrameLoad()"></iframe>
+<div style="position:relative;width:100%;height:70vh;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg-card);margin-top:16px">
+  <div id="esp-frame-loading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:1.1em;color:var(--text-muted)">Lade ESP-Webinterface...</div>
+  <iframe id="esp-frame" src="" style="width:100%;height:100%;border:none;display:none" onload="onFrameLoad()"></iframe>
 </div>
 {% endblock %}

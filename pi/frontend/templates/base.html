@@ -1,4 +1,15 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>wage-pi</title><link rel="stylesheet" href="/static/style.css?v=6"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@700&display=swap"></head><body>
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>wage-pi</title>
+  <link rel="stylesheet" href="/static/style.css?v=7">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@700&display=swap">
+</head>
+<body>
+
 <div id="update-overlay">
   <h2>⚙️ System-Update</h2>
   <div class="ov-msg" id="ov-msg">Bitte warten...</div>
@@ -6,4 +17,22 @@
   <div class="ov-percent"><span id="ov-percent">0</span>%</div>
   <div class="ov-step" id="ov-step"></div>
 </div>
-<header><nav><a href="/">Dashboard</a><a href="/runs">Läufe</a><a href="/stats">Statistiken</a><a href="/persons">Personen</a><a href="/status">Status</a><a href="/config">Konfiguration</a><a id="nav-waage-config" href="/esp-proxy/">Waage-Config</a><a id="nav-ota" href="/ota">OTA-Update</a></nav></header><main>{% block content %}{% endblock %}</main><script src="/static/app.js?v=6"></script></body></html>
+
+<header>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/runs">Läufe</a>
+    <a href="/stats">Statistiken</a>
+    <a href="/persons">Personen</a>
+    <a href="/status">Status</a>
+    <a href="/config">Konfiguration</a>
+    <a id="nav-waage-config" href="/esp-proxy/">Waage-Config</a>
+    <a id="nav-ota" href="/ota">OTA-Update</a>
+  </nav>
+</header>
+
+<main>{% block content %}{% endblock %}</main>
+
+<script src="/static/app.js?v=7"></script>
+</body>
+</html>
