@@ -65,7 +65,9 @@ def _is_power_save() -> bool:
             return False
         last_run = hw.get("last_run_received_at", "")
         if not last_run:
-            return False  # Noch kein Lauf -> kein Power-Save
+            # Noch nie ein Lauf empfangen -> Service-Start als Referenz nehmen
+            elapsed = (time.time() - _service_start) / 60
+            return elapsed >= minutes
         from datetime import datetime, timezone
         last = datetime.fromisoformat(last_run)
         elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60
