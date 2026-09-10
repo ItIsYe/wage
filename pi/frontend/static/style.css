@@ -76,6 +76,7 @@ h3 { font-size: 0.75rem; font-weight: 700; margin: 0 0 10px; color: var(--text-m
   border-radius: var(--radius);
   padding: 18px;
   margin-bottom: var(--gap);
+  overflow: hidden;
 }
 
 .card + .card { margin-top: 0; }
@@ -107,11 +108,13 @@ h3 { font-size: 0.75rem; font-weight: 700; margin: 0 0 10px; color: var(--text-m
 /* === KPI === */
 .kpi {
   font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-  font-size: 1.8rem;
+  font-size: clamp(1.1rem, 4vw, 1.8rem);
   font-weight: 700;
   color: #fff;
-  line-height: 1.1;
+  line-height: 1.15;
   margin: 4px 0 6px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* === Inputs & Buttons === */
