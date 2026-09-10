@@ -1,7 +1,17 @@
 async function api(url, opts = {}) {
   const res = await fetch(url, opts);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    if (typeof data.detail === 'string') {
+      msg = data.detail;
+    } else if (Array.isArray(data.detail)) {
+      msg = data.detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+    } else if (data.detail) {
+      msg = JSON.stringify(data.detail);
+    }
+    throw new Error(msg);
+  }
   return data;
 }
 
@@ -108,13 +118,15 @@ async function loadRuns() {
   const table = byId("runs-body");
   if (!table) return;
   try {
-    const q = new URLSearchParams({
+    const params = {
       limit: byId("limit")?.value || "100",
       search: byId("search")?.value || "",
       status: byId("status-filter")?.value || "",
       sort: byId("sort")?.value || "id_desc",
-      person_id: byId("person-filter")?.value || ""
-    });
+    };
+    const personFilterVal = byId("person-filter")?.value || "";
+    if (personFilterVal) params.person_id = personFilterVal;
+    const q = new URLSearchParams(params);
     const [runs, persons] = await Promise.all([api(`/api/v1/runs?${q.toString()}`), api("/api/v1/persons")]);
     const personOptions = persons.persons.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
     table.innerHTML = runs.runs.map((r) => `
