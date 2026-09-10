@@ -22,10 +22,10 @@ class TwinkleState:
         # Konfiguration
         self.value_min = 40     # Minimale Helligkeit leuchtender Pixel
         self.value_max = 200    # Maximale Helligkeit leuchtender Pixel
-        self.on_min = 0.05      # Mindestanteil leuchtender Pixel (5%)
-        self.on_max = 0.15      # Maximalanteil leuchtender Pixel (15%)
-        self.fade_speed = 4     # Wie schnell Pixel auf/abdimmen (pro Frame)
-        self.change_every = 8   # Alle N Frames ein Pixel wechseln
+        self.on_min = 0.10      # Mindestanteil leuchtender Pixel (10%)
+        self.on_max = 0.25      # Maximalanteil leuchtender Pixel (25%)
+        self.fade_speed = 1.2   # Sanftes Fließen statt Sprünge
+        self.change_every = 15  # Seltener wechseln = ruhigeres Bild
 
         self._frame = 0
         self._base = 8          # Basis-Helligkeit aller Pixel (sehr gedimmt)
@@ -61,28 +61,28 @@ class TwinkleState:
         """Einen Frame berechnen und auf den Strip schreiben."""
         self._frame += 1
 
-        # Alle X Frames: zufälligen Pixel ein- oder ausschalten
+        # Alle X Frames: mehrere Pixel gleichzeitig ein-/ausschalten für gleichmäßigere Verteilung
         if self._frame % self.change_every == 0:
             target_on = int(self.n * random.uniform(self.on_min, self.on_max))
             current_on = sum(1 for x in self.on if x)
+            diff = target_on - current_on
+            step = max(1, abs(diff) // 4)  # Mehrere Pixel pro Wechsel, sanfter Übergang
 
-            if current_on < target_on:
-                # Neuen Pixel einschalten
+            if diff > 0:
                 off_pixels = [i for i in range(self.n) if not self.on[i]]
-                if off_pixels:
-                    idx = random.choice(off_pixels)
+                random.shuffle(off_pixels)
+                for idx in off_pixels[:step]:
                     self.on[idx] = True
                     self.hue[idx] = random.uniform(0, 360)
                     self.target[idx] = random.uniform(self.value_min, self.value_max)
-            elif current_on > target_on:
-                # Pixel ausschalten
+            elif diff < 0:
                 on_pixels = [i for i in range(self.n) if self.on[i]]
-                if on_pixels:
-                    idx = random.choice(on_pixels)
+                random.shuffle(on_pixels)
+                for idx in on_pixels[:step]:
                     self.on[idx] = False
                     self.target[idx] = 0
 
-        # Alle Pixel in Richtung Zielwert bewegen
+        # Alle Pixel in Richtung Zielwert bewegen (fließend, kein Abschneiden)
         scale = max_brightness / 255.0
         for i in range(min(self.n, strip.numPixels())):
             target = self.target[i] if self.on[i] else self._base
@@ -94,10 +94,10 @@ class TwinkleState:
                 self.value[i] += self.fade_speed if delta > 0 else -self.fade_speed
 
             v = self.value[i] * scale
-            if v < 1.0:
+            if v < 0.5:
                 strip.setPixelColor(i, Color(0, 0, 0))
             else:
                 r, g, b = self._hsv_to_rgb(self.hue[i], v)
-                strip.setPixelColor(i, Color(int(r), int(g), int(b)))
+                strip.setPixelColor(i, Color(int(round(r)), int(round(g)), int(round(b))))
 
         strip.show()
