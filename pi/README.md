@@ -168,3 +168,5 @@ Folgende Einträge müssen einmalig gesetzt sein:
 | Kiosk zeigt alte Version | `rm -rf /tmp/wage-kiosk && sudo systemctl restart wage-pi-kiosk` |
 | Netzwerk anwenden schlägt fehl | `sudo journalctl -u NetworkManager -f` und `cat ~/wage/pi/logs/network_apply.log` |
 | Update schlägt fehl | `cat ~/wage/pi/logs/update.log` |
+
+<!-- test-marker 2026-09-10T15:55:09+00:00 -->
