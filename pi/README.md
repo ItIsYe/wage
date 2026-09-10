@@ -170,3 +170,4 @@ Folgende Einträge müssen einmalig gesetzt sein:
 | Update schlägt fehl | `cat ~/wage/pi/logs/update.log` |
 
 <!-- test-marker 2026-09-10T15:55:09+00:00 -->
+<!-- test-marker-2 2026-09-10T15:56:56+00:00 -->
