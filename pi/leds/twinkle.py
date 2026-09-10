@@ -20,10 +20,10 @@ class TwinkleState:
         self.on_count = 0
 
         # Konfiguration
-        self.value_min = 40     # Minimale Helligkeit leuchtender Pixel
-        self.value_max = 200    # Maximale Helligkeit leuchtender Pixel
-        self.on_min = 0.10      # Mindestanteil leuchtender Pixel (10%)
-        self.on_max = 0.25      # Maximalanteil leuchtender Pixel (25%)
+        self.value_min = 30      # Minimale Helligkeit leuchtender Pixel
+        self.value_max = 230     # Maximale Helligkeit leuchtender Pixel
+        self.on_min = 0.25      # Mindestanteil leuchtender Pixel (25%)
+        self.on_max = 0.45      # Maximalanteil leuchtender Pixel (45%)
         self.fade_speed = 1.2   # Sanftes Fließen statt Sprünge
         self.change_every = 15  # Seltener wechseln = ruhigeres Bild
 
@@ -73,6 +73,7 @@ class TwinkleState:
                 random.shuffle(off_pixels)
                 for idx in off_pixels[:step]:
                     self.on[idx] = True
+                    # Volle Hue-Bandbreite, leicht gestreut um Cluster gleicher Farben zu vermeiden
                     self.hue[idx] = random.uniform(0, 360)
                     self.target[idx] = random.uniform(self.value_min, self.value_max)
             elif diff < 0:
