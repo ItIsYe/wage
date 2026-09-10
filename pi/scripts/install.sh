@@ -33,7 +33,7 @@ echo "Start: sudo systemctl start wage-pi-backend wage-pi-oled wage-pi-leds"
 echo "Web:  http://<pi-ip>:8000"
 
 # shutdown ohne Passwort für wage User (Auto-Shutdown)
-echo "wage ALL=(ALL) NOPASSWD: /sbin/shutdown" | sudo tee /etc/sudoers.d/wage-shutdown
+echo "wage ALL=(ALL) NOPASSWD: /sbin/shutdown, /sbin/reboot" | sudo tee /etc/sudoers.d/wage-shutdown
 sudo chmod 440 /etc/sudoers.d/wage-shutdown
 
 # systemctl und install für Update-Script

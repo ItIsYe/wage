@@ -165,6 +165,21 @@ async def system_shutdown():
     except Exception as e:
         return {"ok": False, "message": str(e)}
 
+
+@app.post("/api/v1/system/reboot")
+async def system_reboot():
+    """Pi neu starten."""
+    import subprocess
+    try:
+        with db_cursor() as (_, cur):
+            cur.execute(
+                "INSERT INTO app_state(key,value) VALUES('led_shutdown','1') ON CONFLICT(key) DO UPDATE SET value='1'"
+            )
+        subprocess.Popen(["sudo", "reboot"])
+        return {"ok": True, "message": "Pi wird neu gestartet..."}
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
 @app.get("/config", response_class=HTMLResponse)
 def config_page(request: Request):
     return templates.TemplateResponse("config.html", {"request": request})

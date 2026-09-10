@@ -1364,3 +1364,13 @@ async function shutdownPi() {
     flash('Pi wird heruntergefahren...');
   }
 }
+
+async function rebootPi() {
+  if (!confirm('Pi wirklich neu starten?')) return;
+  try {
+    const d = await api('/api/v1/system/reboot', { method: 'POST' });
+    flash(d.message || 'Pi wird neu gestartet...', d.ok);
+  } catch (e) {
+    flash('Pi wird neu gestartet...');
+  }
+}
