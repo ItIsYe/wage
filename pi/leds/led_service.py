@@ -285,7 +285,7 @@ if __name__ == "__main__":
                 strip, Color = make_strip()
                 last_led_count = _get_led_count()
                 last_led_brightness = _get_led_brightness()
-                from leds.twinkle import TwinkleState
+                from twinkle import TwinkleState
                 twinkle_state = TwinkleState(strip.numPixels())
                 boot_sequence(strip, Color)
                 set_state("led_status", "starting:white")
@@ -351,7 +351,7 @@ if __name__ == "__main__":
                 power_save = _is_power_save()
                 if power_save and now >= blink_until:
                     if twinkle_state is None or twinkle_state.n != total:
-                        from leds.twinkle import TwinkleState
+                        from twinkle import TwinkleState
                         twinkle_state = TwinkleState(total)
                     twinkle_state.tick(strip, Color, _get_led_brightness_for("led_brightness_power_save", 12))
                     set_state("led_status", "power_save")
