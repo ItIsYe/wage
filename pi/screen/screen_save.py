@@ -25,7 +25,7 @@ def _get_config() -> dict:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
                 "SELECT key, value FROM app_state WHERE key IN "
-                "('power_save_after_minutes','last_run_received_at')"
+                "('power_save_after_minutes','last_run_received_at','debug_mode')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
     except Exception:
