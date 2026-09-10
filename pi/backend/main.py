@@ -26,7 +26,7 @@ from .api_led_config import router as led_config_router
 from .api_esp_proxy import router as esp_proxy_router
 from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
-from .database import get_connection, init_db
+from .database import get_connection, init_db, db_cursor
 
 
 @asynccontextmanager
