@@ -268,28 +268,6 @@ void ledSetState(State state) {
 void ledService(uint32_t now) {
   const bool ring2ForceTestActive = RING2_ENABLED && RING2_FORCE_INDEPENDENT_TEST;
 
-  // Boot-Selbstheilung: Spannungsversorgung des Strips kann beim Start
-  // instabil sein (gemeinsame Quelle mit ESP32, kein Puffer-Kondensator).
-  // Erzwingt für die ersten 10s alle 500ms einen kompletten Refresh,
-  // damit Pixel die anfangs falsch/gar nicht gesetzt wurden korrigiert werden.
-  static bool bootHealDone = false;
-  static uint32_t lastBootHealMs = 0;
-  bool forceBootRefresh = false;
-  if (!bootHealDone) {
-    if (now < 10000) {
-      if (now - lastBootHealMs >= 500) {
-        lastBootHealMs = now;
-        forceBootRefresh = true;
-      }
-    } else {
-      bootHealDone = true;
-    }
-  }
-  if (forceBootRefresh) {
-    ring1MarkDirty();
-    if (RING2_ENABLED) ring2MarkDirty();
-  }
-
 
   if (MASTER_DEBUG_LOG) {
     static uint32_t lastLedDiagMs = 0;
