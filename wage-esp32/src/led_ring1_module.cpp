@@ -119,8 +119,8 @@ static inline uint8_t randomInclusiveU8(uint8_t minValue, uint8_t maxValue) {
   return (uint8_t)(minValue + (uint8_t)random(0, (int16_t)(maxValue - minValue + 1U)));
 }
 
-static constexpr uint8_t ALT_PATTERN_A[] = {0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52};
-static constexpr uint8_t ALT_PATTERN_B[] = {1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51};
+static constexpr uint8_t ALT_PATTERN_A[] = {0,2,4,6,8,10,12,14,16,18,20,22,24};
+static constexpr uint8_t ALT_PATTERN_B[] = {1,3,5,7,9,11,13,15,17,19,21,23};
 static void standbyApplyOutputs() {
   if (!ring1Ready()) return;
   pixelsClear();
