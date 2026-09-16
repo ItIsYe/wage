@@ -13,3 +13,5 @@ void ledApplyBrightnessForCurrentMode();
 void ledClear();
 void ledShow();
 void ledMarkAllDirty();
+// Startet den Ring1-Pixel-Diagnosemodus (siehe led_ring1_module.h)
+void ledRing1DiagnosticStart();

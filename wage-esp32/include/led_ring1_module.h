@@ -5,6 +5,10 @@
 
 #include "types.h"
 
+// Ring1 = Hauptring (PIXEL_COUNT physische Pixel, PIXEL_GROUPS logische
+// Dreiergruppen). Eigenstaendiges Standby-Twinkle, kein Shared-Mechanismus
+// mit Ring2 mehr - jeder Ring rendert sein eigenes Muster unabhaengig.
+
 void ring1Init(CRGB* leds);
 void ring1SetMode(LedMode mode, uint32_t now);
 bool ring1Service(uint32_t now);
@@ -13,5 +17,9 @@ void ring1MarkDirty();
 void ring1Clear();
 void ring1FillDebugAllOn();
 
-void ring1ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value,
-                              const bool* dirty, bool fullRedraw, uint16_t count);
+// Diagnose: geht alle physischen Pixel einzeln durch (weiss, ~400ms je
+// Pixel) und meldet ueber Serial den aktuellen Index. Damit laesst sich am
+// Strip ablesen, ab welchem physischen Pixel das Signal nicht mehr ankommt.
+void ring1DiagnosticStart();
+bool ring1DiagnosticService(uint32_t now);
+bool ring1DiagnosticActive();

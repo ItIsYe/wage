@@ -71,6 +71,7 @@ static constexpr uint16_t PIXEL_GROUPS = PIXEL_COUNT / PIXEL_GROUP_SIZE; // 53 G
 static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50; // Ring1 Helligkeit in %
 static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90; // Ring1 Helligkeit im Standby in %
 static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false; // Debug: alle Pixel einschalten
+static constexpr bool DEFAULT_RING1_DIAGNOSTIC_MODE = false; // Debug: Pixel einzeln durchgehen
 
 // =========================================================
 // Ring 2 / Zusatz-LED-Ring

@@ -7,6 +7,7 @@
 #include "config.h"
 #include "display_module.h"
 #include "external_interface_module.h"
+#include "led_module.h"
 #include "ota_module.h"
 
 extern State state;
@@ -73,6 +74,7 @@ static void disableDebugModesNow() {
   activeConfig.oledDebugMode = false;
   activeConfig.debugMode = false;
   activeConfig.pixelDebugAllOn = false;
+  activeConfig.ring1DiagnosticMode = false;
   activeConfig.ring2DebugAllOn = false;
   pendingConfig = activeConfig;
   pendingConfigValid = false;
@@ -189,7 +191,8 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<fieldset><legend>Ring 1 / Haupt-LED-Ring</legend>");
   h += F("<label>Ring 1 Helligkeit im aktiven Betrieb (%)</label><input type='number' min='0' max='100' name='pixelBrightnessPercent' value='"); h += String(c.pixelBrightnessPercent); h += F("'><small>Min: 0, Max: 100. Grundhelligkeit waehrend normalem Betrieb. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Ring 1 Helligkeit im Standby (%)</label><input type='number' min='0' max='100' name='standbyBrightnessPercent' value='"); h += String(c.standbyBrightnessPercent); h += F("'><small>Min: 0, Max: 100. Gesamthelligkeit fuer den Standby-Effekt. Wirkt nach Speichern sofort.</small>");
-  h += F("<label><input type='checkbox' name='pixelDebugAllOn' "); if (c.pixelDebugAllOn) h += F("checked"); h += F("> Ring 1 Debug: alle Pixel an</label></fieldset>");
+  h += F("<label><input type='checkbox' name='pixelDebugAllOn' "); if (c.pixelDebugAllOn) h += F("checked"); h += F("> Ring 1 Debug: alle Pixel an</label>");
+  h += F("<label><input type='checkbox' name='ring1DiagnosticMode' "); if (c.ring1DiagnosticMode) h += F("checked"); h += F("> Ring 1 Diagnose: Pixel einzeln durchgehen (~400ms/Pixel, siehe Serial-Log)</label></fieldset>");
   h += F("<fieldset><legend>Ring 2 / Zusatz-LED-Ring</legend>");
   h += F("<label><input type='checkbox' name='ring2Enabled' "); if (c.ring2Enabled) h += F("checked"); h += F("> Ring 2 aktiv</label>");
   h += F("<label>Ring 2 Helligkeit im aktiven Betrieb (%)</label><input type='number' min='0' max='100' name='ring2BrightnessPercent' value='"); h += String(c.ring2BrightnessPercent); h += F("'><small>Min: 0, Max: 100. Helligkeit des zweiten Rings ausserhalb Standby. Wirkt nach Speichern sofort.</small>");
@@ -269,6 +272,7 @@ void webConfigLoadDefaults(RuntimeConfig& cfg) { memset(&cfg,0,sizeof(cfg));
   cfg.oledRotation=DEFAULT_OLED_ROTATION; cfg.oledScaleValue=1.5f; cfg.debugMode=false; cfg.oledDebugMode=false;
   cfg.pixelBrightnessPercent=DEFAULT_PIXEL_BRIGHTNESS_PERCENT; cfg.standbyBrightnessPercent=DEFAULT_STANDBY_BRIGHTNESS_PERCENT;
   cfg.pixelDebugAllOn=DEFAULT_PIXEL_DEBUG_ALL_ON;
+  cfg.ring1DiagnosticMode=DEFAULT_RING1_DIAGNOSTIC_MODE;
   cfg.ring2Enabled=DEFAULT_RING2_ENABLED; cfg.ring2BrightnessPercent=DEFAULT_RING2_BRIGHTNESS_PERCENT;
   cfg.ring2StandbyBrightnessPercent=DEFAULT_RING2_STANDBY_BRIGHTNESS_PERCENT; cfg.ring2DebugAllOn=DEFAULT_RING2_DEBUG_ALL_ON;
   strncpy(cfg.deviceId,"waage-01",sizeof(cfg.deviceId)-1); cfg.deviceId[sizeof(cfg.deviceId)-1] = '\0';
@@ -576,6 +580,11 @@ void webConfigSetup() {
     parseU8Arg("pixelBrightnessPercent", n.pixelBrightnessPercent);
     parseU8Arg("standbyBrightnessPercent", n.standbyBrightnessPercent);
     parseBoolArg("pixelDebugAllOn", n.pixelDebugAllOn);
+    const bool diagWasOff = !activeConfig.ring1DiagnosticMode;
+    parseBoolArg("ring1DiagnosticMode", n.ring1DiagnosticMode);
+    if (diagWasOff && n.ring1DiagnosticMode) {
+      ledRing1DiagnosticStart();
+    }
     parseBoolArg("ring2Enabled", n.ring2Enabled);
     parseU8Arg("ring2BrightnessPercent", n.ring2BrightnessPercent);
     parseU8Arg("ring2StandbyBrightnessPercent", n.ring2StandbyBrightnessPercent);

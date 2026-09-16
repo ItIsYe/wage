@@ -63,6 +63,7 @@ struct RuntimeConfig {
   uint8_t pixelBrightnessPercent;
   uint8_t standbyBrightnessPercent;
   bool pixelDebugAllOn;
+  bool ring1DiagnosticMode;
   bool ring2Enabled;
   uint8_t ring2BrightnessPercent;
   uint8_t ring2StandbyBrightnessPercent;

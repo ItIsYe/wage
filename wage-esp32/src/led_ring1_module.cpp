@@ -1,288 +1,382 @@
 #include "led_ring1_module.h"
 
-#include <math.h>
-
 #include "config.h"
 #include "led_gamma.h"
 #include "types.h"
 
 extern RuntimeConfig activeConfig;
 
-static CRGB* primaryLeds = nullptr;
-static LedMode ledMode = LedMode::ALL_OFF;
-static uint32_t ledTickMs = 0;
-static bool ledFlip = false;
-static uint32_t twinkleNextMs = 0;
-static uint32_t standbyFrameNextMs = 0;
-static uint16_t ledSpinIdx = 0;  // logische Gruppe
-static bool ledFrameDirty = true;
-static bool standbyTwinkleOn[PIXEL_GROUPS] = {};
-static uint16_t standbyOnCount = 0;
-static uint8_t currentBrightnessByte = 0;
+// ---------------------------------------------------------------------
+// Zustand
+// ---------------------------------------------------------------------
+
+static CRGB* leds = nullptr;
+static LedMode mode = LedMode::ALL_OFF;
+static bool frameDirty = true;
+static uint8_t brightnessByte = 0;
 static bool brightnessInitialized = false;
-static uint16_t standbyHue[PIXEL_GROUPS] = {};
-static uint8_t standbyValue[PIXEL_GROUPS] = {};
+
+// Blink/Spinner-Timing
+static uint32_t tickAtMs = 0;
+static bool blinkFlip = false;
+static uint16_t spinnerGroup = 0;
+
+// Standby-Twinkle (ein Stern = eine logische Gruppe)
+struct TwinkleStar {
+  bool on;
+  uint16_t hue;      // 0..65535 (FastLED CHSV hue Byte kommt aus hue>>8)
+  uint8_t value;
+};
+static TwinkleStar stars[PIXEL_GROUPS];
+static uint16_t starsOnCount = 0;
+static uint32_t twinkleChangeAtMs = 0;
+static uint32_t twinkleFrameAtMs = 0;
+
+// Farben (einmalig in ring1Init gesetzt)
 static CRGB colorGreen = CRGB::Black;
 static CRGB colorBlue = CRGB::Black;
 static CRGB colorRed = CRGB::Black;
 static CRGB colorCyan = CRGB::Black;
 
-static inline bool ring1Ready() { return primaryLeds != nullptr; }
+// Diagnose-Modus
+static bool diagActive = false;
+static uint16_t diagPixel = 0;
+static uint32_t diagNextStepMs = 0;
+static constexpr uint32_t DIAG_STEP_MS = 400;
 
-static inline uint8_t brightnessPercentToByte(uint8_t percent) {
+// "Warte auf Glas": abwechselnd gerade/ungerade logische Gruppen.
+// Wird zur Laufzeit aus PIXEL_GROUPS berechnet statt hartcodiert, damit
+// eine spaetere Aenderung von PIXEL_COUNT nicht erneut zu stillen
+// Off-by-Bugs fuehrt (siehe Historie: mehrfach hartcodierte Arrays,
+// die nach PIXEL_COUNT-Aenderungen nicht mehr zur Gruppenzahl passten).
+
+// ---------------------------------------------------------------------
+// Hilfsfunktionen
+// ---------------------------------------------------------------------
+
+static inline bool ready() { return leds != nullptr; }
+
+static inline uint8_t percentToByte(uint8_t percent) {
   if (percent >= 100) return 255;
   return (uint8_t)((uint16_t)percent * 255u / 100u);
 }
-static inline CRGB scaleColor(const CRGB& color, uint8_t brightness) {
+
+static inline CRGB scaled(const CRGB& color) {
   CRGB out = color;
-  out.nscale8_video(brightness);
+  out.nscale8_video(brightnessByte);
   return out;
 }
+
 static inline CRGB rgb(uint8_t r, uint8_t g, uint8_t b) { return CRGB(r, g, b); }
-static void buildGammaLut() { LedGamma::build(); }
-static inline uint8_t ledGamma8(uint8_t value) { return LedGamma::apply(value); }
+
+static inline uint8_t gamma8(uint8_t value) { return LedGamma::apply(value); }
+
 static inline CRGB hsvGamma(uint16_t hue, uint8_t sat, uint8_t val) {
   CHSV hsv((uint8_t)(hue >> 8), sat, val);
   CRGB out;
   hsv2rgb_rainbow(hsv, out);
-  out.r = ledGamma8(out.r);
-  out.g = ledGamma8(out.g);
-  out.b = ledGamma8(out.b);
+  out.r = gamma8(out.r);
+  out.g = gamma8(out.g);
+  out.b = gamma8(out.b);
   return out;
 }
-static inline void setStripBrightnessPercent(uint8_t percent) {
-  const uint8_t target = brightnessPercentToByte(percent);
-  if (brightnessInitialized && currentBrightnessByte == target) return;
-  currentBrightnessByte = target;
+
+static inline void setBrightnessPercent(uint8_t percent) {
+  const uint8_t target = percentToByte(percent);
+  if (brightnessInitialized && brightnessByte == target) return;
+  brightnessByte = target;
   brightnessInitialized = true;
 }
-static inline void pixelsClear() { if (!ring1Ready()) return; fill_solid(primaryLeds, PIXEL_COUNT, CRGB::Black); }
-static inline void pixelsFill(const CRGB& color) {
-  if (!ring1Ready()) return;
-  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) primaryLeds[i] = scaleColor(color, currentBrightnessByte);
-}
-// Setzt alle PIXEL_GROUP_SIZE physischen Pixel einer logischen Gruppe
-static inline void groupSet(uint16_t groupIdx, const CRGB& color) {
-  if (!ring1Ready()) return;
-  const uint16_t base = groupIdx * PIXEL_GROUP_SIZE;
-  for (uint8_t j = 0; j < PIXEL_GROUP_SIZE; ++j) {
-    if (base + j < PIXEL_COUNT) primaryLeds[base + j] = scaleColor(color, currentBrightnessByte);
-  }
-}
-static inline void groupClear(uint16_t groupIdx) {
-  if (!ring1Ready()) return;
-  const uint16_t base = groupIdx * PIXEL_GROUP_SIZE;
-  for (uint8_t j = 0; j < PIXEL_GROUP_SIZE; ++j) {
-    if (base + j < PIXEL_COUNT) primaryLeds[base + j] = CRGB::Black;
-  }
-}
-// indices = logische Gruppen-Indices
-static inline void pixelsSet(const uint8_t* indices, uint16_t count, const CRGB& color) {
-  if (!ring1Ready()) return;
-  for (uint16_t i = 0; i < count; ++i) {
-    if (indices[i] < PIXEL_GROUPS) groupSet(indices[i], color);
-  }
-}
-static inline void applyBrightnessForLedModeInternal() {
-  const uint8_t percent = (ledMode == LedMode::STANDBY_TWINKLE)
+
+static inline void applyBrightnessForMode() {
+  const uint8_t percent = (mode == LedMode::STANDBY_TWINKLE)
     ? activeConfig.standbyBrightnessPercent
     : activeConfig.pixelBrightnessPercent;
-  setStripBrightnessPercent(percent);
+  setBrightnessPercent(percent);
 }
-static inline uint32_t sanitizeRangeMin(uint32_t minValue, uint32_t maxValue) {
+
+static inline void clearAll() {
+  if (!ready()) return;
+  fill_solid(leds, PIXEL_COUNT, CRGB::Black);
+}
+
+static inline void fillAll(const CRGB& color) {
+  if (!ready()) return;
+  const CRGB c = scaled(color);
+  for (uint16_t i = 0; i < PIXEL_COUNT; ++i) leds[i] = c;
+}
+
+// Setzt/loescht alle physischen Pixel einer logischen Dreiergruppe.
+static inline void groupSet(uint16_t groupIdx, const CRGB& color) {
+  if (!ready()) return;
+  const CRGB c = scaled(color);
+  const uint16_t base = groupIdx * PIXEL_GROUP_SIZE;
+  for (uint8_t j = 0; j < PIXEL_GROUP_SIZE; ++j) {
+    if (base + j < PIXEL_COUNT) leds[base + j] = c;
+  }
+}
+
+static inline uint32_t clampRange(uint32_t minValue, uint32_t maxValue) {
   return (minValue > maxValue) ? maxValue : minValue;
 }
-static inline uint32_t sanitizeStandbyFrameMs(uint32_t frameMs) {
-  static constexpr uint32_t kStandbyFrameMinMs = 30U;
-  static constexpr uint32_t kStandbyFrameMaxMs = 1000U;
-  if (frameMs < kStandbyFrameMinMs) return kStandbyFrameMinMs;
-  if (frameMs > kStandbyFrameMaxMs) return kStandbyFrameMaxMs;
+
+static inline uint32_t sanitizeFrameMs(uint32_t frameMs) {
+  if (frameMs < 30U) return 30U;
+  if (frameMs > 1000U) return 1000U;
   return frameMs;
 }
-static inline uint32_t randomInclusiveU32(uint32_t minValue, uint32_t maxValue) {
-  if (minValue > maxValue) {
-    const uint32_t tmp = minValue;
-    minValue = maxValue;
-    maxValue = tmp;
-  }
-  if (maxValue == UINT32_MAX) {
-    return minValue + (uint32_t)random(0, (long)(maxValue - minValue));
-  }
+
+static inline uint32_t randU32(uint32_t minValue, uint32_t maxValue) {
+  if (minValue > maxValue) { const uint32_t t = minValue; minValue = maxValue; maxValue = t; }
   return minValue + (uint32_t)random(0, (long)(maxValue - minValue + 1U));
 }
-static inline uint8_t randomInclusiveU8(uint8_t minValue, uint8_t maxValue) {
-  if (minValue > maxValue) {
-    const uint8_t tmp = minValue;
-    minValue = maxValue;
-    maxValue = tmp;
-  }
+
+static inline uint8_t randU8(uint8_t minValue, uint8_t maxValue) {
+  if (minValue > maxValue) { const uint8_t t = minValue; minValue = maxValue; maxValue = t; }
   return (uint8_t)(minValue + (uint8_t)random(0, (int16_t)(maxValue - minValue + 1U)));
 }
 
-static constexpr uint8_t ALT_PATTERN_A[] = {0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52};
-static constexpr uint8_t ALT_PATTERN_B[] = {1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51};
-static void standbyApplyOutputs() {
-  if (!ring1Ready()) return;
-  pixelsClear();
-  for (uint16_t i = 0; i < PIXEL_GROUPS; ++i) {
-    if (standbyTwinkleOn[i]) {
-      groupSet(i, hsvGamma(standbyHue[i], activeConfig.standbySaturation, standbyValue[i]));
+// ---------------------------------------------------------------------
+// "Warte auf Glas" Pattern: abwechselnd gerade/ungerade Gruppen
+// ---------------------------------------------------------------------
+
+static void applyAltGlassPattern(bool phaseA) {
+  clearAll();
+  for (uint16_t g = 0; g < PIXEL_GROUPS; ++g) {
+    const bool isEven = (g % 2 == 0);
+    if (isEven == phaseA) {
+      groupSet(g, phaseA ? colorGreen : colorBlue);
     }
   }
 }
 
-void ring1Init(CRGB* leds) {
-  buildGammaLut();
-  primaryLeds = leds;
-  setStripBrightnessPercent(activeConfig.pixelBrightnessPercent);
+// ---------------------------------------------------------------------
+// Standby-Twinkle
+// ---------------------------------------------------------------------
+
+static void twinkleInit(uint32_t now) {
+  const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
+  const uint32_t changeMinMs = clampRange(activeConfig.standbyChangeMinMs, changeMaxMs);
+  const uint8_t valueMax = activeConfig.standbyValueMax;
+  const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
+  const uint8_t onMax = activeConfig.standbyOnMax;
+  const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
+
+  twinkleFrameAtMs = now + sanitizeFrameMs(activeConfig.standbyFrameMs);
+  twinkleChangeAtMs = now + randU32(changeMinMs, changeMaxMs);
+  starsOnCount = 0;
+
+  for (uint16_t i = 0; i < PIXEL_GROUPS; ++i) {
+    stars[i].on = false;
+    stars[i].hue = (uint16_t)random(0, 65536);
+    stars[i].value = randU8(valueMin, valueMax);
+  }
+  const uint8_t initialOn = randU8(onMin, onMax);
+  for (uint8_t i = 0; i < initialOn; ++i) {
+    const uint16_t idx = (uint16_t)random(0, PIXEL_GROUPS);
+    if (!stars[idx].on) {
+      stars[idx].on = true;
+      ++starsOnCount;
+    }
+  }
+  frameDirty = true;
+}
+
+static void twinkleRender() {
+  clearAll();
+  for (uint16_t i = 0; i < PIXEL_GROUPS; ++i) {
+    if (stars[i].on) {
+      groupSet(i, hsvGamma(stars[i].hue, activeConfig.standbySaturation, stars[i].value));
+    }
+  }
+}
+
+static void twinkleUpdate(uint32_t now) {
+  // Sterne ein-/ausschalten um die Ziel-Anzahl zu erreichen
+  if (now >= twinkleChangeAtMs) {
+    const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
+    const uint32_t changeMinMs = clampRange(activeConfig.standbyChangeMinMs, changeMaxMs);
+    const uint8_t onMax = activeConfig.standbyOnMax;
+    const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
+    const uint8_t valueMax = activeConfig.standbyValueMax;
+    const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
+
+    twinkleChangeAtMs = now + randU32(changeMinMs, changeMaxMs);
+    const bool needMore = starsOnCount < onMin;
+    const bool needLess = starsOnCount > onMax;
+    const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
+
+    if (needMore || needLess || shouldToggle) {
+      for (uint16_t tries = 0; tries < PIXEL_GROUPS; ++tries) {
+        const uint16_t i = (uint16_t)random(0, PIXEL_GROUPS);
+        if (needMore && !stars[i].on) {
+          stars[i].on = true; ++starsOnCount;
+          stars[i].hue = (uint16_t)random(0, 65536);
+          stars[i].value = randU8(valueMin, valueMax);
+          frameDirty = true; break;
+        }
+        if (needLess && stars[i].on) {
+          stars[i].on = false; --starsOnCount;
+          frameDirty = true; break;
+        }
+        if (!needMore && !needLess) {
+          if (stars[i].on) { stars[i].on = false; --starsOnCount; }
+          else { stars[i].on = true; ++starsOnCount; stars[i].hue = (uint16_t)random(0, 65536); stars[i].value = randU8(valueMin, valueMax); }
+          frameDirty = true; break;
+        }
+      }
+    }
+  }
+
+  // Sanftes Farb-/Helligkeitsdriften der aktiven Sterne
+  if (now >= twinkleFrameAtMs) {
+    const uint8_t valueMax = activeConfig.standbyValueMax;
+    const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
+    twinkleFrameAtMs = now + sanitizeFrameMs(activeConfig.standbyFrameMs);
+
+    for (uint16_t i = 0; i < PIXEL_GROUPS; ++i) {
+      if (!stars[i].on) continue;
+      stars[i].hue = (uint16_t)(stars[i].hue + (int16_t)random(-2, 3));
+      int16_t nextValue = (int16_t)stars[i].value + (int16_t)random(-4, 5);
+      if (nextValue < valueMin) nextValue = valueMin;
+      if (nextValue > valueMax) nextValue = valueMax;
+      stars[i].value = (uint8_t)nextValue;
+    }
+    frameDirty = true;
+  }
+
+  if (frameDirty) twinkleRender();
+}
+
+// ---------------------------------------------------------------------
+// Diagnose-Modus
+// ---------------------------------------------------------------------
+
+void ring1DiagnosticStart() {
+  diagActive = true;
+  diagPixel = 0;
+  diagNextStepMs = 0;
+  Serial.println("[RING1 DIAG] Start - jeder Pixel einzeln, ~400ms Abstand");
+}
+
+bool ring1DiagnosticActive() { return diagActive; }
+
+bool ring1DiagnosticService(uint32_t now) {
+  if (!diagActive || !ready()) return false;
+  if (now < diagNextStepMs) return false;
+
+  diagNextStepMs = now + DIAG_STEP_MS;
+  clearAll();
+  if (diagPixel < PIXEL_COUNT) {
+    leds[diagPixel] = CRGB(60, 60, 60);
+    Serial.printf("[RING1 DIAG] Pixel %u/%u an\n", (unsigned)diagPixel, (unsigned)(PIXEL_COUNT - 1));
+    ++diagPixel;
+  } else {
+    Serial.println("[RING1 DIAG] Durchlauf komplett - Neustart bei Pixel 0");
+    diagPixel = 0;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------
+// Oeffentliche API
+// ---------------------------------------------------------------------
+
+void ring1Init(CRGB* ledsIn) {
+  LedGamma::build();
+  leds = ledsIn;
+  setBrightnessPercent(activeConfig.pixelBrightnessPercent);
   colorGreen = rgb(0, 90, 0);
   colorBlue = rgb(0, 0, 100);
   colorRed = rgb(100, 0, 0);
   colorCyan = rgb(0, 90, 90);
-  pixelsClear();
-  ledFrameDirty = true;
+  clearAll();
+  frameDirty = true;
 }
-void ring1SetMode(LedMode m, uint32_t now) {
-  if (ledMode == m) return;
-  ledMode = m;
-  ledTickMs = now;
-  ledFlip = false;
-  if (m == LedMode::READY_GREEN_BLINK) ledFlip = true;
-  ledSpinIdx = 0;
-  ledFrameDirty = true;
-  if (m == LedMode::STANDBY_TWINKLE) {
-    const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
-    const uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
-    const uint8_t valueMax = activeConfig.standbyValueMax;
-    const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
-    const uint8_t onMax = activeConfig.standbyOnMax;
-    const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
 
-    standbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
-    twinkleNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
-    standbyOnCount = 0;
-    for (uint16_t i = 0; i < PIXEL_GROUPS; i++) {
-      standbyTwinkleOn[i] = false;
-      standbyHue[i] = (uint16_t)random(0, 65536);
-      standbyValue[i] = randomInclusiveU8(valueMin, valueMax);
-    }
-    const uint8_t initialOn = randomInclusiveU8(onMin, onMax);
-    for (uint8_t i = 0; i < initialOn; ++i) {
-      const uint8_t idx = (uint8_t)random(0, PIXEL_GROUPS);
-      if (!standbyTwinkleOn[idx]) {
-        standbyTwinkleOn[idx] = true;
-        ++standbyOnCount;
-      }
-      ledFrameDirty = true;
-    }
+void ring1SetMode(LedMode m, uint32_t now) {
+  if (mode == m) return;
+  mode = m;
+  tickAtMs = now;
+  blinkFlip = (m == LedMode::READY_GREEN_BLINK);
+  spinnerGroup = 0;
+  frameDirty = true;
+  if (m == LedMode::STANDBY_TWINKLE) {
+    twinkleInit(now);
   }
 }
 
 bool ring1Service(uint32_t now) {
-  if (!ring1Ready()) return false;
-  applyBrightnessForLedModeInternal();
-  switch (ledMode) {
-    case LedMode::ALL_OFF: if (ledFrameDirty) pixelsClear(); break;
-    case LedMode::ERROR_BLINK_RED:
-      if (now - ledTickMs >= 350) { ledTickMs = now; ledFlip = !ledFlip; ledFrameDirty = true; }
-      if (ledFrameDirty) { pixelsClear(); if (ledFlip) pixelsFill(colorRed); }
-      break;
-    case LedMode::RED_SOLID: if (ledFrameDirty) pixelsFill(colorRed); break;
-    case LedMode::OK_ALT_GB:
-      if (now - ledTickMs >= 450) { ledTickMs = now; ledFlip = !ledFlip; ledFrameDirty = true; }
-      if (ledFrameDirty) { pixelsClear(); if (ledFlip) pixelsSet(ALT_PATTERN_A, sizeof(ALT_PATTERN_A), colorGreen); else pixelsSet(ALT_PATTERN_B, sizeof(ALT_PATTERN_B), colorBlue); }
-      break;
-    case LedMode::READY_GREEN_BLINK:
-      if (now - ledTickMs >= 450) { ledTickMs = now; ledFlip = !ledFlip; ledFrameDirty = true; }
-      if (ledFrameDirty) { pixelsClear(); if (ledFlip) pixelsFill(colorGreen); }
-      break;
-    case LedMode::GLASS_GREEN_SOLID: if (ledFrameDirty) pixelsFill(colorGreen); break;
-    case LedMode::TIMING_BLUE_SPINNER:
-      if (now - ledTickMs >= 180) { ledTickMs = now; ledSpinIdx = (uint16_t)((ledSpinIdx + 1) % PIXEL_GROUPS); ledFrameDirty = true; }
-      if (ledFrameDirty) { pixelsClear(); groupSet(ledSpinIdx, colorBlue); }
-      break;
-    case LedMode::RESULT_FLASH_GB_ONCE:
-      if (now - ledTickMs < 200) { if (ledFrameDirty) pixelsFill(colorCyan); }
-      else ring1SetMode(LedMode::GLASS_GREEN_SOLID, now);
-      break;
-    case LedMode::STANDBY_TWINKLE: {
-      if (now >= twinkleNextMs) {
-        const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
-        const uint32_t changeMinMs = sanitizeRangeMin(activeConfig.standbyChangeMinMs, changeMaxMs);
-        const uint8_t valueMax = activeConfig.standbyValueMax;
-        const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
-        const uint8_t onMax = activeConfig.standbyOnMax;
-        const uint8_t onMin = (activeConfig.standbyOnMin > onMax) ? onMax : activeConfig.standbyOnMin;
+  if (!ready()) return false;
 
-        twinkleNextMs = now + randomInclusiveU32(changeMinMs, changeMaxMs);
-        const bool needMore = standbyOnCount < onMin;
-        const bool needLess = standbyOnCount > onMax;
-        const bool shouldToggle = !needMore && !needLess && (random(0, 100) < 45);
-        if (needMore || needLess || shouldToggle) {
-          for (uint16_t tries = 0; tries < PIXEL_GROUPS; ++tries) {
-            const uint16_t i = (uint16_t)random(0, PIXEL_GROUPS);
-            if (needMore) {
-              if (!standbyTwinkleOn[i]) { standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = randomInclusiveU8(valueMin, valueMax); ledFrameDirty = true; break; }
-            } else if (needLess) {
-              if (standbyTwinkleOn[i]) { standbyTwinkleOn[i] = false; --standbyOnCount; ledFrameDirty = true; break; }
-            } else if (standbyTwinkleOn[i]) {
-              standbyTwinkleOn[i] = false; --standbyOnCount; ledFrameDirty = true; break;
-            } else {
-              standbyTwinkleOn[i] = true; ++standbyOnCount; standbyHue[i] = (uint16_t)random(0, 65536); standbyValue[i] = randomInclusiveU8(valueMin, valueMax); ledFrameDirty = true; break;
-            }
-          }
-        }
-      }
-      if (now >= standbyFrameNextMs) {
-        const uint8_t valueMax = activeConfig.standbyValueMax;
-        const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
-
-        standbyFrameNextMs = now + sanitizeStandbyFrameMs(activeConfig.standbyFrameMs);
-        for (uint16_t i = 0; i < PIXEL_GROUPS; ++i) {
-          if (!standbyTwinkleOn[i]) continue;
-          const int16_t shift = (int16_t)random(-2, 3);
-          standbyHue[i] = (uint16_t)(standbyHue[i] + shift);
-          const int16_t delta = (int16_t)random(-4, 5);
-          int16_t nextValue = (int16_t)standbyValue[i] + delta;
-          if (nextValue < valueMin) nextValue = valueMin;
-          if (nextValue > valueMax) nextValue = valueMax;
-          standbyValue[i] = (uint8_t)nextValue;
-        }
-        ledFrameDirty = true;
-      }
-      if (ledFrameDirty) standbyApplyOutputs();
-      break;
-    }
+  if (diagActive) {
+    return ring1DiagnosticService(now);
   }
-  const bool dirty = ledFrameDirty;
-  ledFrameDirty = false;
+
+  applyBrightnessForMode();
+
+  switch (mode) {
+    case LedMode::ALL_OFF:
+      if (frameDirty) clearAll();
+      break;
+
+    case LedMode::ERROR_BLINK_RED:
+      if (now - tickAtMs >= 350) { tickAtMs = now; blinkFlip = !blinkFlip; frameDirty = true; }
+      if (frameDirty) { clearAll(); if (blinkFlip) fillAll(colorRed); }
+      break;
+
+    case LedMode::RED_SOLID:
+      if (frameDirty) fillAll(colorRed);
+      break;
+
+    case LedMode::OK_ALT_GB:
+      if (now - tickAtMs >= 450) { tickAtMs = now; blinkFlip = !blinkFlip; frameDirty = true; }
+      if (frameDirty) applyAltGlassPattern(blinkFlip);
+      break;
+
+    case LedMode::READY_GREEN_BLINK:
+      if (now - tickAtMs >= 450) { tickAtMs = now; blinkFlip = !blinkFlip; frameDirty = true; }
+      if (frameDirty) { clearAll(); if (blinkFlip) fillAll(colorGreen); }
+      break;
+
+    case LedMode::GLASS_GREEN_SOLID:
+      if (frameDirty) fillAll(colorGreen);
+      break;
+
+    case LedMode::TIMING_BLUE_SPINNER:
+      if (now - tickAtMs >= 180) {
+        tickAtMs = now;
+        spinnerGroup = (uint16_t)((spinnerGroup + 1) % PIXEL_GROUPS);
+        frameDirty = true;
+      }
+      if (frameDirty) { clearAll(); groupSet(spinnerGroup, colorBlue); }
+      break;
+
+    case LedMode::RESULT_FLASH_GB_ONCE:
+      if (now - tickAtMs < 200) {
+        if (frameDirty) fillAll(colorCyan);
+      } else {
+        ring1SetMode(LedMode::GLASS_GREEN_SOLID, now);
+      }
+      break;
+
+    case LedMode::STANDBY_TWINKLE:
+      twinkleUpdate(now);
+      break;
+  }
+
+  const bool dirty = frameDirty;
+  frameDirty = false;
   return dirty;
 }
-void ring1ApplyBrightnessForCurrentMode() { applyBrightnessForLedModeInternal(); }
-void ring1MarkDirty() { ledFrameDirty = true; }
-void ring1Clear() { if (!ring1Ready()) return; pixelsClear(); }
-void ring1FillDebugAllOn() { if (!ring1Ready()) return; applyBrightnessForLedModeInternal(); pixelsFill(rgb(80, 80, 80)); ledFrameDirty = false; }
-void ring1ApplySharedStandby(const bool* on, const uint16_t* hue, const uint8_t* value,
-                              const bool* dirty, bool fullRedraw, uint16_t count) {
-  if (!ring1Ready()) return;
-  setStripBrightnessPercent(activeConfig.standbyBrightnessPercent);
-  const uint16_t limit = (count < PIXEL_GROUPS) ? count : PIXEL_GROUPS;
-  if (fullRedraw) {
-    // Vollständiger Redraw: erst löschen dann alle aktiven Gruppen setzen
-    pixelsClear();
-    for (uint16_t i = 0; i < limit; ++i) {
-      if (!on[i]) continue;
-      groupSet(i, hsvGamma(hue[i], activeConfig.standbySaturation, value[i]));
-    }
-  } else {
-    // Selektiver Update: nur geänderte Gruppen neu berechnen
-    for (uint16_t i = 0; i < limit; ++i) {
-      if (!dirty[i]) continue;
-      if (on[i]) {
-        groupSet(i, hsvGamma(hue[i], activeConfig.standbySaturation, value[i]));
-      } else {
-        groupClear(i);
-      }
-    }
-  }
+
+void ring1ApplyBrightnessForCurrentMode() { applyBrightnessForMode(); }
+void ring1MarkDirty() { frameDirty = true; }
+void ring1Clear() { if (ready()) clearAll(); }
+
+void ring1FillDebugAllOn() {
+  if (!ready()) return;
+  applyBrightnessForMode();
+  fillAll(rgb(80, 80, 80));
+  frameDirty = false;
 }
