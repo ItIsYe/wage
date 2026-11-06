@@ -15,7 +15,7 @@ Pi fragt keine Messwerte ab
 | Service | Aufgabe |
 |---|---|
 | `wage-pi-backend` | FastAPI Backend (gunicorn, 2 Worker) |
-| `wage-pi-leds` | WS2812B LED-Streifen (322 Pixel) |
+| `wage-pi-leds` | WS2812B LED-Streifen (324 Pixel) |
 | `wage-pi-oled` | OLED Info-Display (I2C) |
 | `wage-pi-kiosk` | Chromium Kiosk-Browser |
 | `wage-pi-screen-save` | Bildschirm-Schoner + Auto-Shutdown |
@@ -49,6 +49,12 @@ sudo install -m 0644 pi/systemd/wage-pi-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl restart wage-pi-backend wage-pi-leds wage-pi-oled wage-pi-screen-save wage-pi-kiosk
 ```
+
+## Update-Umfang
+
+Die GUI erkennt Änderungen in `pi/backend`, `pi/frontend`, `pi/oled`, `pi/leds`, `pi/screen`, `pi/scripts`, `pi/systemd` sowie `requirements.txt` und `README.md` im `pi/`-Ordner.
+Änderungen außerhalb davon (z. B. nur `wage-esp32/`) lösen bewusst kein Pi-Update aus.
+Der LED-Service läuft als `root` (Zugriff auf `/dev/mem` für rpi_ws281x).
 
 ## Hardware
 
@@ -91,6 +97,7 @@ pi/
 | GET/POST | `/api/v1/config/hardware` | Pi Hardware |
 | GET/POST | `/api/v1/system/debug-mode` | Debug-Modus |
 | POST | `/api/v1/system/shutdown` | Pi herunterfahren |
+| POST | `/api/v1/system/reboot` | Pi neu starten |
 | POST | `/api/v1/system/update/apply` | Pi-Code aktualisieren |
 
 Swagger UI: `http://192.168.1.112:8000/docs`
@@ -122,7 +129,7 @@ Swagger UI: `http://192.168.1.112:8000/docs`
 | Regenbogen | Waage online, Standby |
 | Gelb pulsend | Waage offline |
 | Grüne Welle | Lauf empfangen |
-| Sternenhimmel | Power-Save Modus |
+| Sternenhimmel (bunt, 25–45 % der Pixel, sanftes Fading) | Power-Save Modus |
 | Rot | Fehler (API/DB) |
 | Rot blinkend | Schwerer Fehler |
 
@@ -133,7 +140,8 @@ Helligkeiten konfigurierbar unter **Konfiguration → 3) LED-Konfiguration**.
 - Nach X Minuten ohne Lauf → Power-Save (konfigurierbar, Standard: 1 Minute)
 - Nach 10 Minuten Inaktivität → Bildschirm aus, LEDs Sternenhimmel
 - Nach 10 weiteren Minuten → Pi fährt herunter (OLED zeigt Meldung)
-- **Debug-Modus** deaktiviert den Auto-Shutdown (unter **Status**)
+- **Debug-Modus** deaktiviert nur den Auto-Shutdown, Power-Save bleibt aktiv (unter **Status**)
+- Unter **Status** gibt es außerdem Buttons für **Neu starten** und **Herunterfahren**
 - Nach dem Neustart setzt `hw_power_mgmt.sh` alle Flags zurück
 
 ## Datenbank
@@ -152,7 +160,7 @@ Backups werden vor jedem Update automatisch erstellt (max. 10, in `pi/data/backu
 
 Folgende Einträge müssen einmalig gesetzt sein:
 ```bash
-/etc/sudoers.d/wage-shutdown  → sudo shutdown
+/etc/sudoers.d/wage-shutdown  → sudo shutdown, sudo reboot
 /etc/sudoers.d/wage-update    → sudo systemctl, sudo install
 /etc/sudoers.d/wage-network   → sudo network_apply.sh
 ```
@@ -168,7 +176,3 @@ Folgende Einträge müssen einmalig gesetzt sein:
 | Kiosk zeigt alte Version | `rm -rf /tmp/wage-kiosk && sudo systemctl restart wage-pi-kiosk` |
 | Netzwerk anwenden schlägt fehl | `sudo journalctl -u NetworkManager -f` und `cat ~/wage/pi/logs/network_apply.log` |
 | Update schlägt fehl | `cat ~/wage/pi/logs/update.log` |
-
-<!-- test-marker 2026-09-10T15:55:09+00:00 -->
-<!-- test-marker-2 2026-09-10T15:56:56+00:00 -->
-<!-- test-marker-3 2026-09-10T16:27:39+00:00 -->

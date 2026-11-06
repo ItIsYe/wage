@@ -103,10 +103,29 @@ static constexpr bool MASTER_DEBUG_LOG = true;
 ```
 Gibt alle Zustände über Serial aus. Für Produktion auf `false`.
 
+**Ring-1-Pixeldiagnose** — im Webinterface (Debug-Bereich) die Checkbox „Ring 1 Diagnose“ aktivieren:
+Der Strip schaltet jeden physischen Pixel einzeln nacheinander ein (~400 ms, dezentes Weiß) und gibt den Index über Serial aus.
+So lässt sich ablesen, ab welchem Pixel das Signal abbricht. Wird nicht gespeichert (nach Neustart wieder aus).
+
 ## FastLED
 
 Gepinnt auf Version `3.7.0` — stabil für WS2812B auf ESP32 mit aktivem WiFi.
 Neuere Versionen (3.10+) haben mit dem RMT-Treiber auf dieser Hardware Timing-Probleme gezeigt.
+Build-Flag: `FASTLED_INTERRUPT_RETRY_COUNT=8` (Neuübertragung bei durch WiFi-Interrupts gestörten Frames).
+`FASTLED_ALLOW_INTERRUPTS=0` nicht setzen — wird von FastLED auf ESP32 abgelehnt.
+
+## LED-Code
+
+- Ring 1 und Ring 2 rendern unabhängig voneinander, jeder mit eigenem Standby-Sternenhimmel (kein gemeinsamer „Shared Standby“ mehr).
+- Das „Warte auf Glas“-Muster (abwechselnd gerade/ungerade Dreiergruppen) wird zur Laufzeit aus `PIXEL_GROUPS` berechnet — Änderungen an `PIXEL_COUNT` brauchen keine Anpassung von Arrays.
+- Beim Boot: 300 ms Wartezeit und zwei `FastLED.show()`-Aufrufe, damit die Versorgung stabil ist.
+
+## Hardware-Hinweise LEDs
+
+- Datenleitungen über Pegelwandler **SN74AHCT125N** (je Ring ein Gatter): 3,3 V → 5 V, `OE` auf GND.
+- 5-V-Versorgung am gemeinsamen Verzweigungspunkt mit Pufferkondensatoren (4 × 1000 µF parallel, Polarität beachten).
+- Gemeinsame Versorgung für ESP32, Ring 1 und Ring 2; LED-Helligkeit wegen Powerbank (22 W) begrenzt.
+- **Erfahrung:** Wenn immer dieselben Pixel ab einer festen Stelle dunkel bleiben (unabhängig von Muster, Firmware und Versorgung), die Verbindungsstellen des Strips prüfen bzw. nachlöten. Ursache bei Ring 1 waren schwache Lötstellen.
 
 ## GitHub Actions
 
