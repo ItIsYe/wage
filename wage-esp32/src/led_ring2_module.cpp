@@ -25,7 +25,18 @@ static constexpr uint8_t RING2_MODE_TIMING_STATIC_10 = 2;
 static constexpr uint8_t RING2_MODE_WAIT_EMPTY_RED_BREATHE_5 = 3;
 static constexpr uint8_t RING2_MODE_ERROR_SOLID_RED = 4;
 static constexpr uint8_t RING2_MODE_IDLE_RING_CYAN_GREEN = 5;
+static constexpr uint8_t RING2_MODE_STANDBY_TWINKLE = 6;
 static State ring2State = State::BOOT_MSG;
+
+// Standby-Sternenhimmel (ein Stern = ein physischer Pixel). Gleiche Einstellungen wie
+// bei Ring 1 (Wechselintervall, Helligkeitsbereich, Saettigung); die Anzahl leuchtender
+// Sterne ist fuer Ring 1 (PIXEL_GROUPS Gruppen) konfiguriert und wird hier im Verhaeltnis
+// der Pixelzahlen umgerechnet.
+struct Ring2Star { bool on; uint16_t hue; uint8_t value; };
+static Ring2Star ring2Stars[RING2_PIXEL_COUNT];
+static uint16_t ring2StarsOn = 0;
+static uint32_t ring2TwinkleChangeAtMs = 0;
+static uint32_t ring2TwinkleFrameAtMs = 0;
 
 static inline bool ring2Ready() { return ring2Leds != nullptr; }
 
@@ -50,6 +61,7 @@ static const char* ring2ModeLabel(uint8_t mode) {
   if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) return "wait-empty-red-breathe-5";
   if (mode == RING2_MODE_ERROR_SOLID_RED) return "error-solid-red";
   if (mode == RING2_MODE_IDLE_RING_CYAN_GREEN) return "idle-ring-cyan-green";
+  if (mode == RING2_MODE_STANDBY_TWINKLE) return "standby-twinkle";
   return "unknown";
 }
 static uint8_t ring2ResolveModeFromState() {
@@ -63,12 +75,116 @@ static uint8_t ring2ResolveModeFromState() {
     case State::SHOW_RESULT: return RING2_MODE_OFF;
     case State::WAIT_EMPTY_AFTER_RESULT: return RING2_MODE_WAIT_EMPTY_RED_BREATHE_5;
     case State::CHECK_RETARE: return RING2_MODE_OFF;
-    case State::STANDBY: return RING2_MODE_OFF;
+    case State::STANDBY: return RING2_MODE_STANDBY_TWINKLE;
     case State::ERROR_RECOVER: return RING2_MODE_ERROR_SOLID_RED;
   }
   return RING2_MODE_OFF;
 }
+static inline uint32_t ring2RandU32(uint32_t lo, uint32_t hi) {
+  if (lo > hi) { const uint32_t t = lo; lo = hi; hi = t; }
+  return lo + (uint32_t)random(0, (long)(hi - lo + 1U));
+}
+static inline uint8_t ring2RandU8(uint8_t lo, uint8_t hi) {
+  if (lo > hi) { const uint8_t t = lo; lo = hi; hi = t; }
+  return (uint8_t)(lo + (uint8_t)random(0, (int16_t)(hi - lo + 1U)));
+}
+static inline uint32_t ring2FrameMs() {
+  const uint32_t f = activeConfig.standbyFrameMs;
+  return f < 30U ? 30U : (f > 1000U ? 1000U : f);
+}
+// Anzahl leuchtender Sterne von Ring 1 (Gruppen) auf Ring 2 (Pixel) umrechnen.
+// Aufgerundet, damit ein konfigurierter Wert > 0 nie auf 0 faellt.
+static inline uint16_t ring2ScaleCount(uint8_t ring1Count) {
+  const uint32_t scaled = ((uint32_t)ring1Count * RING2_PIXEL_COUNT + PIXEL_GROUPS - 1U) / PIXEL_GROUPS;
+  return (uint16_t)(scaled > RING2_PIXEL_COUNT ? RING2_PIXEL_COUNT : scaled);
+}
+static inline CRGB ring2StarColor(const Ring2Star& st) {
+  CHSV hsv((uint8_t)(st.hue >> 8), activeConfig.standbySaturation, st.value);
+  CRGB out;
+  hsv2rgb_rainbow(hsv, out);
+  out.r = LedGamma::apply(out.r);
+  out.g = LedGamma::apply(out.g);
+  out.b = LedGamma::apply(out.b);
+  return scaleColor(out, ring2BrightnessByte);
+}
+static void ring2TwinkleBounds(uint16_t& onMin, uint16_t& onMax, uint8_t& vMin, uint8_t& vMax) {
+  onMax = ring2ScaleCount(activeConfig.standbyOnMax);
+  onMin = ring2ScaleCount(activeConfig.standbyOnMin);
+  if (onMin > onMax) onMin = onMax;
+  vMax = activeConfig.standbyValueMax;
+  vMin = activeConfig.standbyValueMin > vMax ? vMax : activeConfig.standbyValueMin;
+}
+static void ring2TwinkleInit(uint32_t now) {
+  uint16_t onMin, onMax; uint8_t vMin, vMax;
+  ring2TwinkleBounds(onMin, onMax, vMin, vMax);
+  const uint32_t cMax = activeConfig.standbyChangeMaxMs;
+  const uint32_t cMin = activeConfig.standbyChangeMinMs > cMax ? cMax : activeConfig.standbyChangeMinMs;
+  ring2TwinkleFrameAtMs = now + ring2FrameMs();
+  ring2TwinkleChangeAtMs = now + ring2RandU32(cMin, cMax);
+  ring2StarsOn = 0;
+  for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+    ring2Stars[i].on = false;
+    ring2Stars[i].hue = (uint16_t)random(0, 65536);
+    ring2Stars[i].value = ring2RandU8(vMin, vMax);
+  }
+  const uint16_t initialOn = (uint16_t)ring2RandU32(onMin, onMax);
+  for (uint16_t n = 0; n < initialOn; ++n) {
+    const uint16_t idx = (uint16_t)random(0, RING2_PIXEL_COUNT);
+    if (!ring2Stars[idx].on) { ring2Stars[idx].on = true; ++ring2StarsOn; }
+  }
+}
+// Rueckgabe: true, wenn sich das Bild geaendert hat.
+static bool ring2TwinkleUpdate(uint32_t now) {
+  bool changed = false;
+  uint16_t onMin, onMax; uint8_t vMin, vMax;
+  ring2TwinkleBounds(onMin, onMax, vMin, vMax);
+
+  if ((int32_t)(now - ring2TwinkleChangeAtMs) >= 0) {
+    const uint32_t cMax = activeConfig.standbyChangeMaxMs;
+    const uint32_t cMin = activeConfig.standbyChangeMinMs > cMax ? cMax : activeConfig.standbyChangeMinMs;
+    ring2TwinkleChangeAtMs = now + ring2RandU32(cMin, cMax);
+    const bool needMore = ring2StarsOn < onMin;
+    const bool needLess = ring2StarsOn > onMax;
+    const bool toggle = !needMore && !needLess && (random(0, 100) < 45);
+    if (needMore || needLess || toggle) {
+      for (uint16_t tries = 0; tries < RING2_PIXEL_COUNT; ++tries) {
+        const uint16_t i = (uint16_t)random(0, RING2_PIXEL_COUNT);
+        const bool wantOn = needMore || (!needLess && !ring2Stars[i].on);
+        if (wantOn && !ring2Stars[i].on) {
+          if (!needMore && ring2StarsOn >= onMax) continue;  // Obergrenze einhalten
+          ring2Stars[i].on = true; ++ring2StarsOn;
+          ring2Stars[i].hue = (uint16_t)random(0, 65536);
+          ring2Stars[i].value = ring2RandU8(vMin, vMax);
+          changed = true; break;
+        }
+        if (!wantOn && ring2Stars[i].on) {
+          if (!needLess && ring2StarsOn <= onMin) continue;  // Untergrenze einhalten
+          ring2Stars[i].on = false; --ring2StarsOn;
+          changed = true; break;
+        }
+      }
+    }
+  }
+
+  if ((int32_t)(now - ring2TwinkleFrameAtMs) >= 0) {
+    ring2TwinkleFrameAtMs = now + ring2FrameMs();
+    for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+      if (!ring2Stars[i].on) continue;
+      ring2Stars[i].hue = (uint16_t)(ring2Stars[i].hue + (int16_t)random(-2, 3));
+      int16_t v = (int16_t)ring2Stars[i].value + (int16_t)random(-4, 5);
+      if (v < vMin) v = vMin;
+      if (v > vMax) v = vMax;
+      ring2Stars[i].value = (uint8_t)v;
+    }
+    changed = true;
+  }
+  return changed;
+}
+
 static void ring2ResetPatternAnimation(uint8_t mode, uint32_t now) {
+  if (mode == RING2_MODE_STANDBY_TWINKLE) {
+    ring2TwinkleInit(now);
+  }
   if (mode == RING2_MODE_SHORT_GREEN_FLASH) {
     ring2PulseValue = 1;
     ring2TickMs = now;
@@ -148,6 +264,7 @@ bool ring2Service(uint32_t now) {
   uint8_t modeBrightnessPercent = activeConfig.ring2BrightnessPercent;
   if (mode == RING2_MODE_TIMING_STATIC_10) modeBrightnessPercent = 10;
   else if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) modeBrightnessPercent = 5;
+  else if (mode == RING2_MODE_STANDBY_TWINKLE) modeBrightnessPercent = activeConfig.ring2StandbyBrightnessPercent;
   ring2SetBrightnessPercent(modeBrightnessPercent);
   if (mode == RING2_MODE_OFF) {
     logRenderedState(mode, "off");
@@ -168,6 +285,20 @@ bool ring2Service(uint32_t now) {
         const uint8_t distance = (uint8_t)((i + RING2_PIXEL_COUNT - ring2IdleRunnerPos) % RING2_PIXEL_COUNT);
         if (distance == 0) ring2Leds[i] = scaleColor(rgb(0, 70, 45), ring2BrightnessByte);
         else if (distance == 1 || distance == RING2_PIXEL_COUNT - 1) ring2Leds[i] = scaleColor(rgb(0, 35, 60), ring2BrightnessByte);
+      }
+      ring2FrameDirty = false;
+      return true;
+    }
+    return false;
+  }
+
+  if (mode == RING2_MODE_STANDBY_TWINKLE) {
+    logRenderedState(RING2_MODE_STANDBY_TWINKLE, "standby-twinkle");
+    if (ring2TwinkleUpdate(now)) ring2FrameDirty = true;
+    if (ring2FrameDirty) {
+      ring2Clear();
+      for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) {
+        if (ring2Stars[i].on) ring2Leds[i] = ring2StarColor(ring2Stars[i]);
       }
       ring2FrameDirty = false;
       return true;
