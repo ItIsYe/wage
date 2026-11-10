@@ -6,6 +6,11 @@ on:
     paths:
       - "wage-esp32/**"
       - ".github/workflows/esp32-firmware.yml"
+  # Pull Requests: nur bauen (Kompilier- und Größenprüfung), kein Release.
+  pull_request:
+    paths:
+      - "wage-esp32/**"
+      - ".github/workflows/esp32-firmware.yml"
   workflow_dispatch: {}
 
 jobs:
@@ -57,6 +62,7 @@ jobs:
           cat out/manifest.json
 
       - name: Create / update GitHub Release
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: esp32-${{ steps.ver.outputs.version }}
@@ -70,6 +76,7 @@ jobs:
             Commit: ${{ github.sha }}
 
       - name: Update "latest" release pointer
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: esp32-latest
