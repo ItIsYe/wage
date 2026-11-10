@@ -144,7 +144,7 @@ void tareBoth() {
 }
 
 bool isNegativeCheckSuppressed(uint32_t now) {
-  return now < negativeCheckSuppressUntilMs;
+  return (int32_t)(now - negativeCheckSuppressUntilMs) < 0;  // ueberlaufsicher
 }
 
 bool isObjectPresentStable(float weight, bool stable) {

@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Update.h>
+#include <mbedtls/sha256.h>
 #include <cstring>
 #include <cstdio>
 
@@ -13,6 +14,7 @@ namespace {
 OtaTargetConfig targetCfg{};
 char currentVersion[32] = "unknown";
 char availableVersion[32] = "";
+char availableSha256[65] = "";  // 64 Hex-Zeichen aus dem Manifest
 char statusText[128] = "Kein Update geprüft";
 OtaState state = OtaState::IDLE;
 uint8_t downloadProgressPercent = 0;
@@ -41,18 +43,54 @@ bool versionDiffers(const char* a, const char* b) {
   return strcmp(a, b) != 0;
 }
 
-// Sehr simples JSON-Wert-Extraktion ohne externe Lib, ausreichend für das
+// Sehr simple JSON-Wert-Extraktion ohne externe Lib, ausreichend für das
 // kleine, kontrollierte manifest.json (kein Escaping/Nesting zu erwarten).
+// Leerzeichen zwischen Schlüssel, ':' und Wert sind erlaubt.
 bool extractJsonString(const String& json, const char* key, char* out, size_t outSize) {
-  String pattern = String("\"") + key + "\":\"";
-  int start = json.indexOf(pattern);
-  if (start < 0) return false;
-  start += pattern.length();
-  int end = json.indexOf('"', start);
+  String pattern = String("\"") + key + "\"";
+  int pos = json.indexOf(pattern);
+  if (pos < 0) return false;
+  pos += pattern.length();
+  while (pos < (int)json.length() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r')) ++pos;
+  if (pos >= (int)json.length() || json[pos] != ':') return false;
+  ++pos;
+  while (pos < (int)json.length() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r')) ++pos;
+  if (pos >= (int)json.length() || json[pos] != '"') return false;
+  ++pos;
+  int end = json.indexOf('"', pos);
   if (end < 0) return false;
-  String value = json.substring(start, end);
+  String value = json.substring(pos, end);
   strncpy(out, value.c_str(), outSize - 1);
   out[outSize - 1] = '\0';
+  return true;
+}
+
+// Holt manifest.json vom Pi und liest Version und SHA256 aus.
+// Rückgabe: 0 = ok, 1 = Verbindung/HTTP-Fehler, 2 = Manifest ungültig.
+int fetchManifest(char* version, size_t versionSize, char* sha256, size_t shaSize, int* httpCode) {
+  HTTPClient http;
+  String url = buildUrl("/api/v1/esp-firmware/manifest");
+  if (!http.begin(url)) { *httpCode = -1; return 1; }
+  http.setTimeout(8000);
+  *httpCode = http.GET();
+  if (*httpCode != 200) { http.end(); return 1; }
+  String body = http.getString();
+  http.end();
+  if (!extractJsonString(body, "version", version, versionSize)) return 2;
+  sha256[0] = '\0';
+  extractJsonString(body, "sha256", sha256, shaSize);  // fehlt sie, bleibt der Wert leer
+  return 0;
+}
+
+// Gleichheit zweier Hex-Strings ohne Beachtung der Groß-/Kleinschreibung.
+bool hexEqualsIgnoreCase(const char* a, const char* b) {
+  if (strlen(a) != strlen(b)) return false;
+  for (size_t i = 0; a[i]; ++i) {
+    char x = a[i], y = b[i];
+    if (x >= 'A' && x <= 'F') x = (char)(x - 'A' + 'a');
+    if (y >= 'A' && y <= 'F') y = (char)(y - 'A' + 'a');
+    if (x != y) return false;
+  }
   return true;
 }
 
@@ -81,28 +119,22 @@ bool otaCheckForUpdate() {
   state = OtaState::CHECKING;
   setStatus("Prüfe auf neue Firmware...");
 
-  HTTPClient http;
-  String url = buildUrl("/api/v1/esp-firmware/manifest");
-  if (!http.begin(url)) {
-    state = OtaState::ERROR;
-    setStatus("Verbindung zum Pi fehlgeschlagen");
-    return false;
-  }
-  http.setTimeout(8000);
-  int code = http.GET();
-  if (code != 200) {
-    char buf[96];
-    snprintf(buf, sizeof(buf), "Manifest-Abruf fehlgeschlagen (HTTP %d)", code);
-    setStatus(buf);
-    state = OtaState::ERROR;
-    http.end();
-    return false;
-  }
-  String body = http.getString();
-  http.end();
-
   char version[32] = "";
-  if (!extractJsonString(body, "version", version, sizeof(version))) {
+  char sha[65] = "";
+  int httpCode = 0;
+  const int mr = fetchManifest(version, sizeof(version), sha, sizeof(sha), &httpCode);
+  if (mr == 1) {
+    state = OtaState::ERROR;
+    if (httpCode <= 0) {
+      setStatus("Verbindung zum Pi fehlgeschlagen");
+    } else {
+      char buf[96];
+      snprintf(buf, sizeof(buf), "Manifest-Abruf fehlgeschlagen (HTTP %d)", httpCode);
+      setStatus(buf);
+    }
+    return false;
+  }
+  if (mr == 2) {
     state = OtaState::ERROR;
     setStatus("Manifest ungültig (keine Version gefunden)");
     return false;
@@ -110,6 +142,8 @@ bool otaCheckForUpdate() {
 
   strncpy(availableVersion, version, sizeof(availableVersion) - 1);
   availableVersion[sizeof(availableVersion) - 1] = '\0';
+  strncpy(availableSha256, sha, sizeof(availableSha256) - 1);
+  availableSha256[sizeof(availableSha256) - 1] = '\0';
 
   if (versionDiffers(currentVersion, availableVersion)) {
     state = OtaState::UPDATE_AVAILABLE;
@@ -159,6 +193,29 @@ bool otaPerformUpdate() {
     }
   }
 
+  // Der Sync kann eine neuere Firmware in den Cache geladen haben als beim Check.
+  // Prüfsumme deshalb jetzt frisch aus dem Manifest holen. Ohne Prüfsumme wird
+  // nicht geflasht.
+  {
+    char version[32] = "";
+    char sha[65] = "";
+    int httpCode = 0;
+    if (fetchManifest(version, sizeof(version), sha, sizeof(sha), &httpCode) != 0) {
+      state = OtaState::ERROR;
+      setStatus("Manifest nach dem Sync nicht lesbar");
+      return false;
+    }
+    if (strlen(sha) != 64) {
+      state = OtaState::ERROR;
+      setStatus("Manifest ohne gültige Prüfsumme - Update abgebrochen");
+      return false;
+    }
+    strncpy(availableVersion, version, sizeof(availableVersion) - 1);
+    availableVersion[sizeof(availableVersion) - 1] = '\0';
+    strncpy(availableSha256, sha, sizeof(availableSha256) - 1);
+    availableSha256[sizeof(availableSha256) - 1] = '\0';
+  }
+
   setStatus("Lade Firmware vom Pi...");
   HTTPClient http;
   String url = buildUrl("/api/v1/esp-firmware/latest.bin");
@@ -200,6 +257,9 @@ bool otaPerformUpdate() {
   WiFiClient* stream = http.getStreamPtr();
   size_t written = 0;
   uint8_t buf[1024];
+  mbedtls_sha256_context shaCtx;
+  mbedtls_sha256_init(&shaCtx);
+  mbedtls_sha256_starts_ret(&shaCtx, 0);  // 0 = SHA-256 (nicht SHA-224)
   while (http.connected() && written < (size_t)contentLength) {
     size_t avail = stream->available();
     if (avail == 0) {
@@ -215,8 +275,10 @@ bool otaPerformUpdate() {
       setStatus("Schreibfehler während des Flashens");
       http.end();
       Update.abort();
+      mbedtls_sha256_free(&shaCtx);
       return false;
     }
+    mbedtls_sha256_update_ret(&shaCtx, buf, readBytes);
     written += wroteNow;
     downloadProgressPercent = (uint8_t)((written * 100UL) / (size_t)contentLength);
     // OLED alle ~5% aktualisieren um I2C nicht zu überlasten
@@ -230,9 +292,23 @@ bool otaPerformUpdate() {
   }
   http.end();
 
+  uint8_t digest[32];
+  mbedtls_sha256_finish_ret(&shaCtx, digest);
+  mbedtls_sha256_free(&shaCtx);
+
   if (written != (size_t)contentLength) {
     state = OtaState::ERROR;
     setStatus("Download unvollständig");
+    Update.abort();
+    return false;
+  }
+
+  // Prüfsumme vergleichen, BEVOR das Update aktiviert wird.
+  char digestHex[65];
+  for (int i = 0; i < 32; ++i) snprintf(digestHex + 2 * i, 3, "%02x", digest[i]);
+  if (!hexEqualsIgnoreCase(digestHex, availableSha256)) {
+    state = OtaState::ERROR;
+    setStatus("Prüfsumme stimmt nicht - Update verworfen");
     Update.abort();
     return false;
   }

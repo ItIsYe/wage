@@ -87,6 +87,8 @@ static bool oledDebugLedsCleared = false;
    FORWARD DECLARATIONS
    ========================================================= */
 static void setState(State s);
+// Ist der Zeitpunkt t erreicht? Ueberlaufsicher (millis() laeuft nach ~49 Tagen ueber).
+static inline bool timeReached(uint32_t now, uint32_t t) { return (int32_t)(now - t) >= 0; }
 static const char* stateToStr(State s);
 static bool shouldCheckNegativeError(State s);
 static void oledService(uint32_t now);
@@ -441,7 +443,7 @@ static void stateMachineService(uint32_t now) {
     }
 
     case State::SHOW_RESULT: {
-      if (now >= showUntilMs) {
+      if (timeReached(now, showUntilMs)) {
         showStatus("Bitte leeren", "Glas entfernen");
         setState(State::WAIT_EMPTY_AFTER_RESULT);
       }
@@ -499,7 +501,7 @@ static void stateMachineService(uint32_t now) {
     }
 
     case State::ERROR_RECOVER: {
-      if (now >= recoverUntilMs) {
+      if (timeReached(now, recoverUntilMs)) {
         if (haveStableRead && absFilt < 2.0f) {
           serialDebugPrintRecover(now, "[RECOVER] Tare (empty & stable).");
           showStatus("Recovery", "Nullung...");
@@ -619,7 +621,14 @@ void loop() {
     state == State::CHECK_RETARE ||
     state == State::STANDBY
   );
-  externalInterfaceService(now, safeToRetry);
+  // Glas steht bereit, es deutet nichts auf einen Messstart hin: Heartbeat darf laufen,
+  // sonst gilt die Waage nach 90 s im Dashboard als offline (siehe externalInterfaceService).
+  const bool quietHeartbeat = (
+    state == State::READY_FOR_TIMING &&
+    dropSinceMs == 0 &&
+    (runModuleGetReference() - w_filt) < 0.5f * runModuleGetStartDropThreshold()
+  );
+  externalInterfaceService(now, safeToRetry, quietHeartbeat);
   const bool externalHintStateOk = (state == State::IDLE_WAIT_GLASS || state == State::STANDBY);
   const uint32_t currentErrorEvent = externalInterfaceErrorEventCounter();
   const bool canShowExternalHint = (

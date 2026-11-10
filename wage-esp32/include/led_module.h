@@ -15,3 +15,5 @@ void ledShow();
 void ledMarkAllDirty();
 // Startet den Ring1-Pixel-Diagnosemodus (siehe led_ring1_module.h)
 void ledRing1DiagnosticStart();
+// Beendet den Diagnosemodus und stellt das normale Muster wieder her.
+void ledRing1DiagnosticStop();
