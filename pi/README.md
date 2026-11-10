@@ -107,7 +107,7 @@ Swagger UI: `http://192.168.1.112:8000/docs`
 ### AP-Modus (Standard)
 - SSID: `wage-net`
 - Pi-IP: `192.168.50.1`
-- DHCP: `192.168.50.50–192.168.50.150`
+- DHCP: `192.168.50.50–192.168.50.150` (einstellbar unter **Konfiguration → 2) Netzwerk-Konfiguration**; muss im Netz der AP-IP liegen, Start ≤ Ende, AP-IP nicht im Bereich; beide Felder leer = Standard-Bereich von NetworkManager)
 - ESP32 statische IP: `192.168.50.100`
 - API-Ziel für ESP: `http://192.168.50.1:8000/api/v1/runs`
 
@@ -133,14 +133,17 @@ Swagger UI: `http://192.168.1.112:8000/docs`
 | Rot | Fehler (API/DB) |
 | Rot blinkend | Schwerer Fehler |
 
-Helligkeiten konfigurierbar unter **Konfiguration → 3) LED-Konfiguration**.
+Helligkeiten konfigurierbar unter **Konfiguration → 3) LED-Konfiguration**:
+- **Regenbogen, Grüne Welle, Boot:** legen die Helligkeit des Streifens (0–255) für das jeweilige Muster direkt fest.
+- **Gelb pulsend, Sternenhimmel, Fehler:** Farbwert des Musters, wirkt zusätzlich zur globalen Helligkeit (**Konfiguration → 4) Pi Hardware**).
 
 ## Power-Save & Auto-Shutdown
 
-- Nach X Minuten ohne Lauf → Power-Save (konfigurierbar, Standard: 1 Minute)
-- Nach 10 Minuten Inaktivität → Bildschirm aus, LEDs Sternenhimmel
-- Nach 10 weiteren Minuten → Pi fährt herunter (OLED zeigt Meldung)
-- **Debug-Modus** deaktiviert nur den Auto-Shutdown, Power-Save bleibt aktiv (unter **Status**)
+- Nach X Minuten ohne Lauf → Power-Save: Bildschirm aus, LEDs Sternenhimmel, OLED aus (konfigurierbar, Standard: 1 Minute; 0 = Power-Save aus)
+- Nach **10 Minuten ohne Lauf** (insgesamt, nicht zusätzlich zu X) → Pi fährt herunter (OLED zeigt Meldung)
+- In den ersten Minuten nach dem Start greifen weder Power-Save noch Auto-Shutdown (Schonfrist)
+- Ein Touch auf den Bildschirm startet die Zeit neu und weckt ihn (bis zu 10 s Verzögerung)
+- **Debug-Modus** (Schalter unter **Status**) deaktiviert den Auto-Shutdown; Power-Save bleibt aktiv. „0 = Power-Save aus“ schaltet den Auto-Shutdown **nicht** ab, dafür ist der Debug-Modus da.
 - Unter **Status** gibt es außerdem Buttons für **Neu starten** und **Herunterfahren**
 - Nach dem Neustart setzt `hw_power_mgmt.sh` alle Flags zurück
 
