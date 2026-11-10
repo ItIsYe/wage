@@ -71,11 +71,13 @@ log "GPU-Speicher: ${GPU_MEM}MB"
 
 log "Hardware Power Management abgeschlossen"
 
+# Zeitstempel im gleichen Format wie das Backend (ISO mit Zeitzone); ein naiver Wert
+# liess die Power-Save-Berechnung mit TypeError scheitern.
 # led_shutdown Flag zurücksetzen (wird beim Auto-Shutdown gesetzt)
 DB="/home/wage/wage/pi/data/wage_pi.sqlite3"
 if [ -f "$DB" ]; then
     sqlite3 "$DB" "UPDATE app_state SET value='0' WHERE key='led_shutdown'; \
-        INSERT INTO app_state(key,value) VALUES('last_run_received_at',datetime('now')) \
-        ON CONFLICT(key) DO UPDATE SET value=datetime('now');" 2>/dev/null || true
+        INSERT INTO app_state(key,value) VALUES('last_run_received_at',strftime('%Y-%m-%dT%H:%M:%S+00:00','now')) \
+        ON CONFLICT(key) DO UPDATE SET value=strftime('%Y-%m-%dT%H:%M:%S+00:00','now');" 2>/dev/null || true
     log "led_shutdown und last_run_received_at zurückgesetzt"
 fi

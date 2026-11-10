@@ -92,10 +92,15 @@ def _is_power_save() -> bool:
     except Exception:
         return False
 
+# Der Dienst wird als "python leds/led_service.py" gestartet; sys.path[0] ist dann
+# der Unterordner, nicht pi/. Ohne das Elternverzeichnis schlug der Import immer fehl
+# und es galt der Fallback von 45 s statt der 90 s des Backends.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
 except Exception:
-    OFFLINE_THRESHOLD_SECONDS = 45
+    OFFLINE_THRESHOLD_SECONDS = 90
 
 
 # set_state() wird in jedem Animations-Tick aufgerufen, der Wert ändert sich aber fast
@@ -184,7 +189,6 @@ def boot_sequence(strip, Color):
         for j in range(strip.numPixels()):
             strip.setPixelColor(j, Color(brightness // 3, brightness // 3, brightness // 3))
         strip.show()
-        time.sleep(2.0 / steps)
         time.sleep(2.0 / steps)
 
 
