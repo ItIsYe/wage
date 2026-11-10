@@ -111,14 +111,12 @@ def receive_heartbeat(payload: dict, request: Request):
             ON CONFLICT(device_id) DO UPDATE SET
                 firmware_version=excluded.firmware_version,
                 last_seen_at=excluded.last_seen_at,
-                last_boot_id=excluded.last_boot_id,
+                last_boot_id=COALESCE(excluded.last_boot_id, devices.last_boot_id),
                 last_queue_depth=excluded.last_queue_depth,
                 last_ip=excluded.last_ip""",
             (device_id, firmware_version, utc_now_iso(), boot_id, queue_depth, client_ip),
         )
     return {"ok": True}
-    with db_cursor() as (_, cur):
-        return _insert_run(cur, payload)
 
 
 @router.post("/batch")
@@ -141,14 +139,28 @@ def create_manual_run(payload: dict):
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="start_weight_g muss eine Zahl sein")
 
+    try:
+        time_ms = int(payload.get("time_ms") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="time_ms muss eine ganze Zahl sein")
+    if weight <= 0 or time_ms < 0:
+        raise HTTPException(status_code=400, detail="start_weight_g muss > 0 und time_ms >= 0 sein")
+
     received_at = payload.get("received_at") or utc_now_iso()
     person_id = payload.get("person_id")
     person_name = None
     if person_id:
+        try:
+            person_id = int(person_id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="person_id muss eine Zahl sein")
         with db_cursor() as (_, cur):
-            p = cur.execute("SELECT name FROM persons WHERE id=?", (int(person_id),)).fetchone()
-            if p:
-                person_name = p["name"]
+            p = cur.execute("SELECT name FROM persons WHERE id=?", (person_id,)).fetchone()
+        if not p:
+            raise HTTPException(status_code=404, detail="Person nicht gefunden")
+        person_name = p["name"]
+    else:
+        person_id = None
 
     import uuid
     event_id = f"manual-{uuid.uuid4().hex[:12]}"
@@ -163,13 +175,13 @@ def create_manual_run(payload: dict):
                 0,
                 0,
                 event_id,
-                int(payload.get("time_ms", 0)),
+                time_ms,
                 weight,
                 payload.get("status", "manual"),
                 "manual",
                 0,
                 received_at,
-                int(person_id) if person_id else None,
+                person_id,
                 person_name,
                 payload.get("note", ""),
             ),
@@ -207,6 +219,14 @@ def list_runs(limit: int = 50, search: str | None = None, person_id: int | None 
 
 
 
+def _csv_safe(value):
+    """Texte, die mit = + - @ (oder Tab/CR) beginnen, wuerde Excel/LibreOffice als Formel
+    ausfuehren. Ein vorangestelltes Hochkomma macht sie zu normalem Text. Zahlen bleiben."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
 @router.get("/export/csv")
 def export_runs_csv():
     """Alle Läufe als CSV-Download."""
@@ -230,7 +250,7 @@ def export_runs_csv():
         "person_id", "person_name", "note"
     ])
     for row in rows:
-        writer.writerow(list(row))
+        writer.writerow([_csv_safe(v) for v in row])
 
     output.seek(0)
     from datetime import datetime, timezone
@@ -258,7 +278,10 @@ def update_run(run_id: int, payload: RunUpdate):
         exists = cur.execute("SELECT id FROM runs WHERE id=?", (run_id,)).fetchone()
         if not exists:
             raise HTTPException(status_code=404, detail="Lauf nicht gefunden")
-        if payload.person_id is not None:
+        if "person_id" in payload.model_fields_set and payload.person_id is None:
+            # explizit null gesendet ("keine Person"): Zuordnung entfernen
+            cur.execute("UPDATE runs SET person_id=NULL, person_name=NULL WHERE id=?", (run_id,))
+        elif payload.person_id is not None:
             person = cur.execute("SELECT name FROM persons WHERE id=?", (payload.person_id,)).fetchone()
             if not person:
                 raise HTTPException(status_code=404, detail="Person nicht gefunden")

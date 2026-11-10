@@ -21,90 +21,98 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    with get_connection() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS persons (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL,
-                tags TEXT DEFAULT '',
-                note TEXT DEFAULT ''
-            );
+    conn = get_connection()
+    try:
+        with conn:  # Transaktion; schliesst die Verbindung NICHT
+            _init_schema(conn)
+    finally:
+        conn.close()
 
-            CREATE TABLE IF NOT EXISTS devices (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id TEXT NOT NULL UNIQUE,
-                firmware_version TEXT,
-                last_seen_at TEXT,
-                last_boot_id INTEGER,
-                last_queue_depth INTEGER,
-                last_ip TEXT
-            );
 
-            CREATE TABLE IF NOT EXISTS runs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                device_id TEXT NOT NULL,
-                boot_id TEXT NOT NULL,
-                run_number INTEGER NOT NULL,
-                event_id TEXT NOT NULL,
-                time_ms INTEGER NOT NULL,
-                start_weight_g REAL NOT NULL,
-                min_weight_g REAL,
-                start_drop_threshold_g REAL,
-                stop_rise_threshold_g REAL,
-                status TEXT NOT NULL,
-                firmware_version TEXT NOT NULL,
-                queue_depth INTEGER,
-                received_at TEXT NOT NULL,
-                person_id INTEGER,
-                person_name TEXT,
-                note TEXT DEFAULT '',
-                UNIQUE(device_id, event_id),
-                FOREIGN KEY(person_id) REFERENCES persons(id) ON DELETE SET NULL
-            );
+def _init_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS persons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            tags TEXT DEFAULT '',
+            note TEXT DEFAULT ''
+        );
 
-            CREATE TABLE IF NOT EXISTS app_state (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            );
+        CREATE TABLE IF NOT EXISTS devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT NOT NULL UNIQUE,
+            firmware_version TEXT,
+            last_seen_at TEXT,
+            last_boot_id INTEGER,
+            last_queue_depth INTEGER,
+            last_ip TEXT
+        );
 
-            CREATE INDEX IF NOT EXISTS idx_runs_received_at ON runs(received_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_runs_person_id ON runs(person_id);
-            CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
-            CREATE INDEX IF NOT EXISTS idx_runs_boot_run ON runs(device_id, boot_id, run_number);
-            """
-        )
-        # Migration: neue Spalten für bestehende DBs ergänzen
-        existing_cols = {row[0] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
-        for col, typedef in [
-            ("min_weight_g", "REAL"),
-            ("start_drop_threshold_g", "REAL"),
-            ("stop_rise_threshold_g", "REAL"),
-        ]:
-            if col not in existing_cols:
-                try:
-                    conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {typedef}")
-                except sqlite3.OperationalError:
-                    pass
-        dev_cols = {row[0] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
-        if "last_ip" not in dev_cols:
+        CREATE TABLE IF NOT EXISTS runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT NOT NULL,
+            boot_id TEXT NOT NULL,
+            run_number INTEGER NOT NULL,
+            event_id TEXT NOT NULL,
+            time_ms INTEGER NOT NULL,
+            start_weight_g REAL NOT NULL,
+            min_weight_g REAL,
+            start_drop_threshold_g REAL,
+            stop_rise_threshold_g REAL,
+            status TEXT NOT NULL,
+            firmware_version TEXT NOT NULL,
+            queue_depth INTEGER,
+            received_at TEXT NOT NULL,
+            person_id INTEGER,
+            person_name TEXT,
+            note TEXT DEFAULT '',
+            UNIQUE(device_id, event_id),
+            FOREIGN KEY(person_id) REFERENCES persons(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_runs_received_at ON runs(received_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_runs_person_id ON runs(person_id);
+        CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
+        CREATE INDEX IF NOT EXISTS idx_runs_boot_run ON runs(device_id, boot_id, run_number);
+        """
+    )
+    # Migration: neue Spalten für bestehende DBs ergänzen
+    existing_cols = {row[0] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    for col, typedef in [
+        ("min_weight_g", "REAL"),
+        ("start_drop_threshold_g", "REAL"),
+        ("stop_rise_threshold_g", "REAL"),
+    ]:
+        if col not in existing_cols:
             try:
-                conn.execute("ALTER TABLE devices ADD COLUMN last_ip TEXT")
+                conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {typedef}")
             except sqlite3.OperationalError:
                 pass
-        per_cols = {row[0] for row in conn.execute("PRAGMA table_info(persons)").fetchall()}
-        for col, typedef in [("tags", "TEXT DEFAULT ''"), ("note", "TEXT DEFAULT ''")]:
-            if col not in per_cols:
-                try:
-                    conn.execute(f"ALTER TABLE persons ADD COLUMN {col} {typedef}")
-                except sqlite3.OperationalError:
-                    pass
-        conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
-        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
-        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")
-        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('oled_status', 'init')")
-        conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('last_event', 'startup')")
+    dev_cols = {row[0] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+    if "last_ip" not in dev_cols:
+        try:
+            conn.execute("ALTER TABLE devices ADD COLUMN last_ip TEXT")
+        except sqlite3.OperationalError:
+            pass
+    per_cols = {row[0] for row in conn.execute("PRAGMA table_info(persons)").fetchall()}
+    for col, typedef in [("tags", "TEXT DEFAULT ''"), ("note", "TEXT DEFAULT ''")]:
+        if col not in per_cols:
+            try:
+                conn.execute(f"ALTER TABLE persons ADD COLUMN {col} {typedef}")
+            except sqlite3.OperationalError:
+                pass
+    conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
+    conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
+    conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")
+    conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('oled_status', 'init')")
+    conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('last_event', 'startup')")
 
 
 @contextmanager

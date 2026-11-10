@@ -26,7 +26,7 @@ ok "Person angelegt (ID $PID)"
 curl -sf -X POST "$BASE/api/v1/persons/$PID/activate" >/dev/null || fail "Aktivieren fehlgeschlagen"
 ok "Testperson aktiv gesetzt"
 
-PAY="{\"protocol_version\":\"1.0\",\"device_id\":\"scale-001\",\"boot_id\":\"boot-$SUFFIX\",\"run_number\":1,\"event_id\":\"evt-$SUFFIX\",\"time_ms\":12345,\"start_weight_g\":87.5,\"status\":\"ok\",\"firmware_version\":\"0.1.0\",\"queue_depth\":0}"
+PAY="{\"protocol_version\":1,\"device_id\":\"scale-001\",\"boot_id\":$SUFFIX,\"run_number\":1,\"event_id\":\"evt-$SUFFIX\",\"time_ms\":12345,\"start_weight_g\":87.5,\"status\":\"ok\",\"firmware_version\":\"0.1.0\",\"queue_depth\":0}"
 RESP1=$(curl -sf -X POST "$BASE/api/v1/runs" -H 'content-type: application/json' -d "$PAY")
 echo "$RESP1" | jq -e '.accepted == true and .duplicate == false' >/dev/null || fail "Erster Lauf wurde nicht korrekt akzeptiert"
 ok "Testlauf gespeichert"
@@ -40,5 +40,9 @@ ok "Läufe abrufbar"
 
 curl -sf "$BASE/api/v1/status" | jq -e '.led_status != null and .oled_status != null' >/dev/null || fail "Status unvollständig"
 ok "Status abrufbar (inkl. LED/OLED)"
+
+# Aufraeumen: Standardperson wieder aktivieren, Testperson entfernen
+curl -sf -X POST "$BASE/api/v1/persons/1/activate" >/dev/null || true
+curl -sf -X DELETE "$BASE/api/v1/persons/$PID" >/dev/null || true
 
 echo "Alle Tests erfolgreich abgeschlossen."
