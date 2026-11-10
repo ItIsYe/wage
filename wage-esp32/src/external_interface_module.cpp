@@ -220,7 +220,7 @@ bool externalInterfaceEnqueueRun(const RunDataSnapshot& snapshot) {
   return true;
 }
 
-void externalInterfaceService(uint32_t now, bool safeToRetry) {
+void externalInterfaceService(uint32_t now, bool safeToRetry, bool quietHeartbeat) {
   if (!transportCfg.enabled) {
     if (queueCount != 0) {
       queueHead = 0;
@@ -233,7 +233,8 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
   // Im Offline-Modus: nur alle 60s einen kurzen Probe-Heartbeat senden
   // Im Online-Modus: normaler Heartbeat alle 30s
   const uint32_t heartbeatInterval = piOffline ? OFFLINE_PROBE_INTERVAL_MS : HEARTBEAT_INTERVAL_MS;
-  if (safeToRetry && hasValidTarget() && (lastHeartbeatMs == 0 || (now - lastHeartbeatMs) >= heartbeatInterval)) {
+  const bool heartbeatAllowed = safeToRetry || (quietHeartbeat && !piOffline);
+  if (heartbeatAllowed && hasValidTarget() && (lastHeartbeatMs == 0 || (now - lastHeartbeatMs) >= heartbeatInterval)) {
     lastHeartbeatMs = now;
     String url = buildHeartbeatUrl();
     String payload = String("{\"device_id\":\"") + jsonEscape(deviceId) + "\"";
@@ -242,6 +243,7 @@ void externalInterfaceService(uint32_t now, bool safeToRetry) {
     HTTPClient http;
     if (http.begin(url)) {
       http.setTimeout(800);
+      if (!safeToRetry) http.setConnectTimeout(300);  // bereitstehendes Glas: Messschleife nicht blockieren
       http.addHeader("Content-Type", "application/json");
       if (transportCfg.apiKey[0] != '\0') http.addHeader("X-API-Key", transportCfg.apiKey);
       const int code = http.POST((uint8_t*)payload.c_str(), payload.length());
