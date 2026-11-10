@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
@@ -42,8 +44,14 @@ def _get_esp_ip() -> str | None:
         return None
 
 
-def _error_page(detail: str) -> HTMLResponse:
-    return HTMLResponse(content=_ERROR_PAGE.format(detail=detail), status_code=200)
+def _error_page(detail: str, status_code: int = 502) -> HTMLResponse:
+    """Fehlerseite, wenn die Waage nicht erreichbar ist.
+
+    Bewusst mit Fehler-Statuscode statt 200: Aufrufer wie die OTA-Seite fragen
+    über den Proxy JSON ab und müssen "Waage antwortet nicht" von einer echten
+    Antwort unterscheiden können. Im Browser wird die Seite trotzdem angezeigt.
+    """
+    return HTMLResponse(content=_ERROR_PAGE.format(detail=html.escape(detail)), status_code=status_code)
 
 
 @router.get("/", operation_id="esp_proxy_get_root")
@@ -64,7 +72,7 @@ async def proxy_to_esp_post(path: str, request: Request):
 async def _proxy(path: str, request: Request):
     esp_ip = _get_esp_ip()
     if not esp_ip:
-        return _error_page("ESP-IP unbekannt — noch kein Heartbeat empfangen.")
+        return _error_page("ESP-IP unbekannt — noch kein Heartbeat empfangen.", status_code=503)
 
     url = f"http://{esp_ip}/{path}"
     if request.url.query:
@@ -85,7 +93,7 @@ async def _proxy(path: str, request: Request):
     except httpx.ConnectError:
         return _error_page(f"Verbindung zu {esp_ip} fehlgeschlagen.")
     except httpx.TimeoutException:
-        return _error_page(f"Timeout beim Verbinden mit {esp_ip}.")
+        return _error_page(f"Timeout beim Verbinden mit {esp_ip}.", status_code=504)
     except Exception as e:
         return _error_page(f"Unbekannter Fehler: {e}")
 

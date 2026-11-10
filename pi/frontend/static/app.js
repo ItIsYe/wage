@@ -858,6 +858,7 @@ async function otaCheck() {
 
     // Aktuellen Status vom ESP holen
     const sr = await fetch('/esp-proxy/ota/status');
+    if (!sr.ok) throw new Error('Waage nicht erreichbar (HTTP ' + sr.status + ')');
     const esp = await sr.json();
     const current = esp.current_version || '-';
     document.getElementById('ota-current').textContent = current;
@@ -882,8 +883,23 @@ async function otaApply() {
   if (applyBtn) applyBtn.disabled = true;
   setOtaStatus('Lade Firmware vom Pi auf ESP...', 10);
 
-  // Erst sync
-  await fetch('/api/v1/esp-firmware/sync', { method: 'POST' });
+  // Erst sync – die Version aus dem Manifest ist die, die der ESP nach dem
+  // Neustart melden muss, damit das Update als erfolgreich gilt.
+  let expectedVersion = (document.getElementById('ota-available')?.textContent || '').trim();
+  try {
+    const syncResp = await fetch('/api/v1/esp-firmware/sync', { method: 'POST' });
+    const syncData = await syncResp.json().catch(() => ({}));
+    if (!syncResp.ok || !syncData.ok) {
+      setOtaStatus('Fehler: Firmware konnte nicht von GitHub geladen werden' + (syncData.detail ? ' (' + syncData.detail + ')' : ''), null);
+      if (applyBtn) applyBtn.disabled = false;
+      return;
+    }
+    if (syncData.manifest?.version) expectedVersion = syncData.manifest.version;
+  } catch (e) {
+    setOtaStatus('Fehler: ' + e.message, null);
+    if (applyBtn) applyBtn.disabled = false;
+    return;
+  }
   setOtaStatus('Firmware synchronisiert, prüfe Update...', 20);
 
   // Check auf dem ESP ausführen damit otaGetState() == UPDATE_AVAILABLE
@@ -902,7 +918,16 @@ async function otaApply() {
     }
     setOtaStatus(text || 'Update läuft...', 50);
 
-    // Fortschritt pollen
+    // Fortschritt pollen.
+    // OTA-Zustände des ESP (wage-esp32/include/ota_module.h, OtaState):
+    //   0 IDLE, 1 CHECKING, 2 UP_TO_DATE, 3 UPDATE_AVAILABLE,
+    //   4 DOWNLOADING, 5 FLASHING, 6 SUCCESS_PENDING_REBOOT, 7 ERROR
+    // Während Download/Flash blockiert der ESP und antwortet nicht; der Proxy
+    // liefert dann einen Fehlerstatus. Erfolg gilt erst, wenn der ESP wieder
+    // antwortet UND die erwartete Version meldet.
+    const OTA_SUCCESS_PENDING_REBOOT = 6;
+    const OTA_ERROR = 7;
+    const POLL_MS = 2000;
     let retries = 0;
     let maxPercent = 50;
     let espWasOffline = false;
@@ -915,35 +940,46 @@ async function otaApply() {
         maxPercent = pct;
         retries = 0;
 
-        if (espWasOffline) {
-          // ESP war offline (Neustart) und ist wieder da → Update erfolgreich
+        if (esp.state === OTA_ERROR) {
           clearInterval(poll);
-          setOtaStatus('Update abgeschlossen — ESP wieder online ✓', 100);
+          setOtaStatus('Fehler: ' + (esp.status || 'Update fehlgeschlagen'), null);
+          if (applyBtn) applyBtn.disabled = false;
+          return;
+        }
+
+        if (esp.state === OTA_SUCCESS_PENDING_REBOOT) {
+          // Weiter pollen, bis der ESP nach dem Neustart wieder antwortet.
+          setOtaStatus('Update geschrieben, ESP startet neu...', Math.max(pct, 95));
+          return;
+        }
+
+        if (espWasOffline) {
+          clearInterval(poll);
+          const current = esp.current_version || '-';
+          if (!expectedVersion || expectedVersion === '-' || current === expectedVersion) {
+            setOtaStatus('Update abgeschlossen — ESP wieder online, Version ' + current + ' ✓', 100);
+            const curEl = document.getElementById('ota-current');
+            if (curEl) curEl.textContent = current;
+          } else {
+            setOtaStatus('ESP wieder erreichbar, meldet aber Version ' + current + ' statt ' + expectedVersion + ' — Update vermutlich fehlgeschlagen', null);
+            if (applyBtn) applyBtn.disabled = false;
+          }
           return;
         }
 
         setOtaStatus(esp.status || '-', pct);
-        if (esp.state === 4) {
-          clearInterval(poll);
-          setOtaStatus('Update erfolgreich! ESP startet neu...', 100);
-        }
-        if (esp.state === 6) {
-          clearInterval(poll);
-          setOtaStatus('Fehler: ' + esp.status, null);
-          if (applyBtn) applyBtn.disabled = false;
-        }
       } catch (_) {
         retries++;
         espWasOffline = true;
         maxPercent = Math.max(maxPercent, 80);
-        setOtaStatus('ESP startet neu... (' + retries + 's)', maxPercent);
+        setOtaStatus('Update läuft, ESP antwortet gerade nicht... (' + Math.round(retries * POLL_MS / 1000) + 's)', maxPercent);
         if (retries > 60) {
           clearInterval(poll);
           setOtaStatus('Timeout — ESP nicht mehr erreichbar', null);
           if (applyBtn) applyBtn.disabled = false;
         }
       }
-    }, 2000);
+    }, POLL_MS);
   } catch (e) {
     setOtaStatus('Fehler: ' + e.message, null);
     if (applyBtn) applyBtn.disabled = false;
