@@ -118,19 +118,23 @@ def status():
 
 @router.get("/stream")
 async def status_stream():
-    """SSE-Stream: sendet bei jedem neuen Lauf ein Update ans Dashboard."""
+    """SSE-Stream: sendet ein Update ans Dashboard, sobald sich der Status ändert.
+
+    Verglichen wird der gesamte Status, nicht nur die Lauf-ID. Sonst bliebe z.B.
+    "Waage online" im Dashboard stehen, obwohl die Waage längst offline ist.
+    """
     async def event_generator():
-        last_run_id = None
+        last_payload = None
         try:
             online_now = False
             while True:
                 try:
                     data = _build_status()
                     online_now = data.get("scale_online", False)
-                    current_run_id = data.get("last_run_id")
-                    if current_run_id != last_run_id:
-                        last_run_id = current_run_id
-                        yield f"data: {json.dumps(data)}\n\n"
+                    payload = json.dumps(data, sort_keys=True)
+                    if payload != last_payload:
+                        last_payload = payload
+                        yield f"data: {payload}\n\n"
                     else:
                         # Heartbeat alle 5s damit die Verbindung offen bleibt
                         yield ": heartbeat\n\n"

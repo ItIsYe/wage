@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
@@ -19,7 +21,9 @@ LED_KEYS = [
 
 class LedConfig(BaseModel):
     pi_led_strip_sizes: str = Field(default="80,80,82,82")
-    pi_led_brightness: int = Field(ge=0, le=255)
+    # Optional: die globale Helligkeit wird auf der Seite "Pi Hardware" gepflegt.
+    # Fehlt der Wert, bleibt der gespeicherte Stand unverändert.
+    pi_led_brightness: Optional[int] = Field(default=None, ge=0, le=255)
     led_brightness_rainbow: int = Field(ge=0, le=255)
     led_brightness_pulse_offline: int = Field(ge=0, le=255)
     led_brightness_wave: int = Field(ge=0, le=255)
@@ -51,7 +55,7 @@ def get_led_config():
 @router.post("")
 def save_led_config(cfg: LedConfig):
     with db_cursor() as (_, cur):
-        for key, value in cfg.model_dump().items():
+        for key, value in cfg.model_dump(exclude_none=True).items():
             cur.execute(
                 "INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (key, str(value))

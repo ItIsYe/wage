@@ -500,16 +500,25 @@ async function checkPiUpdates() {
   }
 }
 
-async function waitForBackendAfterUpdate() {
-  setUpdateHint(spinnerLabel('Backend startet neu, bitte warten...'), 'info');
-  for (let i = 0; i < 45; i += 1) {
+// Wartet, bis update.sh fertig ist. update.sh schreibt seinen Zustand selbst in
+// die DB (job_state: updating → success / error); das Backend startet es als
+// letzten Schritt neu, kurze Verbindungsfehler sind daher normal.
+// Früher wurde hier nur auf /health gewartet – das antwortete sofort (das alte
+// Backend lief ja noch), und die Oberfläche meldete "abgeschlossen", bevor das
+// Update überhaupt lief.
+async function waitForUpdateJob(timeoutMs = 15 * 60 * 1000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 2000));
     try {
-      const h = await api('/api/v1/health');
-      if (h && h.ok) return true;
-    } catch (_) {}
+      const d = await api('/api/v1/system/update/status');
+      if (d.job_state === 'success' || d.job_state === 'error') return d;
+      showUpdateOverlay(d.ui_message || 'Pi-Update wird durchgeführt...', d.progress_step || '', d.progress_percent || 0);
+    } catch (_) {
+      showUpdateOverlay('Backend startet neu...', 'Bitte warten...', 95);
+    }
   }
-  return false;
+  return null;
 }
 
 function showUpdateOverlay(msg, step, percent) {
@@ -538,27 +547,18 @@ async function applyPiUpdate() {
   showUpdateOverlay('Pi-Update wird durchgeführt...', 'Vorbereitung...', 5);
   setUpdateHint(spinnerLabel('Update wird vorbereitet...'), 'info');
 
-  // Overlay während des Pollings live aktualisieren
-  const overlayPoll = setInterval(async () => {
-    try {
-      const d = await api('/api/v1/system/update/status');
-      showUpdateOverlay(d.ui_message || 'Bitte warten...', d.progress_step || '', d.progress_percent || 0);
-    } catch (_) {
-      showUpdateOverlay('Backend startet neu...', 'Neustart läuft...', 90);
-    }
-  }, 1500);
-
   const finishUpdate = async () => {
-    clearInterval(overlayPoll);
-    showUpdateOverlay('Backend startet neu...', 'Bitte warten...', 90);
-    const ok = await waitForBackendAfterUpdate();
-    if (ok) {
-      showUpdateOverlay('Update abgeschlossen!', 'Backend ist wieder erreichbar', 100);
+    const result = await waitForUpdateJob();
+    if (result && result.job_state === 'success') {
+      showUpdateOverlay('Update abgeschlossen!', 'Alle Dienste wurden neu gestartet', 100);
       setTimeout(hideUpdateOverlay, 2000);
-      await loadUpdateStatus();
+    } else if (result) {
+      showUpdateOverlay('Update fehlgeschlagen', result.ui_message || result.last_update_status || 'Details in pi/logs/update.log', 100);
+      flash(`Pi-Update fehlgeschlagen: ${result.ui_message || result.last_update_status || 'siehe pi/logs/update.log'}`);
+      setTimeout(hideUpdateOverlay, 5000);
     } else {
-      showUpdateOverlay('Timeout — Backend nicht erreichbar', 'Bitte Seite neu laden', 100);
-      flash('Backend war nicht rechtzeitig erreichbar.', false);
+      showUpdateOverlay('Timeout — kein Ergebnis vom Update', 'Bitte Seite neu laden und pi/logs/update.log prüfen', 100);
+      flash('Das Update hat sich nicht rechtzeitig zurückgemeldet.', false);
     }
     updateBusy = false;
     await loadUpdateStatus(true);
@@ -567,15 +567,20 @@ async function applyPiUpdate() {
   try {
     const data = await api('/api/v1/system/update/apply', {method: 'POST'});
     renderUpdateStatus(data);
-    // Apply liefert Antwort bevor Neustart — warten bis Backend neu startet
+    if (data.ui_state !== 'updating') {
+      // Nichts zu tun (z.B. "Keine Pi-Updates verfügbar") – kein Update gestartet.
+      hideUpdateOverlay();
+      updateBusy = false;
+      await loadUpdateStatus(true);
+      return;
+    }
     await finishUpdate();
   } catch (e) {
     const msg = String(e.message || '').toLowerCase();
     if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
-      // Backend bereits neu gestartet bevor Antwort
+      // Verbindung abgebrochen, das Update kann trotzdem laufen – Ergebnis abwarten.
       await finishUpdate();
     } else {
-      clearInterval(overlayPoll);
       hideUpdateOverlay();
       updateBusy = false;
       flash(`Pi-Update fehlgeschlagen: ${e.message}`);
@@ -853,6 +858,7 @@ async function otaCheck() {
 
     // Aktuellen Status vom ESP holen
     const sr = await fetch('/esp-proxy/ota/status');
+    if (!sr.ok) throw new Error('Waage nicht erreichbar (HTTP ' + sr.status + ')');
     const esp = await sr.json();
     const current = esp.current_version || '-';
     document.getElementById('ota-current').textContent = current;
@@ -877,8 +883,23 @@ async function otaApply() {
   if (applyBtn) applyBtn.disabled = true;
   setOtaStatus('Lade Firmware vom Pi auf ESP...', 10);
 
-  // Erst sync
-  await fetch('/api/v1/esp-firmware/sync', { method: 'POST' });
+  // Erst sync – die Version aus dem Manifest ist die, die der ESP nach dem
+  // Neustart melden muss, damit das Update als erfolgreich gilt.
+  let expectedVersion = (document.getElementById('ota-available')?.textContent || '').trim();
+  try {
+    const syncResp = await fetch('/api/v1/esp-firmware/sync', { method: 'POST' });
+    const syncData = await syncResp.json().catch(() => ({}));
+    if (!syncResp.ok || !syncData.ok) {
+      setOtaStatus('Fehler: Firmware konnte nicht von GitHub geladen werden' + (syncData.detail ? ' (' + syncData.detail + ')' : ''), null);
+      if (applyBtn) applyBtn.disabled = false;
+      return;
+    }
+    if (syncData.manifest?.version) expectedVersion = syncData.manifest.version;
+  } catch (e) {
+    setOtaStatus('Fehler: ' + e.message, null);
+    if (applyBtn) applyBtn.disabled = false;
+    return;
+  }
   setOtaStatus('Firmware synchronisiert, prüfe Update...', 20);
 
   // Check auf dem ESP ausführen damit otaGetState() == UPDATE_AVAILABLE
@@ -897,7 +918,16 @@ async function otaApply() {
     }
     setOtaStatus(text || 'Update läuft...', 50);
 
-    // Fortschritt pollen
+    // Fortschritt pollen.
+    // OTA-Zustände des ESP (wage-esp32/include/ota_module.h, OtaState):
+    //   0 IDLE, 1 CHECKING, 2 UP_TO_DATE, 3 UPDATE_AVAILABLE,
+    //   4 DOWNLOADING, 5 FLASHING, 6 SUCCESS_PENDING_REBOOT, 7 ERROR
+    // Während Download/Flash blockiert der ESP und antwortet nicht; der Proxy
+    // liefert dann einen Fehlerstatus. Erfolg gilt erst, wenn der ESP wieder
+    // antwortet UND die erwartete Version meldet.
+    const OTA_SUCCESS_PENDING_REBOOT = 6;
+    const OTA_ERROR = 7;
+    const POLL_MS = 2000;
     let retries = 0;
     let maxPercent = 50;
     let espWasOffline = false;
@@ -910,35 +940,46 @@ async function otaApply() {
         maxPercent = pct;
         retries = 0;
 
-        if (espWasOffline) {
-          // ESP war offline (Neustart) und ist wieder da → Update erfolgreich
+        if (esp.state === OTA_ERROR) {
           clearInterval(poll);
-          setOtaStatus('Update abgeschlossen — ESP wieder online ✓', 100);
+          setOtaStatus('Fehler: ' + (esp.status || 'Update fehlgeschlagen'), null);
+          if (applyBtn) applyBtn.disabled = false;
+          return;
+        }
+
+        if (esp.state === OTA_SUCCESS_PENDING_REBOOT) {
+          // Weiter pollen, bis der ESP nach dem Neustart wieder antwortet.
+          setOtaStatus('Update geschrieben, ESP startet neu...', Math.max(pct, 95));
+          return;
+        }
+
+        if (espWasOffline) {
+          clearInterval(poll);
+          const current = esp.current_version || '-';
+          if (!expectedVersion || expectedVersion === '-' || current === expectedVersion) {
+            setOtaStatus('Update abgeschlossen — ESP wieder online, Version ' + current + ' ✓', 100);
+            const curEl = document.getElementById('ota-current');
+            if (curEl) curEl.textContent = current;
+          } else {
+            setOtaStatus('ESP wieder erreichbar, meldet aber Version ' + current + ' statt ' + expectedVersion + ' — Update vermutlich fehlgeschlagen', null);
+            if (applyBtn) applyBtn.disabled = false;
+          }
           return;
         }
 
         setOtaStatus(esp.status || '-', pct);
-        if (esp.state === 4) {
-          clearInterval(poll);
-          setOtaStatus('Update erfolgreich! ESP startet neu...', 100);
-        }
-        if (esp.state === 6) {
-          clearInterval(poll);
-          setOtaStatus('Fehler: ' + esp.status, null);
-          if (applyBtn) applyBtn.disabled = false;
-        }
       } catch (_) {
         retries++;
         espWasOffline = true;
         maxPercent = Math.max(maxPercent, 80);
-        setOtaStatus('ESP startet neu... (' + retries + 's)', maxPercent);
+        setOtaStatus('Update läuft, ESP antwortet gerade nicht... (' + Math.round(retries * POLL_MS / 1000) + 's)', maxPercent);
         if (retries > 60) {
           clearInterval(poll);
           setOtaStatus('Timeout — ESP nicht mehr erreichbar', null);
           if (applyBtn) applyBtn.disabled = false;
         }
       }
-    }, 2000);
+    }, POLL_MS);
   } catch (e) {
     setOtaStatus('Fehler: ' + e.message, null);
     if (applyBtn) applyBtn.disabled = false;
@@ -962,7 +1003,11 @@ function setOtaStatus(msg, percent) {
 // === Pi Hardware Konfiguration ===
 
 async function loadHardwareConfig() {
-  if (!document.getElementById('pi-led-count')) return;
+  // Nur auf der Konfig-Seite (Abschnitt "Pi Hardware"). Das Feld
+  // 'pi-led-brightness' gibt es nur dort; die frühere Prüfung auf
+  // 'pi-led-count' traf nie zu, wodurch die gespeicherten Werte nie geladen
+  // und beim Speichern mit den Formular-Defaults überschrieben wurden.
+  if (!document.getElementById('pi-led-brightness')) return;
   try {
     const d = await api('/api/v1/config/hardware');
     const stripCountEl = document.getElementById('pi-led-strip-count');
@@ -1270,7 +1315,8 @@ async function saveLedConfig() {
   try {
     const payload = {
       pi_led_strip_sizes: document.getElementById('pi-led-strip-sizes')?.value ?? '80,80,82,82',
-      pi_led_brightness: 32,
+      // Die globale Helligkeit (pi_led_brightness) gehört zur Seite
+      // "Konfiguration → Pi Hardware" und wird hier bewusst nicht gesendet.
       led_brightness_rainbow: parseInt(document.getElementById('led-rainbow').value),
       led_brightness_pulse_offline: parseInt(document.getElementById('led-pulse-offline').value),
       led_brightness_wave: parseInt(document.getElementById('led-wave').value),

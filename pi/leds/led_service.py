@@ -12,16 +12,33 @@ ANIM_SECONDS_POWERSAVE = 0.5  # Power-Save: 2 FPS reichen
 REINIT_SECONDS = 10.0
 
 
+# Die Hauptschleife fragt die Konfiguration mehrfach pro Animations-Tick (80 ms) ab.
+# Ohne Cache waren das rund 50 DB-Verbindungen pro Sekunde. Eine Sekunde Verzögerung
+# bei Konfigurationsänderungen ist unkritisch.
+_HW_CONFIG_TTL_SECONDS = 1.0
+_hw_config_cache: dict = {}
+_hw_config_cache_at = None
+
+
 def _get_hw_config() -> dict:
+    global _hw_config_cache, _hw_config_cache_at
+    now = time.monotonic()
+    if _hw_config_cache_at is not None and (now - _hw_config_cache_at) < _HW_CONFIG_TTL_SECONDS:
+        return _hw_config_cache
     try:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
                 "SELECT key, value FROM app_state WHERE key IN "
                 "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes','power_save_after_minutes','last_run_received_at','led_brightness_rainbow','led_brightness_pulse_offline','led_brightness_wave','led_brightness_power_save','led_brightness_boot','led_brightness_error')"
             ).fetchall()
-            return {r[0]: r[1] for r in rows}
+        _hw_config_cache = {r[0]: r[1] for r in rows}
     except Exception:
-        return {}
+        # DB kurz nicht lesbar (z.B. gesperrt): letzten bekannten Stand behalten statt
+        # auf Defaults zurückzufallen (das würde den Strip mit falscher Pixelzahl neu
+        # initialisieren). Gibt es noch keinen Stand, greifen die Defaults der Aufrufer.
+        pass
+    _hw_config_cache_at = now
+    return _hw_config_cache
 
 
 def _get_strip_config() -> list[int]:
@@ -81,7 +98,18 @@ except Exception:
     OFFLINE_THRESHOLD_SECONDS = 45
 
 
+# set_state() wird in jedem Animations-Tick aufgerufen, der Wert ändert sich aber fast
+# nie. Ohne Vergleich waren das rund 12 Schreib-Commits pro Sekunde (ca. 1 Mio. pro Tag)
+# auf die SD-Karte. Geschrieben wird nur bei Änderung, sonst höchstens einmal pro Minute.
+_STATE_REFRESH_SECONDS = 60.0
+_last_written_state: dict = {}  # key -> (value, Zeitpunkt des letzten erfolgreichen Schreibens)
+
+
 def set_state(key: str, value: str) -> None:
+    now = time.monotonic()
+    last = _last_written_state.get(key)
+    if last is not None and last[0] == value and (now - last[1]) < _STATE_REFRESH_SECONDS:
+        return
     try:
         with sqlite3.connect(DB) as c:
             c.execute(
@@ -89,6 +117,7 @@ def set_state(key: str, value: str) -> None:
                 (key, value),
             )
             c.commit()
+        _last_written_state[key] = (value, now)
     except Exception:
         pass
 
