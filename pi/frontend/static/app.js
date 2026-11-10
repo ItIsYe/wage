@@ -500,16 +500,25 @@ async function checkPiUpdates() {
   }
 }
 
-async function waitForBackendAfterUpdate() {
-  setUpdateHint(spinnerLabel('Backend startet neu, bitte warten...'), 'info');
-  for (let i = 0; i < 45; i += 1) {
+// Wartet, bis update.sh fertig ist. update.sh schreibt seinen Zustand selbst in
+// die DB (job_state: updating → success / error); das Backend startet es als
+// letzten Schritt neu, kurze Verbindungsfehler sind daher normal.
+// Früher wurde hier nur auf /health gewartet – das antwortete sofort (das alte
+// Backend lief ja noch), und die Oberfläche meldete "abgeschlossen", bevor das
+// Update überhaupt lief.
+async function waitForUpdateJob(timeoutMs = 15 * 60 * 1000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 2000));
     try {
-      const h = await api('/api/v1/health');
-      if (h && h.ok) return true;
-    } catch (_) {}
+      const d = await api('/api/v1/system/update/status');
+      if (d.job_state === 'success' || d.job_state === 'error') return d;
+      showUpdateOverlay(d.ui_message || 'Pi-Update wird durchgeführt...', d.progress_step || '', d.progress_percent || 0);
+    } catch (_) {
+      showUpdateOverlay('Backend startet neu...', 'Bitte warten...', 95);
+    }
   }
-  return false;
+  return null;
 }
 
 function showUpdateOverlay(msg, step, percent) {
@@ -538,27 +547,18 @@ async function applyPiUpdate() {
   showUpdateOverlay('Pi-Update wird durchgeführt...', 'Vorbereitung...', 5);
   setUpdateHint(spinnerLabel('Update wird vorbereitet...'), 'info');
 
-  // Overlay während des Pollings live aktualisieren
-  const overlayPoll = setInterval(async () => {
-    try {
-      const d = await api('/api/v1/system/update/status');
-      showUpdateOverlay(d.ui_message || 'Bitte warten...', d.progress_step || '', d.progress_percent || 0);
-    } catch (_) {
-      showUpdateOverlay('Backend startet neu...', 'Neustart läuft...', 90);
-    }
-  }, 1500);
-
   const finishUpdate = async () => {
-    clearInterval(overlayPoll);
-    showUpdateOverlay('Backend startet neu...', 'Bitte warten...', 90);
-    const ok = await waitForBackendAfterUpdate();
-    if (ok) {
-      showUpdateOverlay('Update abgeschlossen!', 'Backend ist wieder erreichbar', 100);
+    const result = await waitForUpdateJob();
+    if (result && result.job_state === 'success') {
+      showUpdateOverlay('Update abgeschlossen!', 'Alle Dienste wurden neu gestartet', 100);
       setTimeout(hideUpdateOverlay, 2000);
-      await loadUpdateStatus();
+    } else if (result) {
+      showUpdateOverlay('Update fehlgeschlagen', result.ui_message || result.last_update_status || 'Details in pi/logs/update.log', 100);
+      flash(`Pi-Update fehlgeschlagen: ${result.ui_message || result.last_update_status || 'siehe pi/logs/update.log'}`);
+      setTimeout(hideUpdateOverlay, 5000);
     } else {
-      showUpdateOverlay('Timeout — Backend nicht erreichbar', 'Bitte Seite neu laden', 100);
-      flash('Backend war nicht rechtzeitig erreichbar.', false);
+      showUpdateOverlay('Timeout — kein Ergebnis vom Update', 'Bitte Seite neu laden und pi/logs/update.log prüfen', 100);
+      flash('Das Update hat sich nicht rechtzeitig zurückgemeldet.', false);
     }
     updateBusy = false;
     await loadUpdateStatus(true);
@@ -567,15 +567,20 @@ async function applyPiUpdate() {
   try {
     const data = await api('/api/v1/system/update/apply', {method: 'POST'});
     renderUpdateStatus(data);
-    // Apply liefert Antwort bevor Neustart — warten bis Backend neu startet
+    if (data.ui_state !== 'updating') {
+      // Nichts zu tun (z.B. "Keine Pi-Updates verfügbar") – kein Update gestartet.
+      hideUpdateOverlay();
+      updateBusy = false;
+      await loadUpdateStatus(true);
+      return;
+    }
     await finishUpdate();
   } catch (e) {
     const msg = String(e.message || '').toLowerCase();
     if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
-      // Backend bereits neu gestartet bevor Antwort
+      // Verbindung abgebrochen, das Update kann trotzdem laufen – Ergebnis abwarten.
       await finishUpdate();
     } else {
-      clearInterval(overlayPoll);
       hideUpdateOverlay();
       updateBusy = false;
       flash(`Pi-Update fehlgeschlagen: ${e.message}`);

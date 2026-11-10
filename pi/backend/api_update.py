@@ -220,6 +220,9 @@ def _response_payload(mode: str, state: dict[str, str], local_commit: str, remot
         "local_code_overwritten": True,
         "last_update_status": state.get("last_update_status", ""),
         "last_update_at": state.get("last_update_at", ""),
+        # Persistierter Zustand des Update-Skripts (updating / success / error ...).
+        # ui_state oben ist dagegen das Ergebnis des Repo-Vergleichs.
+        "job_state": state.get("last_update_ui_state", ""),
     }
 
 
@@ -264,6 +267,16 @@ def _run_background_update_job() -> None:
         _persist_update_state("update fehlgeschlagen", "", "", [], [], sorted(PROTECTED_RUNTIME_FILES), ui_state="error", ui_message=f"Update fehlgeschlagen: {exc}", progress_step="Update fehlgeschlagen", progress_percent=100)
 
 
+def _update_job_running() -> bool:
+    """Läuft update.sh gerade? Das Muster enthält den Pfad, damit nicht jeder
+    Prozess mit "update.sh" irgendwo in der Kommandozeile mitgezählt wird."""
+    try:
+        result = subprocess.run(["pgrep", "-f", "pi/scripts/update[.]sh"], capture_output=True, timeout=3)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 @router.get("/status")
 def update_status():
     state = _read_state(["last_update_status", "last_update_at", "last_update_ui_state", "last_update_ui_message", "last_update_progress_step", "last_update_progress_percent"])
@@ -273,14 +286,16 @@ def update_status():
     # auf no_update zurücksetzen damit der Browser nicht ewig bei X% hängt
     persisted_ui_state = state.get("last_update_ui_state", "")
     if persisted_ui_state == "updating":
-        # Prüfen ob der Background-Job noch läuft
-        import subprocess as _sp
-        try:
-            result = _sp.run(["pgrep", "-f", "update.sh"], capture_output=True, timeout=3)
-            job_running = result.returncode == 0
-        except Exception:
-            job_running = False
-        if not job_running:
+        if _update_job_running():
+            # Update läuft: nur den Fortschritt melden. Kein git fetch / Repo-Vergleich,
+            # sonst konkurriert jede Status-Abfrage (alle 1,5-2 s) mit update.sh um die
+            # Git-Locks, und der Vergleich wäre mitten im Update ohnehin nicht aussagekräftig.
+            return _response_payload(
+                mode, state, "", "", [], [], sorted(PROTECTED_RUNTIME_FILES),
+                ui_state="updating",
+                ui_message=state.get("last_update_ui_message") or "Pi-Update wird durchgeführt...",
+            )
+        else:
             # Job läuft nicht mehr aber State ist noch "updating" -> Neustart hat ihn abgebrochen
             _persist_update_state(
                 "unterbrochen durch Neustart", "", "", [], [], sorted(PROTECTED_RUNTIME_FILES),
