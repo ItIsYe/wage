@@ -21,5 +21,6 @@ void ring1FillDebugAllOn();
 // Pixel) und meldet ueber Serial den aktuellen Index. Damit laesst sich am
 // Strip ablesen, ab welchem physischen Pixel das Signal nicht mehr ankommt.
 void ring1DiagnosticStart();
+void ring1DiagnosticStop();
 bool ring1DiagnosticService(uint32_t now);
 bool ring1DiagnosticActive();

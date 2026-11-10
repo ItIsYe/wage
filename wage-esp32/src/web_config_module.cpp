@@ -71,6 +71,7 @@ static const char* wifiStatusToText(wl_status_t status) {
 }
 
 static void disableDebugModesNow() {
+  ledRing1DiagnosticStop();
   activeConfig.oledDebugMode = false;
   activeConfig.debugMode = false;
   activeConfig.pixelDebugAllOn = false;
@@ -182,7 +183,8 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>OLED-I2C-Takt (Hz)</label><select name='oledI2cClockHz'><option value='100000'");
   if (c.oledI2cClockHz == 100000) h += F(" selected"); h += F(">100000</option><option value='200000'");
   if (c.oledI2cClockHz == 200000) h += F(" selected"); h += F(">200000</option><option value='400000'");
-  if (c.oledI2cClockHz == 400000) h += F(" selected"); h += F(">400000</option></select><small>Hoeherer Takt kann die Anzeige schneller machen, braucht aber stabile Verkabelung. Wirkt nach Speichern sofort.</small></fieldset>");
+  if (c.oledI2cClockHz == 400000) h += F(" selected"); h += F(">400000</option><option value='1000000'");
+  if (c.oledI2cClockHz == 1000000) h += F(" selected"); h += F(">1000000</option></select><small>Hoeherer Takt kann die Anzeige schneller machen, braucht aber stabile Verkabelung. Wirkt nach Speichern sofort.</small></fieldset>");
   h += F("<fieldset><legend>OLED-Anzeige</legend>");
   h += F("<label>OLED-Drehung</label><input type='number' min='0' max='3' name='oledRotation' value='"); h += String(c.oledRotation); h += F("'><small>Min: 0, Max: 3 (90-Grad-Schritte). 0 = Standardausrichtung. Wirkt nach Speichern sofort.</small>");
   h += F("<label>OLED-Schriftgroesse / Skalierung</label><input type='number' step='0.1' min='0.1' name='oledScaleValue' value='"); h += String(c.oledScaleValue,2); h += F("'><small>Min: 0.1. Groesserer Wert vergroessert die Anzeigeelemente. Wirkt nach Speichern sofort.</small>");
@@ -584,6 +586,8 @@ void webConfigSetup() {
     parseBoolArg("ring1DiagnosticMode", n.ring1DiagnosticMode);
     if (diagWasOff && n.ring1DiagnosticMode) {
       ledRing1DiagnosticStart();
+    } else if (!diagWasOff && !n.ring1DiagnosticMode) {
+      ledRing1DiagnosticStop();
     }
     parseBoolArg("ring2Enabled", n.ring2Enabled);
     parseU8Arg("ring2BrightnessPercent", n.ring2BrightnessPercent);
@@ -623,7 +627,7 @@ void webConfigSetup() {
     if (!errMsg.length() && n.standbyOnMax > PIXEL_COUNT) errMsg = "Standby Anzahl Max darf Ringgroesse nicht ueberschreiten.";
     if (!errMsg.length() && n.standbyOnMin > n.standbyOnMax) errMsg = "Standby Anzahl Min darf nicht groesser als Max sein.";
     if (!errMsg.length() && n.standbyValueMin > n.standbyValueMax) errMsg = "Standby Value Min darf nicht groesser als Max sein.";
-    if (!errMsg.length() && !(n.oledI2cClockHz == 100000 || n.oledI2cClockHz == 200000 || n.oledI2cClockHz == 400000)) errMsg = "oledI2cClockHz muss 100000, 200000 oder 400000 sein.";
+    if (!errMsg.length() && !(n.oledI2cClockHz == 100000 || n.oledI2cClockHz == 200000 || n.oledI2cClockHz == 400000 || n.oledI2cClockHz == 1000000)) errMsg = "oledI2cClockHz muss 100000, 200000, 400000 oder 1000000 sein.";
     if (!errMsg.length() && (n.objectPresentG <= 0 || n.emptyThresholdG < 0 || n.retareTolG <= 0 || n.standbyWakeThresholdG <= 0 || n.oledScaleValue <= 0)) errMsg = "Gramm- und OLED-Skalierungswerte muessen positiv und sinnvoll sein.";
     if (!errMsg.length() && (n.wifiConnectTimeoutMs < 3000 || n.wifiConnectTimeoutMs > 30000)) {
       errMsg = "WLAN Timeout muss 3000..30000 ms sein.";
@@ -830,7 +834,10 @@ void webService(uint32_t now){
     static bool apRetryInProgress = false;
     static uint32_t apRetryStartMs = 0;
 
-    if (!apRetryInProgress && (now - lastReconnectAttemptMs) >= AP_RETRY_INTERVAL_MS) {
+    // Nicht abschalten, solange ein Geraet (z.B. Handy mit Konfigseite) am AP haengt:
+    // der Wechsel in den STA-Modus trennt den AP fuer bis zu 8 s.
+    if (!apRetryInProgress && (now - lastReconnectAttemptMs) >= AP_RETRY_INTERVAL_MS
+        && WiFi.softAPgetStationNum() == 0) {
       lastReconnectAttemptMs = now;
       apRetryStartMs = now;
       apRetryInProgress = true;

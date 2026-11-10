@@ -259,6 +259,13 @@ void ring1DiagnosticStart() {
   Serial.println("[RING1 DIAG] Start - jeder Pixel einzeln, ~400ms Abstand");
 }
 
+void ring1DiagnosticStop() {
+  if (!diagActive) return;
+  diagActive = false;
+  frameDirty = true;  // normales Muster neu zeichnen
+  Serial.println("[RING1 DIAG] Ende");
+}
+
 bool ring1DiagnosticActive() { return diagActive; }
 
 bool ring1DiagnosticService(uint32_t now) {

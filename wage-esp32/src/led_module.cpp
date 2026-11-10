@@ -96,3 +96,7 @@ void ledShow() { FastLED.show(); }
 void ledRing1DiagnosticStart() {
   ring1DiagnosticStart();
 }
+
+void ledRing1DiagnosticStop() {
+  ring1DiagnosticStop();
+}
