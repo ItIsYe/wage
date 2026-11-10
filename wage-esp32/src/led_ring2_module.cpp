@@ -141,7 +141,14 @@ bool ring2Service(uint32_t now) {
   }
 
   const uint8_t mode = resolvedMode;
-  ring2SetBrightnessPercent(activeConfig.ring2BrightnessPercent);
+  // Helligkeit genau einmal pro Durchlauf setzen. Zwei Modi haben feste Werte.
+  // Frueher wurde hier erst der Config-Wert und im Modus-Zweig erneut 10 % bzw.
+  // 5 % gesetzt - jeder Wechsel markiert den Frame als geaendert, wodurch in
+  // TIMING und WAIT_EMPTY in jedem Loop-Durchlauf FastLED.show() lief.
+  uint8_t modeBrightnessPercent = activeConfig.ring2BrightnessPercent;
+  if (mode == RING2_MODE_TIMING_STATIC_10) modeBrightnessPercent = 10;
+  else if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) modeBrightnessPercent = 5;
+  ring2SetBrightnessPercent(modeBrightnessPercent);
   if (mode == RING2_MODE_OFF) {
     logRenderedState(mode, "off");
     if (ring2FrameDirty) { ring2Clear(); ring2FrameDirty = false; return true; }
@@ -185,14 +192,12 @@ bool ring2Service(uint32_t now) {
 
   if (mode == RING2_MODE_TIMING_STATIC_10) {
     logRenderedState(RING2_MODE_TIMING_STATIC_10, "timing-static-10");
-    ring2SetBrightnessPercent(10);
     if (ring2FrameDirty) { ring2Fill(rgb(64, 80, 80)); ring2FrameDirty = false; return true; }
     return false;
   }
 
   if (mode == RING2_MODE_WAIT_EMPTY_RED_BREATHE_5) {
     logRenderedState(RING2_MODE_WAIT_EMPTY_RED_BREATHE_5, "wait-empty-red-breathe-5");
-    ring2SetBrightnessPercent(5);
     if (now - ring2TickMs >= 110) {
       ring2TickMs = now;
       const int16_t next = (int16_t)ring2BreathingValue + ring2BreathingStep;

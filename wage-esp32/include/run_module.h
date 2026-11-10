@@ -9,6 +9,11 @@ void runModuleInit(uint32_t bootId, const char* deviceId);
 // Setzt die Referenzgewicht-Werte für den nächsten Lauf.
 void runModuleSetReference(float referenceWeightG, const RuntimeConfig& cfg);
 
+// Startet eine Messung: setzt nur das Minimum auf das aktuelle Gewicht.
+// Referenzgewicht und Schwellen bleiben erhalten (werden fuer Stop-Erkennung
+// und den gesendeten Lauf gebraucht).
+void runModuleStartTiming(float weightG);
+
 // Aktualisiert das Minimum während des Timings.
 void runModuleUpdateMin(float weightG);
 
@@ -27,5 +32,7 @@ float runModuleGetReference();
 // Baut einen RunDataSnapshot und gibt ihn zurück.
 RunDataSnapshot runModuleBuildSnapshot(uint32_t finishedAtMs, uint32_t durationMs);
 
-// Setzt den internen Zustand zurück (nach Tare oder neuem Lauf).
+// Setzt den gesamten internen Zustand zurück (Referenz, Schwellen, Minimum) –
+// nach Tare bzw. nach abgeschlossenem Lauf. Nicht am Messstart verwenden,
+// dafür gibt es runModuleStartTiming().
 void runModuleReset();

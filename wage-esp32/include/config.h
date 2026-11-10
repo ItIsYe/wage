@@ -116,6 +116,7 @@ static constexpr float STOP_RESET_HYST_G = 0.8f;
 static constexpr float START_RESET_HYST_G = 1.2f;
 static constexpr uint32_t READY_AFTER_DETECT_MS = 1200;
 static constexpr uint32_t SHOW_RESULT_MS = 6000;
+static constexpr uint32_t TIMING_MAX_MS = 240000;  // Messung nach 240 s ohne Stop abbrechen (Lauf wird verworfen)
 static constexpr float DEFAULT_EMPTY_THRESHOLD_G = 10.0f;
 static constexpr float DEFAULT_RETARE_TOL_G = 0.6f;
 

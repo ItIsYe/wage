@@ -115,6 +115,17 @@ static void finalizeTiming(uint32_t now) {
   setState(State::SHOW_RESULT);
 }
 
+// Messung laeuft laenger als TIMING_MAX_MS (z.B. Glas angehoben und nicht
+// zurueckgestellt): Lauf verwerfen statt endlos in TIMING zu bleiben. Es wird
+// nichts an den Pi gesendet. Danach normaler Ablauf ueber "Bitte leeren" und
+// Nullpunkt-Pruefung zurueck in den Leerlauf.
+static void abortTimingOnTimeout(uint32_t now) {
+  showStatus("Abbruch", "Zeitlimit");
+  ledsSetMode(LedMode::ERROR_BLINK_RED);
+  showUntilMs = now + SHOW_RESULT_MS;
+  setState(State::SHOW_RESULT);
+}
+
 static void showStatus(const char* line1, const char* line2) {
   if (activeConfig.debugMode) return;
   oledMsg2(line1, line2);
@@ -375,8 +386,10 @@ static void stateMachineService(uint32_t now) {
         if (dropSinceMs == 0) dropSinceMs = now;
         if (now - dropSinceMs >= DROP_HOLD_MS) {
           tStartMs = now;
-          runModuleReset();
-          runModuleUpdateMin(w);
+          // Nur das Minimum neu setzen. Referenzgewicht und Schwellen muessen
+          // erhalten bleiben: sie bestimmen die Stop-Erkennung und werden mit
+          // dem Lauf an den Pi gesendet (kein runModuleReset() an dieser Stelle).
+          runModuleStartTiming(w);
           dropSinceMs = 0;
           stopCandidateSinceMs = 0;
           ledsSetMode(LedMode::TIMING_BLUE_SPINNER);
@@ -391,6 +404,11 @@ static void stateMachineService(uint32_t now) {
     }
 
     case State::TIMING: {
+      if ((now - tStartMs) >= TIMING_MAX_MS) {
+        abortTimingOnTimeout(now);
+        break;
+      }
+
       if (haveRead) {
         const float w = w_filt;
 

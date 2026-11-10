@@ -44,6 +44,10 @@ void runModuleSetReference(float referenceWeightG, const RuntimeConfig& cfg) {
   }
 }
 
+void runModuleStartTiming(float weightG) {
+  g_minDuringTiming = weightG;
+}
+
 void runModuleUpdateMin(float weightG) {
   if (weightG < g_minDuringTiming) g_minDuringTiming = weightG;
 }
