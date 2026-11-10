@@ -37,7 +37,10 @@ RING2_PIXEL_COUNT = 24      // Ring 2 Pixel
 HEARTBEAT_INTERVAL_MS = 30000   // Heartbeat alle 30s
 OFFLINE_PROBE_INTERVAL_MS = 60000  // Pi-Probe alle 60s wenn offline
 STANDBY_AFTER_MS = 25000    // Standby nach 25s ohne Glas
+TIMING_MAX_MS = 240000      // Messung nach 240s ohne Stop abbrechen
 ```
+
+**Zeitlimit:** Wird das Glas angehoben und nicht innerhalb von 240 s zurückgestellt, bricht die Waage die Messung ab (OLED „Abbruch / Zeitlimit“, Ring 1 blinkt rot). Der Lauf wird verworfen und nicht an den Pi gesendet; danach geht es über „Bitte leeren“ zurück in den Leerlauf.
 
 ## Webinterface
 
@@ -107,6 +110,12 @@ Gibt alle Zustände über Serial aus. Für Produktion auf `false`.
 Der Strip schaltet jeden physischen Pixel einzeln nacheinander ein (~400 ms, dezentes Weiß) und gibt den Index über Serial aus.
 So lässt sich ablesen, ab welchem Pixel das Signal abbricht. Wird nicht gespeichert (nach Neustart wieder aus).
 
+## Build-Umgebung
+
+Plattform und Bibliotheken sind in `platformio.ini` fest gepinnt (`espressif32@7.1.3`, Arduino-Core 2.0.17).
+Ohne Pin zieht PlatformIO die jeweils neueste Plattform — mit dem neueren Core passt die Firmware nicht mehr in die Standard-OTA-Partition (1 310 720 Bytes) und der Build bricht ab.
+Ein Plattform-Update daher bewusst vornehmen und die Flash-Auslastung im Build-Log prüfen.
+
 ## FastLED
 
 Gepinnt auf Version `3.7.0` — stabil für WS2812B auf ESP32 mit aktivem WiFi.
@@ -131,3 +140,4 @@ Build-Flag: `FASTLED_INTERRUPT_RETRY_COUNT=8` (Neuübertragung bei durch WiFi-In
 
 Bei jedem Push auf `beta` der `wage-esp32/**` ändert, wird automatisch gebaut.
 Das fertige `.bin` ist über die OTA-Seite im Pi-Webinterface installierbar.
+Bei Pull Requests wird ebenfalls gebaut (Kompilier- und Größenprüfung), aber kein Release veröffentlicht.
