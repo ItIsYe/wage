@@ -150,16 +150,36 @@ def is_online(last_seen: str | None) -> bool:
         return False
 
 
+# Aktuell am Strip eingestellte Helligkeit (rpi_ws281x skaliert beim Senden; ein Wechsel
+# kostet nichts, wird aber nur bei Aenderung gesetzt).
+_applied_brightness = None
+
+
+def apply_brightness(strip, value: int) -> None:
+    """Strip-Helligkeit (0-255) setzen. Die Slider "Regenbogen", "Gruene Welle" und "Boot"
+    der LED-Konfiguration legen diese Helligkeit fuer ihr Muster fest; alle anderen
+    Muster laufen mit der globalen Helligkeit (Konfiguration -> Pi Hardware)."""
+    global _applied_brightness
+    value = max(0, min(255, int(value)))
+    if value != _applied_brightness:
+        strip.setBrightness(value)
+        _applied_brightness = value
+
+
 def make_strip():
+    global _applied_brightness
+    _applied_brightness = None
     from rpi_ws281x import Color, PixelStrip
 
     strip = PixelStrip(_get_led_count(), 18, brightness=_get_led_brightness())
     strip.begin()
+    _applied_brightness = _get_led_brightness()
     return strip, Color
 
 
 def green_wave(strip, Color, strip_sizes: list):
     """Grüne Welle läuft nacheinander durch alle Streifen nach einem Lauf."""
+    apply_brightness(strip, _get_led_brightness_for("led_brightness_wave", 120))
     tail = 8
     speed = 0.02
     start = 0
@@ -183,6 +203,7 @@ def green_wave(strip, Color, strip_sizes: list):
 
 def boot_sequence(strip, Color):
     """Langsames Hochdimmen beim Start: 0 -> volle Helligkeit in 2 Sekunden."""
+    apply_brightness(strip, _get_led_brightness_for("led_brightness_boot", 40))
     steps = 20
     for i in range(steps + 1):
         brightness = int(255 * i / steps)
@@ -386,18 +407,23 @@ if __name__ == "__main__":
                     if twinkle_state is None or twinkle_state.n != total:
                         from twinkle import TwinkleState
                         twinkle_state = TwinkleState(total)
+                    apply_brightness(strip, _get_led_brightness())
                     twinkle_state.tick(strip, Color, _get_led_brightness_for("led_brightness_power_save", 12))
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
                     pass
                 elif status == "fatal:red_blink":
+                    apply_brightness(strip, _get_led_brightness())
                     blink_toggle = not blink_toggle
                     fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100) if blink_toggle else 0, 0, 0))
                 elif status == "error:red":
+                    apply_brightness(strip, _get_led_brightness())
                     fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100), 0, 0))
                 elif not online:
+                    apply_brightness(strip, _get_led_brightness())
                     pulse_tick(strip, Color, pulse_offline_state, total, _get_led_brightness_for("led_brightness_pulse_offline", 60))
                 else:
+                    apply_brightness(strip, _get_led_brightness_for("led_brightness_rainbow", 80))
                     rainbow_tick(strip, Color, rainbow_state, total, _get_led_brightness_for("led_brightness_rainbow", 80))
                 if not power_save or now < blink_until:
                     set_state("led_status", status)
