@@ -1003,7 +1003,11 @@ function setOtaStatus(msg, percent) {
 // === Pi Hardware Konfiguration ===
 
 async function loadHardwareConfig() {
-  if (!document.getElementById('pi-led-count')) return;
+  // Nur auf der Konfig-Seite (Abschnitt "Pi Hardware"). Das Feld
+  // 'pi-led-brightness' gibt es nur dort; die frühere Prüfung auf
+  // 'pi-led-count' traf nie zu, wodurch die gespeicherten Werte nie geladen
+  // und beim Speichern mit den Formular-Defaults überschrieben wurden.
+  if (!document.getElementById('pi-led-brightness')) return;
   try {
     const d = await api('/api/v1/config/hardware');
     const stripCountEl = document.getElementById('pi-led-strip-count');
@@ -1311,7 +1315,8 @@ async function saveLedConfig() {
   try {
     const payload = {
       pi_led_strip_sizes: document.getElementById('pi-led-strip-sizes')?.value ?? '80,80,82,82',
-      pi_led_brightness: 32,
+      // Die globale Helligkeit (pi_led_brightness) gehört zur Seite
+      // "Konfiguration → Pi Hardware" und wird hier bewusst nicht gesendet.
       led_brightness_rainbow: parseInt(document.getElementById('led-rainbow').value),
       led_brightness_pulse_offline: parseInt(document.getElementById('led-pulse-offline').value),
       led_brightness_wave: parseInt(document.getElementById('led-wave').value),
