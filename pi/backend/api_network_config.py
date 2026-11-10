@@ -101,10 +101,14 @@ def _validate_network_config(cfg: dict[str, str]) -> None:
 def _validate_dhcp_range(cfg: dict[str, str]) -> None:
     """DHCP-Bereich des AP: gueltige IPv4-Adressen im /24-Netz der AP-IP, Start <= Ende,
     AP-IP selbst nicht im Bereich (network_apply.sh nutzt ein /24-Netz)."""
+    start_raw = cfg.get("ap_dhcp_start", "").strip()
+    end_raw = cfg.get("ap_dhcp_end", "").strip()
+    if not start_raw and not end_raw:
+        return  # beide leer: NetworkManager-Standard-Bereich (siehe network_apply.sh)
     try:
         ap_ip = ipaddress.IPv4Address(cfg.get("ap_ip", "").strip())
-        start = ipaddress.IPv4Address(cfg.get("ap_dhcp_start", "").strip())
-        end = ipaddress.IPv4Address(cfg.get("ap_dhcp_end", "").strip())
+        start = ipaddress.IPv4Address(start_raw)
+        end = ipaddress.IPv4Address(end_raw)
     except ValueError:
         raise HTTPException(status_code=400, detail="AP-IP und DHCP-Start/-Ende müssen gültige IPv4-Adressen sein.")
     net = ipaddress.IPv4Network(f"{ap_ip}/24", strict=False)

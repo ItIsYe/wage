@@ -107,7 +107,7 @@ Swagger UI: `http://192.168.1.112:8000/docs`
 ### AP-Modus (Standard)
 - SSID: `wage-net`
 - Pi-IP: `192.168.50.1`
-- DHCP: `192.168.50.50–192.168.50.150` (einstellbar unter **Konfiguration → 2) Netzwerk-Konfiguration**; muss im Netz der AP-IP liegen, Start ≤ Ende, AP-IP nicht im Bereich)
+- DHCP: `192.168.50.50–192.168.50.150` (einstellbar unter **Konfiguration → 2) Netzwerk-Konfiguration**; muss im Netz der AP-IP liegen, Start ≤ Ende, AP-IP nicht im Bereich; beide Felder leer = Standard-Bereich von NetworkManager)
 - ESP32 statische IP: `192.168.50.100`
 - API-Ziel für ESP: `http://192.168.50.1:8000/api/v1/runs`
 
