@@ -1,0 +1,21 @@
+/* Bildschirmtastatur (static/keyboard.js). Eigene Datei, damit sie auch in die ESP-Seiten
+   (Waage-Config ueber /esp-proxy/) eingefuegt werden kann - dort gibt es style.css nicht. */
+body.touch-keyboard-open { padding-bottom: var(--touch-keyboard-height, 0); }
+.touch-keyboard { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; background: #0f172a; color: #fff;
+  padding: 6px; box-shadow: 0 -8px 22px rgba(0,0,0,.4); border-top: 1px solid #334155;
+  user-select: none; -webkit-user-select: none; touch-action: none; font-family: system-ui, Arial, sans-serif; }
+.touch-keyboard.hidden { display: none; }
+.touch-key-row { display: grid; grid-template-columns: repeat(10, minmax(0,1fr)); gap: 5px; margin-bottom: 5px; }
+.touch-key-row:last-child { margin-bottom: 0; }
+.touch-key { border: 1px solid #334155; background: #1e293b; color: #fff; border-radius: 8px; min-height: 42px;
+  font-size: 1.05rem; padding: 4px; cursor: pointer; touch-action: none;
+  display: flex; align-items: center; justify-content: center; }
+.touch-key-action { background: #334155; }
+.touch-key.is-active, .touch-key.is-pressed { background: #2563eb; }
+.touch-key-space { grid-column: span 3; }
+.touch-keyboard-numeric { left: auto; right: 0; width: min(360px, 100%); border-left: 1px solid #334155; border-top-left-radius: 10px; }
+.touch-keyboard-numeric .touch-key { min-height: 46px; font-size: 1.2rem; }
+@media (max-height: 520px) {
+  .touch-key { min-height: 36px; font-size: 1rem; }
+  .touch-key-row { gap: 4px; margin-bottom: 4px; }
+}

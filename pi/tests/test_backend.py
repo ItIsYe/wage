@@ -182,4 +182,22 @@ def test_seconds_since_latest():
 @pytest.mark.parametrize("path", ["/", "/runs", "/persons", "/status", "/config", "/config/leds", "/stats", "/ota", "/runs/new"])
 def test_pages_render(client, path):
     r = client.get(path)
-    assert r.status_code == 200 and "app.js" in r.text
+    assert r.status_code == 200 and "app.js" in r.text and "keyboard.js" in r.text and "fonts.googleapis" not in r.text
+
+
+def test_esp_proxy_injects_keyboard(client, monkeypatch):
+    import httpx
+    from backend import api_esp_proxy
+
+    class FakeClient:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def request(self, **k):
+            return httpx.Response(200, headers={"content-type": "text/html"},
+                                  content=b"<html><body><form action='/save'><input name='deviceId'></form></body></html>")
+    monkeypatch.setattr(api_esp_proxy.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(api_esp_proxy, "_get_esp_ip", lambda: "127.0.0.1")
+    html = client.get("/esp-proxy/").text
+    assert "/static/keyboard.js" in html and "/static/keyboard.css" in html and "action='/esp-proxy/save'" in html
+    assert client.get("/static/keyboard.js").status_code == 200
