@@ -16,27 +16,11 @@ mkdir -p "$PI/logs" "$BACKUP_DIR"
 log() { echo "[$(date -Iseconds)] $*" | tee -a "$LOG"; }
 fail() { log "FEHLER: $*"; exit 1; }
 
-# Update-Zustand für die Weboberfläche in die DB schreiben (gleiche Keys wie
-# backend/api_update.py). Fehler hier dürfen das Update nicht abbrechen.
+# Update-Zustand für die Weboberfläche in die DB schreiben (gleiche Keys wie backend/api_update.py,
+# gemeinsames Modul backend/update_state.py). Fehler hier dürfen das Update nicht abbrechen.
 # Aufruf: set_update_state <ui_state> <status> <ui_message> <progress_step> <progress_percent>
 set_update_state() {
-    "$PY" - "$DB" "$@" >/dev/null 2>&1 <<'PYEOF' || true
-import sqlite3, sys
-from datetime import datetime, timezone
-db, ui_state, status, message, step, percent = sys.argv[1:7]
-conn = sqlite3.connect(db, timeout=15)
-with conn:
-    for key, value in {
-        "last_update_ui_state": ui_state,
-        "last_update_status": status,
-        "last_update_ui_message": message,
-        "last_update_progress_step": step,
-        "last_update_progress_percent": percent,
-        "last_update_at": datetime.now(timezone.utc).isoformat(),
-    }.items():
-        conn.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", (key, value))
-conn.close()
-PYEOF
+    (cd "$PI" && "$PY" -m backend.update_state "$@") >/dev/null 2>&1 || true
 }
 
 progress() { set_update_state updating "installiere update..." "Pi-Update wird durchgeführt..." "$1" "$2"; }

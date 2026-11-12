@@ -13,6 +13,8 @@ def _set_active_person(cur, person_id: int):
         "INSERT INTO app_state(key, value) VALUES('active_person_id', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         (str(person_id),),
     )
+    # Historie fuer die Zuordnung verspaetet eintreffender Laeufe (siehe api_runs._person_at)
+    cur.execute("INSERT INTO person_activations (person_id, activated_at) VALUES (?, ?)", (person_id, utc_now_iso()))
 
 
 @router.get("")

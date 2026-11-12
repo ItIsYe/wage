@@ -103,14 +103,6 @@
   <div class="card">
     <div class="grid two">
       <div class="form-group">
-        <label>Pixel pro Streifen (kommagetrennt)</label>
-        <input type="text" id="pi-led-strip-sizes" value="80,80,82,82" placeholder="z.B. 80,80,82,82">
-      </div>
-      <div class="form-group">
-        <label>LED-Helligkeit global (0–255)</label>
-        <input type="number" id="pi-led-brightness" min="0" max="255" value="32">
-      </div>
-      <div class="form-group">
         <label>OLED-Rotation</label>
         <select id="pi-oled-rotation">
           <option value="0">0° (normal)</option>
@@ -124,6 +116,7 @@
         <input type="number" id="power-save-after-minutes" min="0" max="1440" value="1">
       </div>
     </div>
+    <p class="hint">Streifengrößen und LED-Helligkeiten stehen unter <a href="/config/leds">3) LED-Konfiguration</a>.</p>
     <div class="toolbar">
       <button onclick="saveHardwareConfig()">Speichern</button>
     </div>

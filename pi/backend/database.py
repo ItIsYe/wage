@@ -12,7 +12,6 @@ def utc_now_iso() -> str:
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=15, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA cache_size=-8000")    # 8MB Cache
     conn.execute("PRAGMA temp_store=MEMORY")   # Temp-Tabellen im RAM
@@ -23,6 +22,9 @@ def get_connection() -> sqlite3.Connection:
 def init_db() -> None:
     conn = get_connection()
     try:
+        # WAL ist eine Eigenschaft der Datenbankdatei und bleibt erhalten; einmal setzen genuegt
+        # (vorher bei jeder Verbindung, also bei jeder API-Anfrage).
+        conn.execute("PRAGMA journal_mode=WAL")
         with conn:  # Transaktion; schliesst die Verbindung NICHT
             _init_schema(conn)
     finally:
@@ -77,6 +79,16 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             value TEXT
         );
 
+        -- Wer war wann aktiv? Laeufe aus der Warteschlange der Waage kommen verspaetet an und werden
+        -- der Person zur MESSZEIT zugeordnet (siehe api_runs._person_at).
+        CREATE TABLE IF NOT EXISTS person_activations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL,
+            activated_at TEXT NOT NULL,
+            FOREIGN KEY(person_id) REFERENCES persons(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_person_activations_at ON person_activations(activated_at);
+
         CREATE INDEX IF NOT EXISTS idx_runs_received_at ON runs(received_at DESC);
         CREATE INDEX IF NOT EXISTS idx_runs_person_id ON runs(person_id);
         CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status);
@@ -89,6 +101,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         ("min_weight_g", "REAL"),
         ("start_drop_threshold_g", "REAL"),
         ("stop_rise_threshold_g", "REAL"),
+        ("measured_at", "TEXT"),
     ]:
         if col not in existing_cols:
             try:
@@ -109,10 +122,23 @@ def _init_schema(conn: sqlite3.Connection) -> None:
             except sqlite3.OperationalError:
                 pass
     conn.execute("INSERT OR IGNORE INTO persons (id, name, created_at) VALUES (1, 'Unbekannt', ?)", (utc_now_iso(),))
+    conn.execute("UPDATE runs SET measured_at=received_at WHERE measured_at IS NULL")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_measured_at ON runs(measured_at)")
     conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('active_person_id', '1')")
     conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('led_status', 'init')")
     conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('oled_status', 'init')")
     conn.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES ('last_event', 'startup')")
+    # Historie beginnt mit der aktuell aktiven Person ("schon immer"), damit auch Laeufe aus der Zeit
+    # vor dieser Migration eine Zuordnung finden.
+    if conn.execute("SELECT COUNT(*) FROM person_activations").fetchone()[0] == 0:
+        row = conn.execute("SELECT value FROM app_state WHERE key='active_person_id'").fetchone()
+        try:
+            pid = int(row[0]) if row else 1
+        except (TypeError, ValueError):
+            pid = 1
+        if conn.execute("SELECT 1 FROM persons WHERE id=?", (pid,)).fetchone() is None:
+            pid = 1
+        conn.execute("INSERT INTO person_activations (person_id, activated_at) VALUES (?, '1970-01-01T00:00:00+00:00')", (pid,))
 
 
 @contextmanager

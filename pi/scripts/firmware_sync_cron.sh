@@ -16,11 +16,12 @@ if ! ip route show default | grep -q "default"; then
   exit 0
 fi
 
-# Aktuelles gecachtes Manifest lesen
+# Welche Firmware liegt tatsächlich im Cache? (Das gecachte Manifest allein sagt das nicht: es kann
+# auch ohne firmware.bin dort liegen, z.B. nach einer reinen Versionsabfrage.)
 CACHED_VERSION=""
-CACHED=$(curl -sf --max-time 5 "$API_BASE/api/v1/esp-firmware/manifest" 2>/dev/null || true)
-if [[ -n "$CACHED" ]]; then
-  CACHED_VERSION=$(echo "$CACHED" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',''))" 2>/dev/null || true)
+CACHE_INFO=$(curl -sf --max-time 5 "$API_BASE/api/v1/esp-firmware/cache" 2>/dev/null || true)
+if [[ -n "$CACHE_INFO" ]]; then
+  CACHED_VERSION=$(echo "$CACHE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version','') if d.get('has_firmware') else '')" 2>/dev/null || true)
 fi
 
 # Neuestes Manifest direkt von GitHub lesen

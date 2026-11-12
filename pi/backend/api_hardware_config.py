@@ -1,33 +1,34 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from .database import db_cursor
 
 router = APIRouter(prefix="/api/v1/config/hardware", tags=["hardware-config"])
 
+_KEYS = ("pi_oled_rotation", "power_save_after_minutes")
+
 
 class HardwareConfig(BaseModel):
-    pi_led_brightness: int = Field(ge=0, le=255)
-    pi_led_strip_sizes: str = Field(default="80,80,82,82")
+    # LED-Streifen und -Helligkeit werden ausschließlich über /api/v1/config/leds gepflegt.
+    # Früher schrieben beide Seiten dieselben Werte mit unterschiedlichen Vorgaben und überschrieben sich.
     pi_oled_rotation: int = Field(ge=0, le=3)
     power_save_after_minutes: int = Field(ge=0, le=1440)
 
 
+def _int(state: dict, key: str, default: int) -> int:
+    try:
+        return int(state.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
 def _read_hardware_config() -> dict:
     with db_cursor() as (_, cur):
-        rows = cur.execute(
-            "SELECT key, value FROM app_state WHERE key IN "
-            "('pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes',"
-            "'pi_oled_rotation','power_save_after_minutes')"
-        ).fetchall()
+        rows = cur.execute(f"SELECT key, value FROM app_state WHERE key IN ({','.join('?' * len(_KEYS))})", _KEYS).fetchall()
     state = {r["key"]: r["value"] for r in rows}
     return {
-        "pi_led_brightness": int(state.get("pi_led_brightness", "32")),
-        "pi_led_strip_count": int(state.get("pi_led_strip_count", "4")),
-        "pi_led_strip_pixels": int(state.get("pi_led_strip_pixels", "40")),
-        "pi_led_strip_sizes": state.get("pi_led_strip_sizes", "80,80,82,82"),
-        "pi_oled_rotation": int(state.get("pi_oled_rotation", "0")),
-        "power_save_after_minutes": int(state.get("power_save_after_minutes", "1")),
+        "pi_oled_rotation": _int(state, "pi_oled_rotation", 0),
+        "power_save_after_minutes": _int(state, "power_save_after_minutes", 1),
     }
 
 
@@ -44,4 +45,4 @@ def save_hardware_config(cfg: HardwareConfig):
                 "INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (key, str(value)),
             )
-    return {"ok": True, "message": "Hardware-Konfiguration gespeichert. Dienste neu starten um Änderungen zu übernehmen."}
+    return {"ok": True, "message": "Hardware-Konfiguration gespeichert. Die OLED-Drehung wirkt nach dem Neustart des OLED-Dienstes."}

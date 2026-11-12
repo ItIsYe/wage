@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import os
-from datetime import datetime, timezone
+import time
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 
 from fastapi import APIRouter, HTTPException
 
-from .config_migration import ensure_config_defaults
 from .database import db_cursor
+from .update_state import write_state
 
 router = APIRouter(prefix="/api/v1/system/update", tags=["system-update"])
 
@@ -20,9 +19,10 @@ TARGET_BRANCH = os.getenv("WAGE_REPO_BRANCH", "beta")
 UPDATE_SCOPE = "pi-only"
 AP_BLOCK_REASON = "Updates sind nur im Haus-WLAN-Client-Modus möglich"
 GIT_TIMEOUT_SECONDS = 30
+FETCH_CACHE_SECONDS = 60  # GET /status holt höchstens einmal pro Minute von GitHub
 PIP_TIMEOUT_SECONDS = 180
 SYSTEMCTL_TIMEOUT_SECONDS = 30
-UPDATE_RELEVANT_DIRS = ("pi/backend", "pi/frontend", "pi/oled", "pi/leds", "pi/screen", "pi/scripts", "pi/systemd")
+UPDATE_RELEVANT_DIRS = ("pi/backend", "pi/common", "pi/frontend", "pi/oled", "pi/leds", "pi/screen", "pi/scripts", "pi/systemd")
 UPDATE_RELEVANT_FILES = ("pi/requirements.txt", "pi/README.md")
 PROTECTED_RUNTIME_PATHS = ["pi/data/", "pi/logs/"]
 PROTECTED_RUNTIME_FILES = [
@@ -89,11 +89,20 @@ def _ensure_repo_and_git() -> None:
         raise HTTPException(status_code=500, detail=f"Git-Repository nicht gefunden: {REPO_PATH}")
 
 
-def _fetch_origin_target() -> None:
+_last_fetch_at: float | None = None
+
+
+def _fetch_origin_target(force: bool = True) -> None:
+    """git fetch. Die Status-Abfrage der Oberfläche (alle paar Sekunden) darf GitHub nicht jedes Mal
+    anfragen: force=False nutzt das Ergebnis der letzten 60 Sekunden. Prüfen und Anwenden holen immer neu."""
+    global _last_fetch_at
+    if not force and _last_fetch_at is not None and (time.monotonic() - _last_fetch_at) < FETCH_CACHE_SECONDS:
+        return
     proc = _run(_git_cmd("fetch", "origin", TARGET_BRANCH), cwd=REPO_PATH)
     if proc.returncode != 0:
         msg = proc.stderr.strip() or proc.stdout.strip() or "Unbekannter git fetch Fehler"
         raise HTTPException(status_code=500, detail=f"git fetch fehlgeschlagen: {msg}")
+    _last_fetch_at = time.monotonic()
 
 
 def _git_value(args: list[str], fallback: str = "") -> str:
@@ -177,26 +186,20 @@ def _calculate_pi_sync_sets() -> tuple[list[str], list[str], list[str]]:
 
 
 def _persist_update_state(status: str, local_commit: str, remote_commit: str, changed: list[str], obsolete: list[str], protected_runtime: list[str], ui_state: str = "idle", ui_message: str = "", progress_step: str = "", progress_percent: int = 0, local_code_overwritten: bool = True) -> str:
-    now = datetime.now(timezone.utc).isoformat()
-    with db_cursor() as (_, cur):
-        entries = {
-            "last_update_status": status,
-            "last_update_at": now,
-            "last_update_local_commit": local_commit,
-            "last_update_remote_commit": remote_commit,
-            "last_update_changed_pi_files": "\n".join(changed),
-            "last_update_obsolete_pi_files": "\n".join(obsolete),
-            "last_update_protected_runtime_files": "\n".join(protected_runtime),
-            "last_update_scope": UPDATE_SCOPE,
-            "last_update_ui_state": ui_state,
-            "last_update_ui_message": ui_message,
-            "last_update_progress_step": progress_step,
-            "last_update_progress_percent": str(progress_percent),
-            "last_update_local_code_overwritten": "1" if local_code_overwritten else "0",
-        }
-        for key, value in entries.items():
-            cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)", (key, value))
-    return now
+    return write_state({
+        "last_update_status": status,
+        "last_update_local_commit": local_commit,
+        "last_update_remote_commit": remote_commit,
+        "last_update_changed_pi_files": "\n".join(changed),
+        "last_update_obsolete_pi_files": "\n".join(obsolete),
+        "last_update_protected_runtime_files": "\n".join(protected_runtime),
+        "last_update_scope": UPDATE_SCOPE,
+        "last_update_ui_state": ui_state,
+        "last_update_ui_message": ui_message,
+        "last_update_progress_step": progress_step,
+        "last_update_progress_percent": str(progress_percent),
+        "last_update_local_code_overwritten": "1" if local_code_overwritten else "0",
+    })
 
 
 def _response_payload(mode: str, state: dict[str, str], local_commit: str, remote_commit: str, changed: list[str], obsolete: list[str], protected_runtime: list[str], ui_state: str, ui_message: str, progress_step: str = "", progress_percent: int = 0, can_apply: bool = False) -> dict:
@@ -231,40 +234,6 @@ def _calculate_update_status() -> tuple[str, str, list[str], list[str], list[str
     remote_commit = _git_value(["rev-parse", f"origin/{TARGET_BRANCH}"])
     changed, obsolete, protected = _calculate_pi_sync_sets()
     return local_commit, remote_commit, changed, obsolete, protected
-
-
-def _remove_obsolete_files(obsolete: list[str]) -> None:
-    for rel in obsolete:
-        p = REPO_PATH / rel
-        if p.exists() and p.is_file() and not is_protected_pi_runtime_path(rel):
-            p.unlink()
-
-
-def _run_background_update_job() -> None:
-    try:
-        _ensure_repo_and_git()
-        _fetch_origin_target()
-        local_commit, remote_commit, changed, obsolete, protected = _calculate_update_status()
-        if not changed and not obsolete:
-            return
-        _persist_update_state("installiere update...", local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Code-Sync wird durchgeführt...", progress_step="Pi-Code wird synchronisiert...", progress_percent=20)
-        if changed:
-            proc = _run(_git_cmd("checkout", f"origin/{TARGET_BRANCH}", "--", *changed), cwd=REPO_PATH)
-            if proc.returncode != 0:
-                raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or "git checkout fehlgeschlagen")
-        _persist_update_state("installiere update...", local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Code-Sync wird durchgeführt...", progress_step="Alte Pi-Code-Dateien werden entfernt...", progress_percent=40)
-        _remove_obsolete_files(obsolete)
-        _persist_update_state("installiere update...", local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Code-Sync wird durchgeführt...", progress_step="Konfiguration wird migriert...", progress_percent=60)
-        ensure_config_defaults()
-        _persist_update_state("installiere update...", local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Code-Sync wird durchgeführt...", progress_step="Abhängigkeiten werden geprüft...", progress_percent=75)
-        _run([str(REPO_PATH / "pi" / ".venv" / "bin" / "pip"), "install", "-r", "requirements.txt"], cwd=REPO_PATH / "pi", timeout=PIP_TIMEOUT_SECONDS)
-        _persist_update_state("installiere update...", local_commit, remote_commit, changed, obsolete, protected, ui_state="updating", ui_message="Pi-Code-Sync wird durchgeführt...", progress_step="Services werden neu gestartet...", progress_percent=90)
-        for service in ["wage-pi-oled", "wage-pi-leds"]:
-            _run(["sudo", "systemctl", "restart", service], timeout=SYSTEMCTL_TIMEOUT_SECONDS)
-        _persist_update_state("update erfolgreich", local_commit, remote_commit, changed, obsolete, protected, ui_state="success", ui_message="Update abgeschlossen", progress_step="Update abgeschlossen", progress_percent=100)
-        _run(["sudo", "systemctl", "restart", "wage-pi-backend"], timeout=SYSTEMCTL_TIMEOUT_SECONDS)
-    except Exception as exc:
-        _persist_update_state("update fehlgeschlagen", "", "", [], [], sorted(PROTECTED_RUNTIME_FILES), ui_state="error", ui_message=f"Update fehlgeschlagen: {exc}", progress_step="Update fehlgeschlagen", progress_percent=100)
 
 
 def _update_job_running() -> bool:
@@ -307,7 +276,7 @@ def update_status():
     if not _has_internet():
         return _response_payload(mode, state, "", "", [], [], sorted(PROTECTED_RUNTIME_FILES), ui_state="blocked", ui_message="Kein Internet verfügbar. Bitte LAN-Kabel einstecken.")
     _ensure_repo_and_git()
-    _fetch_origin_target()
+    _fetch_origin_target(force=False)
     local_commit, remote_commit, changed, obsolete, protected = _calculate_update_status()
     has_sync = bool(changed or obsolete)
     ui_state = "update_available" if has_sync else "no_update"

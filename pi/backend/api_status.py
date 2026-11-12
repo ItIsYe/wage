@@ -1,50 +1,17 @@
-from datetime import datetime, timezone
 import asyncio
 import json
-import os
-import socket
+import time
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
+
+from common.runtime import get_pi_ip, seconds_since
 
 from .config import OFFLINE_THRESHOLD_SECONDS
 from .database import db_cursor
 from .api_network_config import _read_config
 
 router = APIRouter(prefix="/api/v1/status", tags=["status"])
-
-
-_ip_cache: str = ""
-_ip_cache_at: float = 0.0
-_IP_CACHE_TTL = 30.0  # IP nur alle 30s neu abfragen
-
-
-def get_pi_ip() -> str:
-    global _ip_cache, _ip_cache_at
-    import time
-    if _ip_cache and (time.monotonic() - _ip_cache_at) < _IP_CACHE_TTL:
-        return _ip_cache
-    try:
-        import subprocess
-        out = subprocess.check_output(
-            ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show"],
-            text=True, timeout=3
-        )
-        for line in out.splitlines():
-            if line.startswith("IP4.ADDRESS"):
-                addr = line.split(":")[-1].split("/")[0].strip()
-                if addr and not addr.startswith("127."):
-                    _ip_cache = addr
-                    _ip_cache_at = time.monotonic()
-                    return _ip_cache
-    except Exception:
-        pass
-    try:
-        _ip_cache = os.popen("hostname -I").read().strip().split()[0]
-        _ip_cache_at = time.monotonic()
-        return _ip_cache
-    except Exception:
-        return "127.0.0.1"
 
 
 _status_cache: dict = {}
@@ -54,10 +21,8 @@ _STATUS_CACHE_TTL = 1.0  # Max 1s alter Status-Cache
 
 def _build_status() -> dict:
     global _status_cache, _status_cache_at
-    import time
     if _status_cache and (time.monotonic() - _status_cache_at) < _STATUS_CACHE_TTL:
         return _status_cache
-    now = datetime.now(timezone.utc)
     with db_cursor() as (_, cur):
         # Nur benötigte Keys laden statt alle
         needed = ("active_person_id","last_run_id","last_run_received_at","last_event",
@@ -73,13 +38,8 @@ def _build_status() -> dict:
         last_device = cur.execute("SELECT * FROM devices ORDER BY last_seen_at DESC LIMIT 1").fetchone()
 
     last_contact = last_device["last_seen_at"] if last_device else None
-    online = False
-    if last_contact:
-        try:
-            seen = datetime.fromisoformat(last_contact)
-            online = (now - seen).total_seconds() <= OFFLINE_THRESHOLD_SECONDS
-        except Exception:
-            online = False
+    age = seconds_since(last_contact)
+    online = age is not None and age <= OFFLINE_THRESHOLD_SECONDS
 
     ip = get_pi_ip()
     net = _read_config()
@@ -129,7 +89,7 @@ async def status_stream():
             online_now = False
             while True:
                 try:
-                    data = _build_status()
+                    data = await asyncio.to_thread(_build_status)
                     online_now = data.get("scale_online", False)
                     payload = json.dumps(data, sort_keys=True)
                     if payload != last_payload:

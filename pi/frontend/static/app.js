@@ -16,6 +16,13 @@ async function api(url, opts = {}) {
 }
 
 const byId = (id) => document.getElementById(id);
+// Zeitstempel kommen als UTC-ISO-Text; angezeigt wird die lokale Zeit des Geräts.
+function fmtTs(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'medium' });
+}
 const esc = (v) => String(v ?? "").replace(/[&<>'"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
 function flash(msg, ok = false) {
   const el = byId("msg");
@@ -133,7 +140,7 @@ async function loadRuns() {
       <tr>
         <td>${r.id}</td><td>${r.run_number}</td><td>${r.time_ms}</td><td>${r.start_weight_g}</td>
         <td><select id="run-person-${r.id}">${personOptions}</select></td>
-        <td>${esc(r.received_at)}</td><td>${esc(r.status)}</td>
+        <td>${esc(fmtTs(r.measured_at || r.received_at))}</td><td>${esc(r.status)}</td>
         <td><input id="run-note-${r.id}" value="${esc(r.note || "")}" maxlength="200"></td>
         <td>
           <button onclick="window.location.href='/runs/'+${r.id}" style="background:var(--bg-card2);border:1px solid var(--border);color:var(--text)">Details</button>
@@ -269,7 +276,7 @@ function renderDashboardData(s) {
     <div class="card ${onlineCls}">
       <h3>Waage</h3>
       <div class="kpi">${s.scale_online ? "Online" : "Offline"}</div>
-      <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">${esc(s.last_contact_to_scale ? s.last_contact_to_scale.replace("T"," ").slice(0,19) : "—")}</div>
+      <div style="font-size:.8rem;color:var(--text-muted);margin-top:4px">${esc(fmtTs(s.last_contact_to_scale))}</div>
     </div>
     <div class="card ${apiCls}">
       <h3>System</h3>
@@ -289,7 +296,7 @@ function renderDashboardData(s) {
   byId("dash-runs").innerHTML = (s.recent_runs || []).map((r) =>
     `<div class="list-row" style="display:flex;justify-content:space-between;align-items:center">
       <span><strong>#${esc(r.id)}</strong> &nbsp; ${esc(r.person_name || "—")}</span>
-      <span style="color:var(--text-muted);font-size:.85rem">${esc(r.start_weight_g)} g &nbsp;·&nbsp; ${esc(r.received_at ? r.received_at.replace("T"," ").slice(0,19) : "—")}</span>
+      <span style="color:var(--text-muted);font-size:.85rem">${esc(r.start_weight_g)} g &nbsp;·&nbsp; ${esc(fmtTs(r.measured_at || r.received_at))}</span>
     </div>`
   ).join("") || '<div style="color:var(--text-muted);padding:12px 0">Noch keine Läufe vorhanden.</div>';
 }
@@ -1003,18 +1010,11 @@ function setOtaStatus(msg, percent) {
 // === Pi Hardware Konfiguration ===
 
 async function loadHardwareConfig() {
-  // Nur auf der Konfig-Seite (Abschnitt "Pi Hardware"). Das Feld
-  // 'pi-led-brightness' gibt es nur dort; die frühere Prüfung auf
-  // 'pi-led-count' traf nie zu, wodurch die gespeicherten Werte nie geladen
-  // und beim Speichern mit den Formular-Defaults überschrieben wurden.
-  if (!document.getElementById('pi-led-brightness')) return;
+  // Nur auf der Konfig-Seite (Abschnitt "Pi Hardware"). Streifengrößen und LED-Helligkeit gehören zur
+  // LED-Seite (/config/leds); hier stehen nur OLED-Drehung und Energiesparmodus.
+  if (!document.getElementById('pi-oled-rotation')) return;
   try {
     const d = await api('/api/v1/config/hardware');
-    const stripCountEl = document.getElementById('pi-led-strip-count');
-    if (stripCountEl) stripCountEl.value = d.pi_led_strip_count ?? 4;
-    const stripSizesEl = document.getElementById('pi-led-strip-sizes');
-    if (stripSizesEl) stripSizesEl.value = d.pi_led_strip_sizes ?? '80,80,82,82';
-    document.getElementById('pi-led-brightness').value = d.pi_led_brightness ?? 32;
     document.getElementById('pi-oled-rotation').value = d.pi_oled_rotation ?? 0;
     const psEl = document.getElementById('power-save-after-minutes');
     if (psEl) psEl.value = d.power_save_after_minutes ?? 1;
@@ -1028,8 +1028,6 @@ async function saveHardwareConfig() {
   const el = document.getElementById('hardware-msg');
   try {
     const payload = {
-      pi_led_strip_sizes: document.getElementById('pi-led-strip-sizes')?.value ?? '80,80,82,82',
-      pi_led_brightness: parseInt(document.getElementById('pi-led-brightness').value),
       pi_oled_rotation: parseInt(document.getElementById('pi-oled-rotation').value),
       power_save_after_minutes: parseInt(document.getElementById('power-save-after-minutes')?.value ?? '1'),
     };
@@ -1243,7 +1241,8 @@ async function loadRunDetail() {
     byId('d-boot').textContent = r.boot_id || '—';
     byId('d-run-nr').textContent = r.run_number || '—';
     byId('d-event').textContent = r.event_id || '—';
-    byId('d-received').textContent = r.received_at ? r.received_at.replace('T', ' ').slice(0, 19) : '—';
+    byId('d-received').textContent = fmtTs(r.received_at);
+    byId('d-measured').textContent = fmtTs(r.measured_at || r.received_at);
 
     // Status Badge
     const badge = byId('run-status-badge');
@@ -1299,6 +1298,7 @@ async function loadLedConfig() {
     };
     const sizesEl = document.getElementById('pi-led-strip-sizes');
     if (sizesEl) sizesEl.value = d.pi_led_strip_sizes ?? '80,80,82,82';
+    set('led-global', 'led-global-val', d.pi_led_brightness ?? 32);
     set('led-rainbow', 'led-rainbow-val', d.led_brightness_rainbow ?? 80);
     set('led-pulse-offline', 'led-pulse-offline-val', d.led_brightness_pulse_offline ?? 60);
     set('led-wave', 'led-wave-val', d.led_brightness_wave ?? 120);
@@ -1315,8 +1315,7 @@ async function saveLedConfig() {
   try {
     const payload = {
       pi_led_strip_sizes: document.getElementById('pi-led-strip-sizes')?.value ?? '80,80,82,82',
-      // Die globale Helligkeit (pi_led_brightness) gehört zur Seite
-      // "Konfiguration → Pi Hardware" und wird hier bewusst nicht gesendet.
+      pi_led_brightness: parseInt(document.getElementById('led-global').value),
       led_brightness_rainbow: parseInt(document.getElementById('led-rainbow').value),
       led_brightness_pulse_offline: parseInt(document.getElementById('led-pulse-offline').value),
       led_brightness_wave: parseInt(document.getElementById('led-wave').value),

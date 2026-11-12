@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import fcntl
 from datetime import datetime, timezone
 import ipaddress
 from pathlib import Path
+import re
 import shutil
-import socket
 import subprocess
 
 from fastapi import APIRouter, HTTPException, Request
+
+from common.runtime import get_pi_ip
 
 from .config_defaults import DEFAULTS
 from .config_migration import ensure_config_defaults
@@ -18,37 +21,10 @@ router = APIRouter(prefix="/api/v1/config/network", tags=["network-config"])
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "network_apply.sh"
 
 
-def _get_pi_ip() -> str:
-    import fcntl, struct
-    try:
-        # Versuche IP über aktives WLAN-Interface zu ermitteln (funktioniert ohne Internet)
-        import subprocess
-        out = subprocess.check_output(
-            ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show"],
-            text=True, timeout=3
-        )
-        for line in out.splitlines():
-            if line.startswith("IP4.ADDRESS"):
-                addr = line.split(":")[-1].split("/")[0].strip()
-                if addr and not addr.startswith("127."):
-                    return addr
-    except Exception:
-        pass
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.connect(("192.168.50.1", 80))
-        ip = sock.getsockname()[0]
-        sock.close()
-        if ip and not ip.startswith("0."):
-            return ip
-    except Exception:
-        pass
-    return "127.0.0.1"
-
-
 def _to_public(cfg: dict[str, str]) -> dict:
     mode = cfg.get("network_mode", "ap")
-    api_target = f"http://{cfg.get('ap_ip','192.168.50.1')}:8000" if mode == "ap" else f"http://{_get_pi_ip()}:8000"
+    pi_ip = get_pi_ip()
+    api_target = f"http://{cfg.get('ap_ip','192.168.50.1')}:8000" if mode == "ap" else f"http://{pi_ip}:8000"
     ap_password_set = bool(cfg.get("ap_password"))
     return {
         "network_mode": mode,
@@ -63,7 +39,7 @@ def _to_public(cfg: dict[str, str]) -> dict:
         "client_dhcp_enabled": str(cfg.get("client_dhcp_enabled", "true")).lower() == "true",
         "last_network_apply_status": cfg.get("last_network_apply_status", "never"),
         "last_network_apply_at": cfg.get("last_network_apply_at", ""),
-        "current_pi_ip": _get_pi_ip(),
+        "current_pi_ip": pi_ip,
         "api_target": api_target,
     }
 
@@ -87,6 +63,12 @@ def _validate_network_config(cfg: dict[str, str]) -> None:
         raise HTTPException(status_code=400, detail="AP-SSID darf nicht leer sein.")
     if not cfg.get("ap_ip", "").strip():
         raise HTTPException(status_code=400, detail="AP-IP darf nicht leer sein.")
+    try:
+        ipaddress.IPv4Address(cfg["ap_ip"].strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="AP-IP ist keine gültige IPv4-Adresse.")
+    if len(cfg.get("ap_ssid", "").encode("utf-8")) > 32 or len(cfg.get("client_ssid", "").encode("utf-8")) > 32:
+        raise HTTPException(status_code=400, detail="SSIDs dürfen höchstens 32 Bytes lang sein.")
     ap_password = cfg.get("ap_password", "")
     if ap_password and len(ap_password) < 8:
         raise HTTPException(status_code=400, detail="AP-Passwort muss mindestens 8 Zeichen lang sein.")
@@ -120,51 +102,55 @@ def _validate_dhcp_range(cfg: dict[str, str]) -> None:
         raise HTTPException(status_code=400, detail="Die AP-IP darf nicht im DHCP-Bereich liegen.")
 
 
+_TERSE_SPLIT = re.compile(r"(?<!\\):")
+
+
+def _terse_fields(line: str) -> list[str]:
+    """nmcli -t trennt mit ':' und maskiert enthaltene Doppelpunkte als '\\:'."""
+    return [part.replace("\\:", ":").replace("\\\\", "\\") for part in _TERSE_SPLIT.split(line)]
+
+
 @router.get("/scan")
 def scan_wifi_networks():
     """Verfügbare WLAN-Netzwerke scannen — funktioniert auch im AP-Modus."""
     try:
-        import subprocess
-        # WLAN-Interface finden
-        wlan = subprocess.check_output(
-            ["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"],
-            text=True, timeout=5
-        )
-        iface = next((l.split(":")[0] for l in wlan.splitlines() if "wifi" in l), None)
+        devices = subprocess.check_output(["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"], text=True, timeout=5)
+        iface = None
+        for line in devices.splitlines():
+            fields = _terse_fields(line)
+            if len(fields) >= 2 and fields[1] == "wifi":  # nicht "wifi-p2p"
+                iface = fields[0]
+                break
         if not iface:
             return {"networks": [], "error": "Kein WLAN-Interface gefunden"}
 
-        # Scan ohne rescan versuchen — im AP-Modus schlägt rescan fehl
+        # Rescan schlägt im AP-Modus fehl -> ignorieren, gecachte Ergebnisse lesen
         try:
-            subprocess.run(
-                ["sudo", "nmcli", "device", "wifi", "rescan", "ifname", iface],
-                timeout=8, capture_output=True
-            )
-        except Exception:
-            pass  # Rescan im AP-Modus schlägt fehl, ignorieren
+            subprocess.run(["sudo", "nmcli", "device", "wifi", "rescan", "ifname", iface], timeout=8, capture_output=True)
+        except (OSError, subprocess.SubprocessError):
+            pass
 
-        # Trotzdem cached Scan-Ergebnisse auslesen
         out = subprocess.check_output(
-            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list"],
-            text=True, timeout=10
+            ["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "ifname", iface], text=True, timeout=10
         )
-        seen = set()
+        seen: set[str] = set()
         networks = []
         for line in out.splitlines():
-            parts = line.split(":")
-            if len(parts) >= 2:
-                ssid = parts[0].strip()
-                if ssid and ssid not in seen:
-                    seen.add(ssid)
-                    networks.append({
-                        "ssid": ssid,
-                        "signal": int(parts[1]) if parts[1].isdigit() else 0,
-                        "security": parts[2] if len(parts) > 2 else ""
-                    })
+            fields = _terse_fields(line)
+            if len(fields) < 2:
+                continue
+            ssid = fields[0].strip()
+            if ssid and ssid not in seen:
+                seen.add(ssid)
+                networks.append({
+                    "ssid": ssid,
+                    "signal": int(fields[1]) if fields[1].isdigit() else 0,
+                    "security": fields[2] if len(fields) > 2 else "",
+                })
         networks.sort(key=lambda x: x["signal"], reverse=True)
         return {"networks": networks}
-    except Exception as e:
-        return {"networks": [], "error": str(e)}
+    except (OSError, subprocess.SubprocessError) as e:
+        return {"networks": [], "error": f"WLAN-Scan fehlgeschlagen: {e}"}
 
 
 @router.get("")
@@ -177,24 +163,24 @@ def get_network_config():
 def set_network_config(payload: NetworkConfigIn):
     cfg = _read_config()
     updates = payload.model_dump(exclude_unset=True)
+    changed: dict[str, str] = {}
     for k, v in updates.items():
         if k in {"ap_password", "client_password"}:
             if v:
-                cfg[k] = v
+                cfg[k] = changed[k] = v
         elif v is not None:
-            cfg[k] = str(v).lower() if isinstance(v, bool) else str(v)
+            cfg[k] = changed[k] = str(v).lower() if isinstance(v, bool) else str(v)
 
     _validate_network_config(cfg)
 
+    # Nur die tatsächlich geänderten Keys schreiben. Früher wurden ALLE Defaults-Keys aus einem vorher
+    # gelesenen Snapshot zurückgeschrieben und überschrieben so parallele Änderungen.
     with db_cursor() as (_, cur):
-        for k, default in DEFAULTS.items():
-            cur.execute("INSERT OR IGNORE INTO app_state (key, value) VALUES (?, ?)", (k, default))
-            cur.execute("UPDATE app_state SET value=? WHERE key=?", (cfg.get(k, default), k))
+        for k, v in changed.items():
+            cur.execute("INSERT INTO app_state(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (k, v))
 
     ensure_config_defaults()
     return {"ok": True, "config": _to_public(_read_config()), "restart_recommended": True}
-
-
 
 
 def _require_local(request: Request) -> None:
@@ -217,9 +203,27 @@ def get_client_password_secret(request: Request):
     return {"ok": True, "value": cfg.get("client_password", "")}
 
 
+_APPLY_LOCK_PATH = SCRIPT_PATH.parents[1] / "data" / "network_apply.lock"
+
+
 @router.post("/apply")
 async def apply_network_config():
     import asyncio
+    # Prozessübergreifende Sperre (gunicorn startet mehrere Worker): zwei gleichzeitige
+    # "Jetzt anwenden" würden sich beim Umschalten des WLANs gegenseitig stören.
+    lock_file = open(_APPLY_LOCK_PATH, "w")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_file.close()
+        raise HTTPException(status_code=409, detail="Netzwerk-Anwendung läuft bereits.")
+    try:
+        return await _apply_network_config_locked(asyncio)
+    finally:
+        lock_file.close()
+
+
+async def _apply_network_config_locked(asyncio):
     now = datetime.now(timezone.utc).isoformat()
     with db_cursor() as (_, cur):
         cur.execute("INSERT OR REPLACE INTO app_state (key, value) VALUES (?,?)", ("last_network_apply_status", "applying"))
@@ -247,6 +251,7 @@ async def apply_network_config():
                 stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
             except asyncio.TimeoutError:
                 proc.kill()
+                await proc.wait()
                 ok = False
                 status_msg = "error: timeout (60s) — Netzwerk-Script hat nicht geantwortet"
             else:
@@ -254,7 +259,6 @@ async def apply_network_config():
                 err = stderr.decode(errors="replace").strip()
                 if proc.returncode != 0:
                     ok = False
-                    detail = err or out or f"rc={proc.returncode}"
                     # Letzten Fehler aus dem Log extrahieren
                     last_line = (err or out).splitlines()[-1] if (err or out) else f"rc={proc.returncode}"
                     status_msg = f"error: {last_line}"

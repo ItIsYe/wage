@@ -9,6 +9,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Der Dienst wird als "python <ordner>/<dienst>.py" gestartet; sys.path[0] ist dann der Unterordner,
+# nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import seconds_since  # noqa: E402
+
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 BACKLIGHT = Path("/sys/class/backlight/10-0045/brightness")
 POLL_SECONDS = 10.0
@@ -52,9 +58,10 @@ def _is_power_save() -> bool:
         last_run = cfg.get("last_run_received_at", "")
         if not last_run:
             return False
-        last = datetime.fromisoformat(last_run)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60
-        return elapsed >= minutes
+        age = seconds_since(last_run)
+        if age is None:
+            return False
+        return age / 60 >= minutes
     except Exception:
         return False
 
@@ -66,8 +73,8 @@ def _inactivity_minutes() -> float:
         last_run = cfg.get("last_run_received_at", "")
         if not last_run:
             return 0.0
-        last = datetime.fromisoformat(last_run)
-        return (datetime.now(timezone.utc) - last).total_seconds() / 60
+        age = seconds_since(last_run)
+        return 0.0 if age is None else age / 60
     except Exception:
         return 0.0
 
