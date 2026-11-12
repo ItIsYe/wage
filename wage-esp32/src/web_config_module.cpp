@@ -167,7 +167,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>Auto-Neutarierung Toleranz (g)</label><input type='number' step='0.1' min='0' name='retareTolG' value='"); h += String(c.retareTolG,2); h += F("'><small>Min: 0 g. Innerhalb dieser Abweichung wird der Nullpunkt als stabil akzeptiert. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Standby verlassen ab Gewichtsanstieg (g)</label><input type='number' step='0.1' min='0' name='standbyWakeThresholdG' value='"); h += String(c.standbyWakeThresholdG,2); h += F("'><small>Min: 0 g. Ueberschreiten weckt aus Standby in den aktiven Betrieb. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Standby nach (s)</label><input type='number' min='5' max='300' name='standbyAfterS' value='"); h += String(c.standbyAfterMs / 1000U); h += F("'><small>Min: 5, Max: 300. Wirkt nur im Idle ohne Glas. Wenn die Waage bereits im Standby ist, aendert dieser Wert den aktuellen Standby nicht rueckwirkend.</small></fieldset>");
-  h += F("<fieldset><legend>Standby-Pattern fuer Ring 1 + Ring 2</legend>");
+  h += F("<fieldset><legend>Standby-Pattern (je Ring eigenes Twinkle)</legend>");
   h += F("<label>Bildwechsel-Intervall im Standby (ms)</label><input type='number' min='30' max='1000' name='standbyFrameMs' value='"); h += String(c.standbyFrameMs); h += F("'><small>Min: 30, Max: 1000 ms. Kleinere Werte = schnelleres Flackern. Wirkt nach Speichern sofort im Standby.</small>");
   h += F("<label>Zeit bis Musterwechsel: Minimum (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMinMs' value='"); h += String(c.standbyChangeMinMs); h += F("'><small>Min: 100, Max: 5000 ms. Untere Grenze, wann ein neues Twinkle-Muster gewaehlt wird. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Zeit bis Musterwechsel: Maximum (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMaxMs' value='"); h += String(c.standbyChangeMaxMs); h += F("'><small>Min: 100, Max: 5000 ms. Obere Grenze fuer den zufaelligen Musterwechsel (muss >= Minimum sein). Wirkt nach Speichern sofort.</small>");
@@ -180,11 +180,21 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>OLED-Aktualisierungsintervall (ms)</label><input type='number' min='50' max='1000' name='oledTimingRefreshMs' value='"); h += String(c.oledTimingRefreshMs); h += F("'><small>Min: 50, Max: 1000. Kleinere Werte aktualisieren haeufiger.</small>");
   h += F("<label>Waagen-Abfrageintervall (ms)</label><input type='number' min='10' max='500' name='scaleReadIntervalMs' value='"); h += String(c.scaleReadIntervalMs); h += F("'><small>Min: 10, Max: 500 ms. Kleinere Werte lesen die Waage haeufiger (reaktiver, aber mehr Last). Wirkt nach Speichern sofort.</small>");
   h += F("<label>Messproben pro Waagen-Lesung</label><input type='number' min='1' max='5' name='scaleReadSamples' value='"); h += String(c.scaleReadSamples); h += F("'><small>Min: 1, Max: 5. Mehr Proben beruhigen Rauschen, reagieren aber traeger. Wirkt nach Speichern sofort.</small>");
-  h += F("<label>OLED-I2C-Takt (Hz)</label><select name='oledI2cClockHz'><option value='100000'");
-  if (c.oledI2cClockHz == 100000) h += F(" selected"); h += F(">100000</option><option value='200000'");
-  if (c.oledI2cClockHz == 200000) h += F(" selected"); h += F(">200000</option><option value='400000'");
-  if (c.oledI2cClockHz == 400000) h += F(" selected"); h += F(">400000</option><option value='1000000'");
-  if (c.oledI2cClockHz == 1000000) h += F(" selected"); h += F(">1000000</option></select><small>Hoeherer Takt kann die Anzeige schneller machen, braucht aber stabile Verkabelung. Wirkt nach Speichern sofort.</small></fieldset>");
+  h += F("<label>OLED-I2C-Takt (Hz)</label><select name='oledI2cClockHz'>");
+  {
+    static const uint32_t clocks[] = {100000, 200000, 400000, 800000, 1000000};
+    bool currentListed = false;
+    for (uint32_t hz : clocks) if (hz == c.oledI2cClockHz) currentListed = true;
+    // Aktueller Wert fehlt in der Liste (z.B. aus dem Flash): trotzdem anbieten, sonst wuerde das
+    // erste Speichern ihn stillschweigend durch den ersten Listenwert ersetzen.
+    if (!currentListed) { h += F("<option value='"); h += String(c.oledI2cClockHz); h += F("' selected>"); h += String(c.oledI2cClockHz); h += F("</option>"); }
+    for (uint32_t hz : clocks) {
+      h += F("<option value='"); h += String(hz); h += F("'");
+      if (hz == c.oledI2cClockHz) h += F(" selected");
+      h += F(">"); h += String(hz); h += F("</option>");
+    }
+  }
+  h += F("</select><small>Hoeherer Takt macht die Anzeige schneller, braucht aber stabile Verkabelung (SH1106 offiziell bis 400 kHz). Wirkt nach Speichern sofort.</small></fieldset>");
   h += F("<fieldset><legend>OLED-Anzeige</legend>");
   h += F("<label>OLED-Drehung</label><input type='number' min='0' max='3' name='oledRotation' value='"); h += String(c.oledRotation); h += F("'><small>Min: 0, Max: 3 (90-Grad-Schritte). 0 = Standardausrichtung. Wirkt nach Speichern sofort.</small>");
   h += F("<label>OLED-Schriftgroesse / Skalierung</label><input type='number' step='0.1' min='0.1' name='oledScaleValue' value='"); h += String(c.oledScaleValue,2); h += F("'><small>Min: 0.1. Groesserer Wert vergroessert die Anzeigeelemente. Wirkt nach Speichern sofort.</small>");
@@ -607,7 +617,9 @@ void webConfigSetup() {
     String configApPassword = server.arg("configApPassword"); configApPassword.trim(); strncpy(n.configApPassword, configApPassword.c_str(), sizeof(n.configApPassword)-1); n.configApPassword[sizeof(n.configApPassword)-1] = '\0';
     parseBoolArg("externalEnabled", n.externalEnabled);
     String extHost = server.arg("externalHost"); extHost.trim(); strncpy(n.externalHost, extHost.c_str(), sizeof(n.externalHost)-1); n.externalHost[sizeof(n.externalHost)-1] = '\0';
-    uint32_t extPort = n.externalPort; parseUIntArg("externalPort", extPort); n.externalPort = (uint16_t) extPort;
+    uint32_t extPort = n.externalPort; parseUIntArg("externalPort", extPort);
+    if (!errMsg.length() && (extPort == 0 || extPort > 65535)) errMsg = "externalPort muss 1..65535 sein.";
+    if (extPort >= 1 && extPort <= 65535) n.externalPort = (uint16_t) extPort;
     String extPath = server.arg("externalApiPath"); extPath.trim(); strncpy(n.externalApiPath, extPath.c_str(), sizeof(n.externalApiPath)-1); n.externalApiPath[sizeof(n.externalApiPath)-1] = '\0';
     String extKey = server.arg("externalApiKey"); extKey.trim(); strncpy(n.externalApiKey, extKey.c_str(), sizeof(n.externalApiKey)-1); n.externalApiKey[sizeof(n.externalApiKey)-1] = '\0';
 
@@ -627,7 +639,7 @@ void webConfigSetup() {
     if (!errMsg.length() && n.standbyOnMax > PIXEL_COUNT) errMsg = "Standby Anzahl Max darf Ringgroesse nicht ueberschreiten.";
     if (!errMsg.length() && n.standbyOnMin > n.standbyOnMax) errMsg = "Standby Anzahl Min darf nicht groesser als Max sein.";
     if (!errMsg.length() && n.standbyValueMin > n.standbyValueMax) errMsg = "Standby Value Min darf nicht groesser als Max sein.";
-    if (!errMsg.length() && !(n.oledI2cClockHz == 100000 || n.oledI2cClockHz == 200000 || n.oledI2cClockHz == 400000 || n.oledI2cClockHz == 1000000)) errMsg = "oledI2cClockHz muss 100000, 200000, 400000 oder 1000000 sein.";
+    if (!errMsg.length() && !(n.oledI2cClockHz >= 100000 && n.oledI2cClockHz <= 1000000)) errMsg = "oledI2cClockHz muss 100000..1000000 sein.";
     if (!errMsg.length() && (n.objectPresentG <= 0 || n.emptyThresholdG < 0 || n.retareTolG <= 0 || n.standbyWakeThresholdG <= 0 || n.oledScaleValue <= 0)) errMsg = "Gramm- und OLED-Skalierungswerte muessen positiv und sinnvoll sein.";
     if (!errMsg.length() && (n.wifiConnectTimeoutMs < 3000 || n.wifiConnectTimeoutMs > 30000)) {
       errMsg = "WLAN Timeout muss 3000..30000 ms sein.";
@@ -640,7 +652,6 @@ void webConfigSetup() {
     if (!errMsg.length() && apPassLen > 63) errMsg = "Fallback-AP Passwort muss leer oder 8..63 Zeichen lang sein.";
     if (!errMsg.length() && n.wifiStaEnabled && strlen(n.wifiSsid) == 0) errMsg = "WLAN SSID darf bei aktivem STA nicht leer sein.";
     if (!errMsg.length() && n.wifiUseStaticIp) { IPAddress ip; if (!parseIpAddress(n.wifiLocalIp, ip) || !parseIpAddress(n.wifiGateway, ip) || !parseIpAddress(n.wifiSubnet, ip) || !parseIpAddress(n.wifiDns1, ip) || !parseIpAddress(n.wifiDns2, ip)) errMsg = "Ungueltige statische IP-Konfiguration."; }
-    if (!errMsg.length() && n.externalPort == 0) errMsg = "externalPort muss 1..65535 sein.";
     if (!errMsg.length() && n.externalEnabled && strlen(n.externalHost) == 0) errMsg = "externalHost darf bei aktivierter Schnittstelle nicht leer sein.";
     if (!errMsg.length() && n.externalEnabled && strlen(n.externalApiPath) == 0) errMsg = "externalApiPath darf bei aktivierter Schnittstelle nicht leer sein.";
 
@@ -897,7 +908,6 @@ static const char* errToStrLocal(ErrCode e) {
   switch (e) {
     case ErrCode::OK: return "OK";
     case ErrCode::NEGATIVE: return "NEGATIVE";
-    case ErrCode::UNSTABLE: return "UNSTABLE";
   }
   return "UNKNOWN";
 }
