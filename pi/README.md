@@ -61,7 +61,7 @@ Der LED-Service läuft als `root` (Zugriff auf `/dev/mem` für rpi_ws281x).
 | Komponente | Anschluss |
 |---|---|
 | WS2812B Strip | GPIO 18, 4 Streifen: 80+80+82+82 = 324 Pixel |
-| OLED | I2C Bus 1, Adresse 0x3C (SSD1306 oder SH1106) |
+| OLED | I2C Bus 1, Adresse 0x3C (SSD1306 oder SH1106 – Typ unter **Konfiguration → 4) Pi Hardware** wählen) |
 | Touchscreen | DSI oder HDMI, Backlight `/sys/class/backlight/10-0045/brightness` |
 | Touch-Input | evdev `10-0038 generic ft5x06` |
 
@@ -95,7 +95,7 @@ pi/
 | GET | `/api/v1/config/network/scan` | WLAN-Scan |
 | POST | `/api/v1/config/network/apply` | Netzwerk anwenden |
 | GET/POST | `/api/v1/config/leds` | LED-Streifengrößen und -Helligkeiten (inkl. globaler Helligkeit) |
-| GET/POST | `/api/v1/config/hardware` | OLED-Drehung und Energiesparmodus |
+| GET/POST | `/api/v1/config/hardware` | OLED-Drehung und -Typ, Energiesparmodus, Auto-Shutdown |
 | GET/POST | `/api/v1/system/debug-mode` | Debug-Modus |
 | POST | `/api/v1/system/shutdown` | Pi herunterfahren |
 | POST | `/api/v1/system/reboot` | Pi neu starten |
@@ -142,11 +142,13 @@ Helligkeiten konfigurierbar unter **Konfiguration → 3) LED-Konfiguration**:
 
 ## Power-Save & Auto-Shutdown
 
-- Nach X Minuten ohne Lauf → Power-Save: Bildschirm aus, LEDs Sternenhimmel, OLED aus (konfigurierbar, Standard: 1 Minute; 0 = Power-Save aus)
-- Nach **10 Minuten ohne Lauf** (insgesamt, nicht zusätzlich zu X) → Pi fährt herunter (OLED zeigt Meldung)
+„Inaktiv“ heißt: kein Lauf **und** keine Bedienung (Touch, Neustart). Läufe stehen in `last_run_received_at`, Bedienung in `last_activity_at`.
+
+- Nach X Minuten Inaktivität → Power-Save: Bildschirm aus, LEDs Sternenhimmel, OLED aus (konfigurierbar, Standard: 1 Minute; 0 = Power-Save aus)
+- Nach Y Minuten Inaktivität (insgesamt, nicht zusätzlich zu X; Standard **10**, 0 = aus) → Pi fährt herunter (OLED zeigt Meldung). Einstellbar unter **Konfiguration → 4) Pi Hardware**
 - In den ersten Minuten nach dem Start greifen weder Power-Save noch Auto-Shutdown (Schonfrist)
 - Ein Touch auf den Bildschirm startet die Zeit neu und weckt ihn (bis zu 10 s Verzögerung)
-- **Debug-Modus** (Schalter unter **Status**) deaktiviert den Auto-Shutdown; Power-Save bleibt aktiv. „0 = Power-Save aus“ schaltet den Auto-Shutdown **nicht** ab, dafür ist der Debug-Modus da.
+- **Debug-Modus** (Schalter unter **Status**) deaktiviert den Auto-Shutdown ebenfalls; Power-Save bleibt aktiv.
 - Unter **Status** gibt es außerdem Buttons für **Neu starten** und **Herunterfahren**
 - Nach dem Neustart setzt `hw_power_mgmt.sh` alle Flags zurück
 
@@ -191,3 +193,17 @@ Folgende Einträge müssen einmalig gesetzt sein:
 | Kiosk zeigt alte Version | `rm -rf /tmp/wage-kiosk && sudo systemctl restart wage-pi-kiosk` |
 | Netzwerk anwenden schlägt fehl | `sudo journalctl -u NetworkManager -f` und `cat ~/wage/pi/logs/network_apply.log` |
 | Update schlägt fehl | `cat ~/wage/pi/logs/update.log` |
+
+## Tests
+
+```bash
+cd pi
+pip install -r requirements-dev.txt
+python -m pytest -q tests
+```
+
+Die Tests laufen mit eigenem Datenordner (`WAGE_PI_DATA_DIR`) und berühren die echte Datenbank nicht; die GitHub-CI führt sie bei Änderungen unter `pi/` aus. `scripts/test_api.sh` prüft dagegen einen laufenden Pi und räumt seine Testdaten am Ende wieder weg.
+
+## sudo-Rechte
+
+`install.sh` legt die nötigen sudo-Regeln an (u. a. `systemctl`, `install`, `chown`, `rm`, `nmcli`). Ältere Installationen ohne `chown`/`rm`-Regel brechen das Update nicht mehr ab; die betroffenen Schritte werden dann übersprungen und im `update.log` vermerkt.

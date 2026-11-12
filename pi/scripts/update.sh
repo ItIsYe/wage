@@ -10,6 +10,7 @@ LOG="$PI/logs/update.log"
 BACKUP_DIR="$PI/data/backups"
 DB="$PI/data/wage_pi.sqlite3"
 PY="$PI/.venv/bin/python3"
+BRANCH="${WAGE_REPO_BRANCH:-beta}"   # wie backend/api_update.py
 
 mkdir -p "$PI/logs" "$BACKUP_DIR"
 
@@ -41,7 +42,9 @@ log "1/7 DB-Backup..."
 progress "DB-Backup..." 10
 if [ -f "$DB" ]; then
     BACKUP="$BACKUP_DIR/wage_pi_$(date +%Y%m%d_%H%M%S).sqlite3"
-    cp "$DB" "$BACKUP"
+    # SQLite-Backup-API statt cp: im WAL-Modus stehen die neuesten Laeufe evtl. noch in der -wal-Datei
+    # und fehlten in einer einfachen Kopie.
+    "$PY" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()" "$DB" "$BACKUP"
     log "  Backup: $BACKUP"
     # Alte Backups aufräumen (max. 10 behalten)
     ls -t "$BACKUP_DIR"/wage_pi_*.sqlite3 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
@@ -52,9 +55,11 @@ fi
 log "2/7 Code aktualisieren..."
 progress "Code wird aktualisiert..." 20
 cd "$ROOT"
-git fetch origin beta 2>&1 | while read l; do log "  git: $l"; done
-git reset --hard origin/beta 2>&1 | while read l; do log "  git: $l"; done
-sudo chown -R wage:wage "$ROOT"
+git fetch origin "$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
+git reset --hard "origin/$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
+# Nur zur Sicherheit (Dateien, die versehentlich als root angelegt wurden). Ohne passende sudo-Regel
+# darf das das Update nicht abbrechen.
+sudo -n chown -R wage:wage "$ROOT" 2>/dev/null || log "  Hinweis: chown nicht moeglich (sudo-Regel fehlt) - uebersprungen"
 log "  Code aktuell: $(git log --oneline -1)"
 
 # === 3. Python-Pakete ===
@@ -83,7 +88,7 @@ for f in /etc/systemd/system/wage-pi-*.service; do
         log "  Entfernt veralteter Service: $SVC_NAME"
         sudo systemctl stop "$SVC_NAME" 2>/dev/null || true
         sudo systemctl disable "$SVC_NAME" 2>/dev/null || true
-        sudo rm -f "$f"
+        sudo -n rm -f "$f" || log "  Warnung: $f konnte nicht entfernt werden (sudo-Regel fehlt)"
     fi
 done
 sudo systemctl daemon-reload

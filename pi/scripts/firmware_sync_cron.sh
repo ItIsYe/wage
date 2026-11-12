@@ -5,6 +5,10 @@
 set -euo pipefail
 
 API_BASE="http://localhost:8000"
+# Wie backend/api_esp_firmware.py
+GITHUB_OWNER="${WAGE_GITHUB_OWNER:-ItIsYe}"
+GITHUB_REPO="${WAGE_GITHUB_REPO:-wage}"
+RELEASE_TAG="${WAGE_ESP_RELEASE_TAG:-esp32-latest}"
 LOG_FILE="$(cd "$(dirname "$0")/.." && pwd)/logs/firmware_sync.log"
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -27,7 +31,7 @@ fi
 # Neuestes Manifest direkt von GitHub lesen
 LATEST=$(curl -sf --max-time 10 \
   -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/ItIsYe/wage/releases/tags/esp32-latest" 2>/dev/null || true)
+  "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/tags/$RELEASE_TAG" 2>/dev/null || true)
 
 if [[ -z "$LATEST" ]]; then
   log "GitHub nicht erreichbar — überspringe Sync"

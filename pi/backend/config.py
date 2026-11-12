@@ -2,7 +2,8 @@ from pathlib import Path
 import os
 
 PI_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = PI_ROOT / "data"
+# WAGE_PI_DATA_DIR: anderer Datenordner (z.B. fuer Tests); Standard pi/data
+DATA_DIR = Path(os.getenv("WAGE_PI_DATA_DIR", str(PI_ROOT / "data")))
 LOG_DIR = PI_ROOT / "logs"
 DB_PATH = DATA_DIR / "wage_pi.sqlite3"
 APP_VERSION = os.getenv("WAGE_PI_VERSION", "0.1.0")

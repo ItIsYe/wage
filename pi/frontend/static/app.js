@@ -108,7 +108,7 @@ async function loadStatus() {
     const s = await api("/api/v1/status");
     byId("qr-url").textContent = s.pi_url || "-";
     root.innerHTML = `
-      <div class="card ${statusTone(s.scale_online)}"><h3>Waagenstatus</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Kontakt: ${esc(s.last_contact_to_scale || "-")}</div></div>
+      <div class="card ${statusTone(s.scale_online)}"><h3>Waagenstatus</h3><div class="kpi">${s.scale_online ? "Online" : "Offline"}</div><div>Kontakt: ${esc(fmtTs(s.last_contact_to_scale))}</div></div>
       <div class="card ${statusTone(s.api_status)}"><h3>API/DB</h3><div class="kpi">${esc(s.api_status)} / ${esc(s.database_status)}</div></div>
       <div class="card"><h3>Pi</h3><div>IP: ${esc(s.pi_ip)}</div><div>URL: ${esc(s.pi_url)}</div></div>
       <div class="card ${statusTone(s.led_status)}"><h3>LED</h3><div class="kpi">${esc(s.led_status)}</div></div>
@@ -139,7 +139,7 @@ async function loadRuns() {
     table.innerHTML = runs.runs.map((r) => `
       <tr>
         <td>${r.id}</td><td>${r.run_number}</td><td>${r.time_ms}</td><td>${r.start_weight_g}</td>
-        <td><select id="run-person-${r.id}">${personOptions}</select></td>
+        <td><select id="run-person-${r.id}"><option value="">— keine Person —</option>${personOptions}</select></td>
         <td>${esc(fmtTs(r.measured_at || r.received_at))}</td><td>${esc(r.status)}</td>
         <td><input id="run-note-${r.id}" value="${esc(r.note || "")}" maxlength="200"></td>
         <td>
@@ -148,14 +148,14 @@ async function loadRuns() {
           <button class="btn-danger" onclick="deleteRun(${r.id})">Löschen</button>
         </td>
       </tr>`).join("");
-    runs.runs.forEach((r) => { const sel = byId(`run-person-${r.id}`); if (sel) sel.value = String(r.person_id || 1); });
+    runs.runs.forEach((r) => { const sel = byId(`run-person-${r.id}`); if (sel) sel.value = r.person_id ? String(r.person_id) : ""; });
     flash(`${runs.count} Läufe geladen.`, true);
   } catch (e) { flash(`Läufe konnten nicht geladen werden: ${e.message || e}`); }
 }
 
 async function saveRun(id) {
   try {
-    await api(`/api/v1/runs/${id}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({person_id: Number(byId(`run-person-${id}`).value), note: byId(`run-note-${id}`).value})});
+    await api(`/api/v1/runs/${id}`, {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({person_id: byId(`run-person-${id}`).value ? Number(byId(`run-person-${id}`).value) : null, note: byId(`run-note-${id}`).value})});
     flash(`Lauf ${id} aktualisiert.`, true);
   } catch (e) { flash(`Lauf ${id} konnte nicht gespeichert werden: ${e.message}`); }
 }
@@ -351,7 +351,7 @@ async function saveNetworkConfig() {
   const payload = {
     network_mode: mode, ap_ssid: byId('ap-ssid')?.value || '', ap_password: byId('ap-password')?.value || '', ap_ip: byId('ap-ip')?.value || '',
     ap_dhcp_start: byId('ap-dhcp-start')?.value || '', ap_dhcp_end: byId('ap-dhcp-end')?.value || '', client_ssid: byId('client-ssid')?.value || '',
-    client_password: byId('client-password')?.value || '', client_dhcp_enabled: true
+    client_password: byId('client-password')?.value || ''
   };
   try {
     await api('/api/v1/config/network', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
@@ -596,11 +596,7 @@ async function applyPiUpdate() {
   }
 }
 
-function startConfigAutoRefresh() {
-  loadUpdateStatus(true).catch(() => {});
-}
 loadUpdateStatus();
-startConfigAutoRefresh();
 
 
 (function initTouchKeyboard() {
@@ -1018,6 +1014,10 @@ async function loadHardwareConfig() {
     document.getElementById('pi-oled-rotation').value = d.pi_oled_rotation ?? 0;
     const psEl = document.getElementById('power-save-after-minutes');
     if (psEl) psEl.value = d.power_save_after_minutes ?? 1;
+    const drvEl = document.getElementById('pi-oled-driver');
+    if (drvEl) drvEl.value = d.pi_oled_driver || 'ssd1306';
+    const sdEl = document.getElementById('auto-shutdown-after-minutes');
+    if (sdEl) sdEl.value = d.auto_shutdown_after_minutes ?? 10;
   } catch (e) {
     const el = document.getElementById('hardware-msg');
     if (el) { el.textContent = 'Laden fehlgeschlagen: ' + e.message; el.className = 'msg msg-err'; }
@@ -1030,6 +1030,8 @@ async function saveHardwareConfig() {
     const payload = {
       pi_oled_rotation: parseInt(document.getElementById('pi-oled-rotation').value),
       power_save_after_minutes: parseInt(document.getElementById('power-save-after-minutes')?.value ?? '1'),
+      pi_oled_driver: document.getElementById('pi-oled-driver')?.value || 'ssd1306',
+      auto_shutdown_after_minutes: parseInt(document.getElementById('auto-shutdown-after-minutes')?.value ?? '10'),
     };
     const d = await api('/api/v1/config/hardware', {
       method: 'POST',
@@ -1037,7 +1039,7 @@ async function saveHardwareConfig() {
       body: JSON.stringify(payload)
     });
     if (el) { el.textContent = d.message || 'Gespeichert.'; el.className = 'msg msg-ok'; }
-    // Dienste neu starten
+    // OLED-Dienst neu starten (Drehung/Typ werden nur beim Start gelesen)
     await fetch('/api/v1/system/restart-services', { method: 'POST' }).catch(() => {});
   } catch (e) {
     if (el) { el.textContent = 'Fehler: ' + e.message; el.className = 'msg msg-err'; }
@@ -1328,8 +1330,8 @@ async function saveLedConfig() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload),
     });
+    // Kein Dienst-Neustart noetig: der LED-Dienst liest die Werte selbst (~1 s)
     if (el) { el.textContent = d.message || 'Gespeichert.'; el.className = 'msg msg-ok'; }
-    await fetch('/api/v1/system/restart-services', { method: 'POST' }).catch(() => {});
   } catch (e) {
     if (el) { el.textContent = 'Fehler: ' + e.message; el.className = 'msg msg-err'; }
   }

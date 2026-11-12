@@ -110,6 +110,12 @@ def _read_json(path: Path) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _write_meta(manifest: dict, sha256: str) -> None:
+    tmp = FIRMWARE_META_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps({"version": manifest.get("version", ""), "sha256": sha256}))
+    tmp.replace(FIRMWARE_META_PATH)
+
+
 def _record_check(manifest: dict) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with db_cursor() as (_, cur):
@@ -130,10 +136,9 @@ def get_manifest(refresh: bool = False):
     Lädt das Manifest bei Bedarf frisch von GitHub Releases, sonst aus dem lokalen Cache,
     damit nicht bei jedem ESP-Poll ein GitHub-Request nötig ist.
     """
-    if not refresh:
-        cached = _read_json(MANIFEST_CACHE_PATH)
-        if cached is not None:
-            return cached
+    cached = _read_json(MANIFEST_CACHE_PATH)
+    if not refresh and cached is not None:
+        return cached
 
     _ensure_cache_dir()
     release = _fetch_release()
@@ -141,10 +146,19 @@ def get_manifest(refresh: bool = False):
     if not manifest_asset:
         raise HTTPException(status_code=502, detail="manifest.json fehlt im Release")
 
-    _download_asset(manifest_asset, MANIFEST_CACHE_PATH)
-    manifest = _read_json(MANIFEST_CACHE_PATH)
-    if manifest is None:
-        raise HTTPException(status_code=502, detail="Manifest ungültig")
+    # Frisches Manifest nur dann in den Cache legen, wenn dort noch keins liegt. Sonst gehoert das
+    # gecachte Manifest zur gecachten firmware.bin (siehe /sync) und darf nicht ersetzt werden,
+    # sonst passen Version/Pruefsumme und Firmware nicht mehr zusammen.
+    tmp = CACHE_DIR / "manifest.json.check"
+    try:
+        _download_asset(manifest_asset, tmp)
+        manifest = _read_json(tmp)
+        if manifest is None:
+            raise HTTPException(status_code=502, detail="Manifest ungültig")
+        if cached is None:
+            tmp.replace(MANIFEST_CACHE_PATH)
+    finally:
+        tmp.unlink(missing_ok=True)
 
     _record_check(manifest)
     return manifest
@@ -183,12 +197,20 @@ def sync_firmware():
         new_firmware = CACHE_DIR / "firmware.bin.new"
         try:
             _download_asset(manifest_asset, new_manifest)
-            _download_asset(firmware_asset, new_firmware)
             manifest = _read_json(new_manifest)
             if manifest is None:
                 raise HTTPException(status_code=502, detail="Manifest ungültig")
-            sha256 = _sha256(new_firmware)
             expected = str(manifest.get("sha256", "")).strip().lower()
+            meta = _read_json(FIRMWARE_META_PATH) or {}
+            if expected and meta.get("sha256") == expected and FIRMWARE_CACHE_PATH.exists() and _sha256(FIRMWARE_CACHE_PATH) == expected:
+                # Diese Firmware liegt schon im Cache (z.B. Oberflaeche und ESP synchronisieren nacheinander):
+                # nicht erneut von GitHub laden.
+                new_manifest.replace(MANIFEST_CACHE_PATH)
+                _write_meta(manifest, expected)
+                _record_check(manifest)
+                return {"ok": True, "manifest": manifest, "sha256": expected, "cached": True}
+            _download_asset(firmware_asset, new_firmware)
+            sha256 = _sha256(new_firmware)
             if expected and expected != sha256:
                 raise HTTPException(status_code=502, detail="SHA256 der Firmware passt nicht zum Manifest (Download beschädigt?)")
             # Erst nach erfolgreicher Prüfung austauschen: Firmware und Manifest bleiben zusammenpassend.
@@ -198,7 +220,7 @@ def sync_firmware():
             new_manifest.unlink(missing_ok=True)
             new_firmware.unlink(missing_ok=True)
 
-        FIRMWARE_META_PATH.write_text(json.dumps({"version": manifest.get("version", ""), "sha256": sha256}))
+        _write_meta(manifest, sha256)
         _record_check(manifest)
         return {"ok": True, "manifest": manifest, "sha256": sha256}
 

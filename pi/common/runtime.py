@@ -37,6 +37,12 @@ def seconds_since(value: str | None) -> float | None:
     return (datetime.now(timezone.utc) - parsed).total_seconds()
 
 
+def seconds_since_latest(*values: str | None) -> float | None:
+    """Sekunden seit dem juengsten der Zeitstempel (z.B. letzter Lauf / letzte Bedienung); None, wenn keiner gilt."""
+    ages = [a for a in (seconds_since(v) for v in values) if a is not None]
+    return min(ages) if ages else None
+
+
 def get_pi_ip() -> str:
     """Erste nicht-lokale IPv4-Adresse des Pi (nmcli, sonst hostname -I). 30 s gecacht."""
     global _ip_cache, _ip_cache_at

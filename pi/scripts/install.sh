@@ -37,7 +37,8 @@ echo "wage ALL=(ALL) NOPASSWD: /sbin/shutdown, /sbin/reboot" | sudo tee /etc/sud
 sudo chmod 440 /etc/sudoers.d/wage-shutdown
 
 # systemctl und install für Update-Script
-echo "wage ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/sbin/systemctl" | sudo tee /etc/sudoers.d/wage-update
+# chown/rm: update.sh (Rechte reparieren, veraltete Service-Dateien entfernen)
+echo "wage ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/sbin/systemctl, /usr/bin/chown, /usr/bin/rm, /usr/bin/nmcli" | sudo tee /etc/sudoers.d/wage-update
 sudo chmod 440 /etc/sudoers.d/wage-update
 
 # network_apply.sh für Netzwerk-Konfiguration
