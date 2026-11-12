@@ -140,7 +140,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   String h;
   h.reserve(11000);
   h += F("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  h += F("<title>Waage Config</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:12px auto;padding:0 10px;}fieldset{margin:12px 0;padding:10px;}label{display:block;margin:7px 0 3px;}input[type=text],input[type=number],select{width:100%;padding:8px;box-sizing:border-box;}small{color:#666;}button{padding:10px 14px;margin-top:10px;}.meta p{margin:4px 0;}.err{background:#ffdede;border:1px solid #cc3a3a;padding:8px;margin:10px 0;color:#7a0000;}</style></head><body>");
+  h += F("<title>Waage Config</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:12px auto;padding:0 10px;}fieldset{margin:12px 0;padding:10px;}label{display:block;margin:7px 0 3px;}input:not([type=checkbox]):not([type=radio]),select{width:100%;padding:10px;font-size:16px;min-height:44px;box-sizing:border-box;}input[type=checkbox]{width:24px;height:24px;vertical-align:middle;margin-right:8px;}small{color:#666;}button{padding:12px 18px;font-size:16px;min-height:44px;margin-top:10px;}.meta p{margin:4px 0;}.err{background:#ffdede;border:1px solid #cc3a3a;padding:8px;margin:10px 0;color:#7a0000;}</style></head><body>");
   h += F("<h2>Waage Config</h2><div class='meta'>");
   h += F("<p><b>IP:</b> "); h += htmlEscape(networkInfo); h += F("</p>");
   h += F("<p><b>Modus:</b> "); h += (wifiApMode ? F("Fallback-AP") : F("WLAN")); h += F("</p>");
@@ -261,7 +261,7 @@ static String renderBusyPage(const String& hint = "") {
   String h;
   h.reserve(1200);
   h += F("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  h += F("<title>Waage aktiv</title><style>body{font-family:Arial,sans-serif;max-width:560px;margin:12px auto;padding:0 10px;}button{padding:10px 14px;margin-top:10px;}p{margin:8px 0;}.hint{background:#fff3cd;border:1px solid #d6b656;padding:8px;color:#6b5200;}</style></head><body>");
+  h += F("<title>Waage aktiv</title><style>body{font-family:Arial,sans-serif;max-width:560px;margin:12px auto;padding:0 10px;}button{padding:12px 18px;font-size:16px;min-height:44px;margin-top:10px;}p{margin:8px 0;}.hint{background:#fff3cd;border:1px solid #d6b656;padding:8px;color:#6b5200;}</style></head><body>");
   h += F("<h2>Waage aktiv</h2>");
   h += F("<p><b>State:</b> "); h += stateToStr(state); h += F("</p>");
   h += F("<p>Config in Idle oder Standby bearbeiten</p>");
