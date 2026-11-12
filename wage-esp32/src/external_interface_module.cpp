@@ -276,8 +276,6 @@ void externalInterfaceInit(const RuntimeConfig& cfg, const char* fwVersion, uint
   currentBootId = bootId;
   restoreQueue();
   externalInterfaceUpdateConfig(cfg);
-  strncpy(deviceId, cfg.deviceId, sizeof(deviceId) - 1);
-  deviceId[sizeof(deviceId) - 1] = '\0';
   if (fwVersion != nullptr) {
     strncpy(firmwareVersion, fwVersion, sizeof(firmwareVersion) - 1);
     firmwareVersion[sizeof(firmwareVersion) - 1] = '\0';
@@ -296,9 +294,14 @@ void externalInterfaceUpdateConfig(const RuntimeConfig& cfg) {
   transportCfg.apiPath[sizeof(transportCfg.apiPath) - 1] = '\0';
   strncpy(transportCfg.apiKey, cfg.externalApiKey, sizeof(transportCfg.apiKey) - 1);
   transportCfg.apiKey[sizeof(transportCfg.apiKey) - 1] = '\0';
+  // Geraete-Name fuer den Heartbeat; wirkt ohne Neustart
+  strncpy(deviceId, cfg.deviceId, sizeof(deviceId) - 1);
+  deviceId[sizeof(deviceId) - 1] = '\0';
 }
 
 bool externalInterfaceEnqueueRun(const RunDataSnapshot& snapshot) {
+  // Schnittstelle aus: kein Ziel, Lauf wird nicht gepuffert
+  if (!transportCfg.enabled) return false;
   bool droppedOldest = false;
   if (queueCount >= EXTERNAL_QUEUE_MAX) {
     queueHead = (queueHead + 1) % EXTERNAL_QUEUE_MAX;
@@ -315,11 +318,8 @@ bool externalInterfaceEnqueueRun(const RunDataSnapshot& snapshot) {
 
 void externalInterfaceService(uint32_t now, bool safeToRetry, bool quietHeartbeat) {
   if (!transportCfg.enabled) {
-    if (queueCount != 0) {
-      queueHead = 0;
-      queueCount = 0;
-      persistQueue();
-    }
+    // Bereits gepufferte Laeufe bleiben erhalten und werden nach dem Wiedereinschalten gesendet
+    // (frueher wurden sie beim Ausschalten kommentarlos geloescht).
     setStatus("disabled");
     setSendError(false);
     return;
