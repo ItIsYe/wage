@@ -6,7 +6,6 @@ Zufällige Pixel leuchten in zufälligen Farben auf und verblassen wieder —
 ruhiger Sternenhimmel-Effekt für den Power-Save Modus.
 """
 import random
-import math
 
 
 class TwinkleState:

@@ -1,8 +1,13 @@
 import os
 import sqlite3
 import time
-from datetime import datetime, timezone
 from pathlib import Path
+
+# Der Dienst wird als "python <ordner>/<dienst>.py" gestartet; sys.path[0] ist dann der Unterordner,
+# nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import seconds_since  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 POLL_SECONDS = 1.0           # DB-Status alle 1s abfragen
@@ -85,18 +90,13 @@ def _is_power_save() -> bool:
             # Noch nie ein Lauf empfangen -> Service-Start als Referenz nehmen
             elapsed = (time.time() - _service_start) / 60
             return elapsed >= minutes
-        from datetime import datetime, timezone
-        last = datetime.fromisoformat(last_run)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60
-        return elapsed >= minutes
+        age = seconds_since(last_run)
+        if age is None:
+            return False
+        return age / 60 >= minutes
     except Exception:
         return False
 
-# Der Dienst wird als "python leds/led_service.py" gestartet; sys.path[0] ist dann
-# der Unterordner, nicht pi/. Ohne das Elternverzeichnis schlug der Import immer fehl
-# und es galt der Fallback von 45 s statt der 90 s des Backends.
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
 except Exception:
@@ -141,13 +141,8 @@ def get_status() -> dict:
 
 
 def is_online(last_seen: str | None) -> bool:
-    if not last_seen:
-        return False
-    try:
-        seen = datetime.fromisoformat(last_seen)
-        return (datetime.now(timezone.utc) - seen).total_seconds() <= OFFLINE_THRESHOLD_SECONDS
-    except Exception:
-        return False
+    age = seconds_since(last_seen)
+    return age is not None and age <= OFFLINE_THRESHOLD_SECONDS
 
 
 # Aktuell am Strip eingestellte Helligkeit (rpi_ws281x skaliert beim Senden; ein Wechsel

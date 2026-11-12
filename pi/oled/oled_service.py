@@ -1,8 +1,13 @@
 import os
 import sqlite3
 import time
-from datetime import datetime, timezone
 from pathlib import Path
+
+# Der Dienst wird als "python <ordner>/<dienst>.py" gestartet; sys.path[0] ist dann der Unterordner,
+# nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from common.runtime import get_pi_ip, seconds_since  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 OLED_ADDRESS = int(os.getenv("WAGE_PI_OLED_ADDRESS", "0x3c"), 16)
@@ -35,18 +40,13 @@ def _is_power_save() -> bool:
         last_run = hw.get("last_run_received_at", "")
         if not last_run:
             return False  # Noch kein Lauf -> kein Power-Save
-        from datetime import datetime, timezone
-        last = datetime.fromisoformat(last_run)
-        elapsed = (datetime.now(timezone.utc) - last).total_seconds() / 60
-        return elapsed >= minutes
+        age = seconds_since(last_run)
+        if age is None:
+            return False
+        return age / 60 >= minutes
     except Exception:
         return False
 
-# Der Dienst wird als "python leds/led_service.py" gestartet; sys.path[0] ist dann
-# der Unterordner, nicht pi/. Ohne das Elternverzeichnis schlug der Import immer fehl
-# und es galt der Fallback von 45 s statt der 90 s des Backends.
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
 except Exception:
@@ -65,26 +65,6 @@ def set_status(v: str):
         pass
 
 
-def get_ip() -> str:
-    try:
-        import subprocess
-        out = subprocess.check_output(
-            ["nmcli", "-t", "-f", "IP4.ADDRESS", "device", "show"],
-            text=True, timeout=3
-        )
-        for line in out.splitlines():
-            if line.startswith("IP4.ADDRESS"):
-                addr = line.split(":")[-1].split("/")[0].strip()
-                if addr and not addr.startswith("127."):
-                    return addr
-    except Exception:
-        pass
-    try:
-        return os.popen("hostname -I").read().strip().split()[0]
-    except Exception:
-        return "127.0.0.1"
-
-
 def get_runtime_status() -> dict:
     with sqlite3.connect(DB) as c:
         c.row_factory = sqlite3.Row
@@ -92,14 +72,10 @@ def get_runtime_status() -> dict:
         active = int(app.get("active_person_id", "1"))
         person = c.execute("SELECT id,name FROM persons WHERE id=?", (active,)).fetchone()
         dev = c.execute("SELECT last_seen_at FROM devices ORDER BY last_seen_at DESC LIMIT 1").fetchone()
-    ip = get_ip()
+    ip = get_pi_ip()
     last_seen = dev["last_seen_at"] if dev else None
-    online = False
-    if last_seen:
-        try:
-            online = (datetime.now(timezone.utc) - datetime.fromisoformat(last_seen)).total_seconds() <= OFFLINE_THRESHOLD_SECONDS
-        except Exception:
-            online = False
+    age = seconds_since(last_seen)
+    online = age is not None and age <= OFFLINE_THRESHOLD_SECONDS
     return {
         "url": f"http://{ip}:8000",
         "ip": ip,
