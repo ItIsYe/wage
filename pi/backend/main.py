@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 import sqlite3
 
 try:
@@ -27,6 +26,7 @@ from .api_esp_proxy import router as esp_proxy_router
 from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
 from .database import get_connection, init_db, db_cursor
+from .schemas import DebugModeIn
 
 
 @asynccontextmanager
@@ -119,7 +119,7 @@ async def page_ota(request: Request):
 
 
 @app.post("/api/v1/system/restart-services")
-async def restart_services():
+def restart_services():
     import subprocess
     try:
         subprocess.Popen(
@@ -139,9 +139,8 @@ def get_debug_mode():
 
 
 @app.post("/api/v1/system/debug-mode")
-async def set_debug_mode(request: Request):
-    payload = await request.json()
-    val = "1" if payload.get("enabled") else "0"
+def set_debug_mode(payload: DebugModeIn):
+    val = "1" if payload.enabled else "0"
     with db_cursor() as (_, cur):
         cur.execute(
             "INSERT INTO app_state(key,value) VALUES('debug_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -151,7 +150,7 @@ async def set_debug_mode(request: Request):
 
 
 @app.post("/api/v1/system/shutdown")
-async def system_shutdown():
+def system_shutdown():
     """Pi herunterfahren."""
     import subprocess
     try:
@@ -167,7 +166,7 @@ async def system_shutdown():
 
 
 @app.post("/api/v1/system/reboot")
-async def system_reboot():
+def system_reboot():
     """Pi neu starten."""
     import subprocess
     try:

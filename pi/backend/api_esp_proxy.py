@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 
 import httpx
 from fastapi import APIRouter, Request
@@ -85,7 +86,7 @@ async def _proxy(path: str, request: Request):
                 url=url,
                 headers={
                     k: v for k, v in request.headers.items()
-                    if k.lower() not in ("host", "content-length")
+                    if k.lower() not in ("host", "content-length", "cookie", "accept-encoding", "connection")
                 },
                 content=await request.body(),
                 follow_redirects=True,
@@ -94,8 +95,8 @@ async def _proxy(path: str, request: Request):
         return _error_page(f"Verbindung zu {esp_ip} fehlgeschlagen.")
     except httpx.TimeoutException:
         return _error_page(f"Timeout beim Verbinden mit {esp_ip}.", status_code=504)
-    except Exception as e:
-        return _error_page(f"Unbekannter Fehler: {e}")
+    except httpx.HTTPError as e:
+        return _error_page(f"Fehler bei der Verbindung zur Waage: {e}")
 
     content_type = esp_response.headers.get("content-type", "text/html; charset=utf-8")
     content = esp_response.content
@@ -105,10 +106,8 @@ async def _proxy(path: str, request: Request):
     # HTML-Inhalte anpassen
     if "text/html" in content_type:
         # Relative Links und Actions über den Proxy leiten
-        content = content.replace(b"action='/", b"action='/esp-proxy/")
-        content = content.replace(b'action="/', b'action="/esp-proxy/')
-        content = content.replace(b"href='/", b"href='/esp-proxy/")
-        content = content.replace(b'href="/', b'href="/esp-proxy/')
+        # (nicht "//host/..." = protokollrelative URLs)
+        content = re.sub(rb"""(action|href)=(['"])/(?!/)""", rb"\1=\2/esp-proxy/", content)
         # /ota Link auf Pi-OTA-Seite umleiten
         content = content.replace(b"href='/esp-proxy/ota'", b"href='/ota'")
         content = content.replace(b'href="/esp-proxy/ota"', b'href="/ota"')
@@ -124,8 +123,8 @@ async def _proxy(path: str, request: Request):
             b"<a href='/ota' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;'>OTA-Update</a>"
             b"</nav></header>"
         )
-        content = content.replace(b"<body>", b"<body>" + nav)
-        content = content.replace(b"<body ", b"<body>" + nav + b"<div ")
+        # Navigation hinter das (erste) <body ...> einfügen, Attribute des Tags bleiben erhalten
+        content = re.sub(rb"(<body[^>]*>)", lambda m: m.group(1) + nav, content, count=1)
 
     return Response(
         content=content,
