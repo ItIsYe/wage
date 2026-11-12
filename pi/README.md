@@ -52,7 +52,7 @@ sudo systemctl restart wage-pi-backend wage-pi-leds wage-pi-oled wage-pi-screen-
 
 ## Update-Umfang
 
-Die GUI erkennt Änderungen in `pi/backend`, `pi/frontend`, `pi/oled`, `pi/leds`, `pi/screen`, `pi/scripts`, `pi/systemd` sowie `requirements.txt` und `README.md` im `pi/`-Ordner.
+Die GUI erkennt Änderungen in `pi/backend`, `pi/common`, `pi/frontend`, `pi/oled`, `pi/leds`, `pi/screen`, `pi/scripts`, `pi/systemd` sowie `requirements.txt` und `README.md` im `pi/`-Ordner.
 Änderungen außerhalb davon (z. B. nur `wage-esp32/`) lösen bewusst kein Pi-Update aus.
 Der LED-Service läuft als `root` (Zugriff auf `/dev/mem` für rpi_ws281x).
 
@@ -70,6 +70,7 @@ Der LED-Service läuft als `root` (Zugriff auf `/dev/mem` für rpi_ws281x).
 ```
 pi/
 ├── backend/        FastAPI, API-Endpoints, DB
+├── common/         gemeinsame Hilfsfunktionen (IP, Zeitstempel) für Backend und Dienste
 ├── frontend/       Jinja2-Templates + CSS/JS
 ├── leds/           LED-Service + Twinkle-Pattern
 ├── oled/           OLED-Service
@@ -87,18 +88,20 @@ pi/
 | GET | `/api/v1/health` | Health-Check |
 | POST | `/api/v1/runs` | Lauf empfangen |
 | GET | `/api/v1/runs` | Läufe abrufen |
-| GET | `/api/v1/runs/export/csv` | CSV-Export |
+| GET | `/api/v1/runs/export/csv` | CSV-Export (UTF-8 mit BOM, Formeln entschärft, mit `boot_id` und `measured_at`) |
 | GET | `/api/v1/status` | System-Status |
 | GET | `/api/v1/status/stream` | SSE Live-Stream |
 | GET/POST | `/api/v1/config/network` | Netzwerk-Konfiguration |
 | GET | `/api/v1/config/network/scan` | WLAN-Scan |
 | POST | `/api/v1/config/network/apply` | Netzwerk anwenden |
-| GET/POST | `/api/v1/config/leds` | LED-Helligkeiten |
-| GET/POST | `/api/v1/config/hardware` | Pi Hardware |
+| GET/POST | `/api/v1/config/leds` | LED-Streifengrößen und -Helligkeiten (inkl. globaler Helligkeit) |
+| GET/POST | `/api/v1/config/hardware` | OLED-Drehung und Energiesparmodus |
 | GET/POST | `/api/v1/system/debug-mode` | Debug-Modus |
 | POST | `/api/v1/system/shutdown` | Pi herunterfahren |
 | POST | `/api/v1/system/reboot` | Pi neu starten |
 | POST | `/api/v1/system/update/apply` | Pi-Code aktualisieren |
+| GET | `/api/v1/esp-firmware/cache` | Welche ESP-Firmware liegt im Pi-Cache? |
+| POST | `/api/v1/esp-firmware/sync` | ESP-Firmware von GitHub laden (SHA256 gegen das Manifest geprüft) |
 
 Swagger UI: `http://192.168.1.112:8000/docs`
 
@@ -147,6 +150,14 @@ Helligkeiten konfigurierbar unter **Konfiguration → 3) LED-Konfiguration**:
 - Unter **Status** gibt es außerdem Buttons für **Neu starten** und **Herunterfahren**
 - Nach dem Neustart setzt `hw_power_mgmt.sh` alle Flags zurück
 
+## Zuordnung der Person
+
+Läufe tragen `age_ms` (so lange lag die Messung beim Absenden zurück; die Waage puffert Läufe, wenn der Pi offline ist). Der Pi speichert den Messzeitpunkt (`measured_at`) und ordnet den Lauf der Person zu, die **zu diesem Zeitpunkt** aktiv war (Tabelle `person_activations`), nicht der beim Eintreffen aktiven. Läufe ohne `age_ms` bekommen die aktuell aktive Person.
+
+## Zeitzone
+
+Zeiten werden in UTC gespeichert. Statistik („Heute“, Tagesverlauf) und Oberfläche verwenden die lokale Zeit; die Zeitzone der Statistik ist `Europe/Berlin` und lässt sich mit der Umgebungsvariable `WAGE_PI_TIMEZONE` ändern.
+
 ## Datenbank
 
 SQLite: `pi/data/wage_pi.sqlite3`
@@ -156,6 +167,7 @@ Tabellen:
 - `devices` — bekannte ESP32-Geräte
 - `persons` — Personen
 - `app_state` — Konfiguration und Status (Key/Value)
+- `person_activations` — wann welche Person aktiv gesetzt wurde
 
 Backups werden vor jedem Update automatisch erstellt (max. 10, in `pi/data/backups/`).
 
