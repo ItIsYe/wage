@@ -193,7 +193,7 @@ static void twinkleRender() {
 
 static void twinkleUpdate(uint32_t now) {
   // Sterne ein-/ausschalten um die Ziel-Anzahl zu erreichen
-  if (now >= twinkleChangeAtMs) {
+  if ((int32_t)(now - twinkleChangeAtMs) >= 0) {  // ueberlaufsicher (millis nach ~49 Tagen)
     const uint32_t changeMaxMs = activeConfig.standbyChangeMaxMs;
     const uint32_t changeMinMs = clampRange(activeConfig.standbyChangeMinMs, changeMaxMs);
     const uint8_t onMax = activeConfig.standbyOnMax;
@@ -229,7 +229,7 @@ static void twinkleUpdate(uint32_t now) {
   }
 
   // Sanftes Farb-/Helligkeitsdriften der aktiven Sterne
-  if (now >= twinkleFrameAtMs) {
+  if ((int32_t)(now - twinkleFrameAtMs) >= 0) {
     const uint8_t valueMax = activeConfig.standbyValueMax;
     const uint8_t valueMin = (activeConfig.standbyValueMin > valueMax) ? valueMax : activeConfig.standbyValueMin;
     twinkleFrameAtMs = now + sanitizeFrameMs(activeConfig.standbyFrameMs);
@@ -255,7 +255,7 @@ static void twinkleUpdate(uint32_t now) {
 void ring1DiagnosticStart() {
   diagActive = true;
   diagPixel = 0;
-  diagNextStepMs = 0;
+  diagNextStepMs = millis();  // sofort starten (ueberlaufsicherer Vergleich)
   Serial.println("[RING1 DIAG] Start - jeder Pixel einzeln, ~400ms Abstand");
 }
 
@@ -266,11 +266,9 @@ void ring1DiagnosticStop() {
   Serial.println("[RING1 DIAG] Ende");
 }
 
-bool ring1DiagnosticActive() { return diagActive; }
-
 bool ring1DiagnosticService(uint32_t now) {
   if (!diagActive || !ready()) return false;
-  if (now < diagNextStepMs) return false;
+  if ((int32_t)(now - diagNextStepMs) < 0) return false;
 
   diagNextStepMs = now + DIAG_STEP_MS;
   clearAll();

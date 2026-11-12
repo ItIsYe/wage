@@ -68,6 +68,14 @@ void test_longest_event_id_is_not_truncated() {
   TEST_ASSERT_EQUAL_STRING(expected, s.eventId);
 }
 
+void test_new_device_id_used_for_next_run() {
+  runModuleInit(3, "waage-01");
+  runModuleSetDeviceId("waage-kueche");
+  const RunDataSnapshot s = runModuleBuildSnapshot(1000, 500);
+  TEST_ASSERT_EQUAL_STRING("waage-kueche", s.deviceId);
+  TEST_ASSERT_EQUAL_STRING("waage-kueche-3-1", s.eventId);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_thresholds_from_reference);
@@ -76,5 +84,6 @@ int main() {
   RUN_TEST(test_snapshot_contains_measurement_data);
   RUN_TEST(test_run_number_increments);
   RUN_TEST(test_longest_event_id_is_not_truncated);
+  RUN_TEST(test_new_device_id_used_for_next_run);
   return UNITY_END();
 }

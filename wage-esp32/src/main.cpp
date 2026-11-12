@@ -29,10 +29,6 @@
 Adafruit_SH1106G display(SCREEN_W, SCREEN_H, &Wire, -1);
 
 /* =========================================================
-   EXTERNAL INTERFACE
-   ========================================================= */
-
-/* =========================================================
    ERROR CODES
    ========================================================= */
 
@@ -57,7 +53,7 @@ RuntimeConfig activeConfig;
    RUNTIME VARIABLES
    ========================================================= */
 
-// moving average buffer
+// OLED-Schriftskalierung (aus der Konfiguration)
 float oledScale = 1.5f;
 
 // object tracking
@@ -82,6 +78,11 @@ static uint32_t lastShownExternalErrorEvent = 0;
 
 static bool oledDebugLedsCleared = false;
 
+// Hinweis "Sendefehler" bleibt so lange stehen; "Warte auf Glas" wird solange nicht neu gezeichnet
+static constexpr uint32_t EXTERNAL_HINT_SHOW_MS = 4000;
+static bool externalHintActive = false;
+static uint32_t externalHintUntilMs = 0;
+
 
 /* =========================================================
    FORWARD DECLARATIONS
@@ -89,7 +90,6 @@ static bool oledDebugLedsCleared = false;
 static void setState(State s);
 // Ist der Zeitpunkt t erreicht? Ueberlaufsicher (millis() laeuft nach ~49 Tagen ueber).
 static inline bool timeReached(uint32_t now, uint32_t t) { return (int32_t)(now - t) >= 0; }
-static const char* stateToStr(State s);
 static bool shouldCheckNegativeError(State s);
 static void oledService(uint32_t now);
 static void stateMachineService(uint32_t now);
@@ -162,7 +162,7 @@ static void setError(ErrCode e) {
   recoverUntilMs = millis() + RECOVER_WAIT_MS;
 }
 
-static const char* stateToStr(State s) {
+const char* stateToStr(State s) {
   switch (s) {
     case State::BOOT_MSG: return "BOOT_MSG";
     case State::BOOT_TARE: return "BOOT_TARE";
@@ -197,6 +197,7 @@ static void setState(State s) {
     Serial.print(" -> ");
     Serial.println(stateToStr(s));
   }
+  if (state != s) externalHintActive = false;  // Hinweis gilt nur im aktuellen Zustand
   state = s;
   ledSetState(s);
   lastActionMs = millis();
@@ -216,7 +217,7 @@ static void oledService(uint32_t now) {
 void setup() {
   Serial.begin(115200);
   delay(150);
-  Serial.println("[BOOT] WAGE ESP32 beta led-module-state build");
+  Serial.printf("[BOOT] WAGE ESP32 Firmware %s\n", FIRMWARE_VERSION);
   Serial.printf("[BOOT] ring1Pin=%u ring2Pin=%u ring2Enabled=%u ring2BootTest=%u ring2ForceTest=%u masterDebug=%u\n",
                 (unsigned)LED_STRIP_PIN,
                 (unsigned)RING2_PIN,
@@ -247,6 +248,8 @@ void setup() {
   runModuleInit(bootId, activeConfig.deviceId);
 
   ledsInit();
+  // Gespeicherte Ring-1-Diagnose nach einem Neustart fortsetzen (Einstellung und Zustand stimmen ueberein)
+  if (activeConfig.ring1DiagnosticMode) ledRing1DiagnosticStart();
   oledInit();
   scaleInit();
 
@@ -346,7 +349,8 @@ static void stateMachineService(uint32_t now) {
       }
 
       ledsSetMode(LedMode::OK_ALT_GB);
-      showStatus("Warte auf Glas", "...");
+      if (externalHintActive && timeReached(now, externalHintUntilMs)) externalHintActive = false;
+      if (!externalHintActive) showStatus("Warte auf Glas", "...");
 
       if (haveRead && isObjectPresentStable(w_filt, isStable)) {
         objectPresent = true;
@@ -373,7 +377,6 @@ static void stateMachineService(uint32_t now) {
       }
 
       if (haveRead && (now - detectAtMs >= READY_AFTER_DETECT_MS)) {
-        runModuleSetReference(max(runModuleGetReference(), w_filt), activeConfig);
         showStatus("Bereit fuer", "Zeitmessung");
         dropSinceMs = 0;
         stopCandidateSinceMs = 0;
@@ -543,6 +546,8 @@ static void applyPendingConfigIfAllowed(){
   display.setRotation(activeConfig.oledRotation);
   ledApplyBrightnessForCurrentMode();
   ledMarkAllDirty();
+  // Geraete-Name wirkt sofort fuer neue Laeufe (Event-ID) und den Heartbeat
+  runModuleSetDeviceId(activeConfig.deviceId);
   webConfigSaveToPrefs(activeConfig);
   if (MASTER_DEBUG_LOG) {
     Serial.printf("[CFG] Ring2 en=%u dbg=%u b=%u sb=%u\n",
@@ -571,6 +576,16 @@ static void handleResetRequestIfAllowed(uint32_t now){
     webSetResetStatusMsg("Reset wartet auf sicheren Zustand.");
     return;
   }
+  // Die Nullung erfolgt sofort. Steht noch ein Glas auf der Waage, waere der Nullpunkt falsch
+  // (frueher moeglich in "Bitte leeren" und im Fehlerzustand).
+  if (!isStable && state != State::IDLE_WAIT_GLASS && state != State::STANDBY) {
+    webSetResetStatusMsg("Reset wartet auf ruhige Waage.");
+    return;
+  }
+  if (absFilt >= activeConfig.emptyThresholdG) {
+    webSetResetStatusMsg("Reset wartet: bitte Waage leeren.");
+    return;
+  }
 
   err = ErrCode::OK;
   resetRuntimeAfterTare();
@@ -593,12 +608,14 @@ void loop() {
     ledClear();
     ledShow();
     oledDebugLedsCleared = true;
-  } else if (!oledDebugActive) {
+  } else if (!oledDebugActive && oledDebugLedsCleared) {
     oledDebugLedsCleared = false;
+    ledMarkAllDirty();  // normales Muster wieder zeichnen
   }
 
   const uint32_t ledStartUs = PERFORMANCE_DEBUG ? micros() : 0;
-  ledService(now);
+  // OLED-Pixel-Debug: LEDs bleiben aus (vorher liefen die Animationen nach dem Loeschen weiter)
+  if (!oledDebugActive) ledService(now);
   const uint32_t ledDurUs = PERFORMANCE_DEBUG ? (micros() - ledStartUs) : 0;
 
   const uint32_t scaleStartUs = PERFORMANCE_DEBUG ? micros() : 0;
@@ -654,6 +671,8 @@ void loop() {
     snprintf(queueLine, sizeof(queueLine), "Queue: %u", (unsigned)externalInterfaceQueueDepth());
     showStatus("Sendefehler", queueLine);
     lastShownExternalErrorEvent = currentErrorEvent;
+    externalHintActive = true;
+    externalHintUntilMs = now + EXTERNAL_HINT_SHOW_MS;
   }
 
   const uint32_t webStartUs = PERFORMANCE_DEBUG ? micros() : 0;

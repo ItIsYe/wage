@@ -6,6 +6,7 @@
 
 void externalInterfaceInit(const RuntimeConfig& cfg, const char* firmwareVersion, uint32_t bootId);
 void externalInterfaceUpdateConfig(const RuntimeConfig& cfg);
+// false: Schnittstelle ausgeschaltet, Lauf wird nicht gepuffert
 bool externalInterfaceEnqueueRun(const RunDataSnapshot& snapshot);
 // safeToRetry: Heartbeat und Senden der Queue sind erlaubt (Waage im Leerlauf).
 // quietHeartbeat: Waage wartet mit bereitstehendem Glas und es deutet nichts auf einen

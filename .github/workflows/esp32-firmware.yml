@@ -28,6 +28,10 @@ jobs:
       - name: Install PlatformIO
         run: pip install -U platformio
 
+      - name: Host-Tests (ohne Hardware)
+        working-directory: wage-esp32
+        run: pio test -e native
+
       - name: Build firmware
         working-directory: wage-esp32
         run: |

@@ -6,6 +6,9 @@
 // Initialisiert das Run-Modul mit Boot-ID und Device-ID.
 void runModuleInit(uint32_t bootId, const char* deviceId);
 
+// Neuer Geraete-Name (Web-Konfiguration). Gilt ab dem naechsten Lauf.
+void runModuleSetDeviceId(const char* deviceId);
+
 // Setzt die Referenzgewicht-Werte für den nächsten Lauf.
 void runModuleSetReference(float referenceWeightG, const RuntimeConfig& cfg);
 

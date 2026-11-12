@@ -76,6 +76,31 @@ void test_restored_runs_have_no_age() {
   TEST_ASSERT_TRUE(httpStub().lastBody.find("\"age_ms\"") == std::string::npos);
 }
 
+// Ausschalten der Schnittstelle loescht die Queue nicht mehr; neue Laeufe werden dann nicht gepuffert.
+void test_disable_keeps_queue_and_rejects_new_runs() {
+  fresh(); httpStub().codes = {-1, -1, -1, -1};
+  externalInterfaceEnqueueRun(run(1));
+  RuntimeConfig off = cfg(); off.externalEnabled = false;
+  externalInterfaceUpdateConfig(off);
+  tick(2);
+  TEST_ASSERT_EQUAL_UINT32(1, externalInterfaceQueueDepth());
+  TEST_ASSERT_FALSE(externalInterfaceEnqueueRun(run(2)));
+  TEST_ASSERT_EQUAL_UINT32(1, externalInterfaceQueueDepth());
+  httpStub().codes = {201, 201, 201};
+  externalInterfaceUpdateConfig(cfg());
+  tick(1);
+  TEST_ASSERT_EQUAL_UINT32(0, externalInterfaceQueueDepth());
+}
+
+// Neuer Geraete-Name wirkt sofort im Heartbeat (vorher erst nach Neustart).
+void test_heartbeat_uses_new_device_id() {
+  fresh(); httpStub().codes = {201, 201};
+  RuntimeConfig c = cfg(); strcpy(c.deviceId, "waage-kueche");
+  externalInterfaceUpdateConfig(c);
+  tick(1);
+  TEST_ASSERT_TRUE(httpStub().lastBody.find("\"device_id\":\"waage-kueche\"") != std::string::npos);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_success_empties_queue);
@@ -85,5 +110,7 @@ int main() {
   RUN_TEST(test_queue_survives_reboot);
   RUN_TEST(test_payload_has_age_and_boot);
   RUN_TEST(test_restored_runs_have_no_age);
+  RUN_TEST(test_disable_keeps_queue_and_rejects_new_runs);
+  RUN_TEST(test_heartbeat_uses_new_device_id);
   return UNITY_END();
 }

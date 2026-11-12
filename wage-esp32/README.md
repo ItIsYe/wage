@@ -62,7 +62,10 @@ Im AP-Modus erreichbar unter der AP-IP:
 - **AP-Modus** (Standard): SSID `Waage-Config`, Passwort `waagecfg1`
 - **STA-Modus**: verbindet sich mit `wage-net` (Pi-AP) oder Haus-WLAN
 - Statische IP im `wage-net`: `192.168.50.100`
-- API-Ziel: `http://192.168.50.1:8000/api/v1/runs`
+- API-Ziel: `http://192.168.50.1:8000/api/v1/runs` (Host `192.168.50.1`, Port `8000` = Vorgabe, Pfad `/api/v1/runs`)
+- Geraete-Name aendern wirkt sofort fuer neue Laeufe und den Heartbeat (kein Neustart noetig)
+- Externe Schnittstelle aus: bereits gepufferte Laeufe bleiben erhalten und werden nach dem Einschalten gesendet; neue Laeufe werden nicht gepuffert
+- Fehlerreset / Neu nullen: wird erst ausgefuehrt, wenn die Waage leer und ruhig ist
 
 ## LED-Patterns
 
