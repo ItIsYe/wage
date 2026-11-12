@@ -4,6 +4,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <ArduinoOTA.h>
+#include <Preferences.h>
 #include <string.h>
 
 #ifndef FIRMWARE_VERSION
@@ -39,7 +40,6 @@ const char* errToStr(ErrCode e) {
   switch (e) {
     case ErrCode::OK: return "OK";
     case ErrCode::NEGATIVE: return "NEGATIVE";
-    case ErrCode::UNSTABLE: return "UNSTABLE";
   }
   return "UNKNOWN";
 }
@@ -231,7 +231,18 @@ void setup() {
                 (unsigned long)activeConfig.standbyAfterMs,
                 (unsigned long)(activeConfig.standbyAfterMs / 1000U));
   randomSeed(esp_random());
-  bootId = esp_random();
+  {
+    // Boot-ID = dauerhafter Zaehler. esp_random() liefert vor dem Start von WLAN/BT nur schwache
+    // Zufallswerte; kollidierende IDs wuerde der Pi als Duplikat verwerfen. Beim allerersten Start
+    // (oder nach geloeschtem Flash) beginnt der Zaehler an einer zufaelligen Stelle, damit neue
+    // Event-IDs nicht mit alten in der Pi-Datenbank zusammenfallen.
+    Preferences sys;
+    sys.begin("sys", false);
+    const uint32_t last = sys.isKey("bootCnt") ? sys.getUInt("bootCnt", 0) : (esp_random() >> 8);
+    bootId = last + 1;
+    sys.putUInt("bootCnt", bootId);
+    sys.end();
+  }
   serialDebugInit();
   runModuleInit(bootId, activeConfig.deviceId);
 
@@ -245,7 +256,7 @@ void setup() {
   setState(State::BOOT_MSG);
 
   webConfigSetup();
-  externalInterfaceInit(activeConfig, FIRMWARE_VERSION);
+  externalInterfaceInit(activeConfig, FIRMWARE_VERSION, bootId);
 
   oledMsg2("Start...", "Initialisierung");
 

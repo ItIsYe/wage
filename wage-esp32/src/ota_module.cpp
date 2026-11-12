@@ -11,11 +11,12 @@
 
 namespace {
 
+static constexpr uint32_t DOWNLOAD_STALL_TIMEOUT_MS = 15000;  // Download ohne Daten -> abbrechen
 OtaTargetConfig targetCfg{};
 char currentVersion[32] = "unknown";
 char availableVersion[32] = "";
 char availableSha256[65] = "";  // 64 Hex-Zeichen aus dem Manifest
-char statusText[128] = "Kein Update geprüft";
+char statusText[128] = "Kein Update geprueft";
 OtaState state = OtaState::IDLE;
 uint8_t downloadProgressPercent = 0;
 
@@ -100,7 +101,7 @@ void otaInit(const char* currentFirmwareVersion) {
   strncpy(currentVersion, currentFirmwareVersion, sizeof(currentVersion) - 1);
   currentVersion[sizeof(currentVersion) - 1] = '\0';
   state = OtaState::IDLE;
-  setStatus("Kein Update geprüft");
+  setStatus("Kein Update geprueft");
 }
 
 void otaSetTarget(const char* host, uint16_t port) {
@@ -117,7 +118,7 @@ bool otaCheckForUpdate() {
   }
 
   state = OtaState::CHECKING;
-  setStatus("Prüfe auf neue Firmware...");
+  setStatus("Pruefe auf neue Firmware...");
 
   char version[32] = "";
   char sha[65] = "";
@@ -136,7 +137,7 @@ bool otaCheckForUpdate() {
   }
   if (mr == 2) {
     state = OtaState::ERROR;
-    setStatus("Manifest ungültig (keine Version gefunden)");
+    setStatus("Manifest ungueltig (keine Version gefunden)");
     return false;
   }
 
@@ -148,7 +149,7 @@ bool otaCheckForUpdate() {
   if (versionDiffers(currentVersion, availableVersion)) {
     state = OtaState::UPDATE_AVAILABLE;
     char buf[128];
-    snprintf(buf, sizeof(buf), "Update verfügbar: %s -> %s", currentVersion, availableVersion);
+    snprintf(buf, sizeof(buf), "Update verfuegbar: %s -> %s", currentVersion, availableVersion);
     setStatus(buf);
   } else {
     state = OtaState::UP_TO_DATE;
@@ -159,7 +160,7 @@ bool otaCheckForUpdate() {
 
 bool otaPerformUpdate() {
   if (state != OtaState::UPDATE_AVAILABLE) {
-    setStatus("Kein verfügbares Update zum Installieren");
+    setStatus("Kein verfuegbares Update zum Installieren");
     return false;
   }
   if (!hasValidTarget()) {
@@ -171,7 +172,7 @@ bool otaPerformUpdate() {
   // Pi anweisen, die Firmware frisch von GitHub Releases in seinen Cache
   // zu laden, bevor wir sie selbst abrufen.
   state = OtaState::DOWNLOADING;
-  setStatus("Pi lädt Firmware von GitHub...");
+  setStatus("Pi laedt Firmware von GitHub...");
   downloadProgressPercent = 0;
   {
     HTTPClient syncHttp;
@@ -207,7 +208,7 @@ bool otaPerformUpdate() {
     }
     if (strlen(sha) != 64) {
       state = OtaState::ERROR;
-      setStatus("Manifest ohne gültige Prüfsumme - Update abgebrochen");
+      setStatus("Manifest ohne gueltige Pruefsumme - Update abgebrochen");
       return false;
     }
     strncpy(availableVersion, version, sizeof(availableVersion) - 1);
@@ -239,14 +240,14 @@ bool otaPerformUpdate() {
   int contentLength = http.getSize();
   if (contentLength <= 0) {
     state = OtaState::ERROR;
-    setStatus("Ungültige Firmware-Größe vom Pi erhalten");
+    setStatus("Ungueltige Firmware-Groesse vom Pi erhalten");
     http.end();
     return false;
   }
 
   if (!Update.begin(contentLength)) {
     state = OtaState::ERROR;
-    setStatus("Nicht genug Platz für Update-Partition");
+    setStatus("Nicht genug Platz fuer Update-Partition");
     http.end();
     return false;
   }
@@ -260,19 +261,29 @@ bool otaPerformUpdate() {
   mbedtls_sha256_context shaCtx;
   mbedtls_sha256_init(&shaCtx);
   mbedtls_sha256_starts_ret(&shaCtx, 0);  // 0 = SHA-256 (nicht SHA-224)
+  uint32_t lastDataMs = millis();
   while (http.connected() && written < (size_t)contentLength) {
     size_t avail = stream->available();
     if (avail == 0) {
+      if (millis() - lastDataMs > DOWNLOAD_STALL_TIMEOUT_MS) {
+        state = OtaState::ERROR;
+        setStatus("Download stockt (Timeout)");
+        http.end();
+        Update.abort();
+        mbedtls_sha256_free(&shaCtx);
+        return false;
+      }
       delay(5);
       continue;
     }
+    lastDataMs = millis();
     size_t toRead = avail > sizeof(buf) ? sizeof(buf) : avail;
     size_t readBytes = stream->readBytes(buf, toRead);
     if (readBytes == 0) break;
     size_t wroteNow = Update.write(buf, readBytes);
     if (wroteNow != readBytes) {
       state = OtaState::ERROR;
-      setStatus("Schreibfehler während des Flashens");
+      setStatus("Schreibfehler waehrend des Flashens");
       http.end();
       Update.abort();
       mbedtls_sha256_free(&shaCtx);
@@ -298,7 +309,7 @@ bool otaPerformUpdate() {
 
   if (written != (size_t)contentLength) {
     state = OtaState::ERROR;
-    setStatus("Download unvollständig");
+    setStatus("Download unvollstaendig");
     Update.abort();
     return false;
   }
@@ -308,7 +319,7 @@ bool otaPerformUpdate() {
   for (int i = 0; i < 32; ++i) snprintf(digestHex + 2 * i, 3, "%02x", digest[i]);
   if (!hexEqualsIgnoreCase(digestHex, availableSha256)) {
     state = OtaState::ERROR;
-    setStatus("Prüfsumme stimmt nicht - Update verworfen");
+    setStatus("Pruefsumme stimmt nicht - Update verworfen");
     Update.abort();
     return false;
   }

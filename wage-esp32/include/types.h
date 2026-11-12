@@ -2,12 +2,9 @@
 
 #include <Arduino.h>
 
-class Adafruit_NeoPixel;
-
 enum class ErrCode : uint8_t {
   OK = 0,
-  NEGATIVE,
-  UNSTABLE
+  NEGATIVE
 };
 
 enum class State : uint8_t {
@@ -88,13 +85,8 @@ struct RuntimeConfig {
   char externalApiKey[64];
 };
 
-struct LedRingContext {
-  Adafruit_NeoPixel* strip;
-  uint16_t pixelCount;
-};
-
 struct RunDataSnapshot {
-  char eventId[48];
+  char eventId[64];  // deviceId(31) + '-' + bootId(10) + '-' + runNumber(10) + NUL = 54
   char deviceId[32];
   uint32_t bootId;
   uint32_t runNumber;
@@ -104,4 +96,5 @@ struct RunDataSnapshot {
   float minWeightG;
   float startDropThresholdG;
   float stopRiseThresholdG;
+  bool ageKnown;  // false fuer aus dem Flash wiederhergestellte Laeufe (finishedAtMs ungueltig)
 };

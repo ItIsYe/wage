@@ -71,9 +71,6 @@ void ledService(uint32_t now) {
 
   if (ring1Changed || ring2Changed) {
     FastLED.show();
-    if (RING2_ENABLED && ring2Changed) {
-      ring2LogWrite(now);
-    }
   }
 }
 
