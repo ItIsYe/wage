@@ -15,6 +15,11 @@
     <label>Pixel pro Streifen (kommagetrennt)</label>
     <input type="text" id="pi-led-strip-sizes" value="80,80,82,82">
   </div>
+  <div class="slider-row">
+    <label>🔆 Global <small>— Gelb pulsend, Sternenhimmel, Fehler</small></label>
+    <input type="range" id="led-global" min="0" max="255" value="32" oninput="byId('led-global-val').textContent=this.value">
+    <span id="led-global-val" class="slider-val">32</span>
+  </div>
 </div>
 
 <div class="card">
