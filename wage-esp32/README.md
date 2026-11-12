@@ -15,6 +15,14 @@ ESP32 Firmware für die Waage — misst Trinkzeiten und sendet Läufe an den Ras
 | OLED SDA | GPIO 21 | I2C, 0x3C |
 | OLED SCL | GPIO 22 | I2C, 0x3C |
 
+## Tests
+
+Host-Tests ohne Hardware (Lauf-Modul und Queue):
+```bash
+cd wage-esp32
+pio test -e native
+```
+
 ## Build & Flash
 
 ```bash
@@ -89,7 +97,11 @@ Sendet Läufe per `HTTP POST /api/v1/runs` an den Pi:
 }
 ```
 
-Queue und Retry sind eingebaut — Läufe werden gepuffert wenn der Pi offline ist (max. 50).
+Queue und Retry sind eingebaut — Läufe werden gepuffert wenn der Pi offline ist (max. 50):
+- Die neuesten 20 Läufe überleben einen Neustart und ein OTA-Update (Flash). Nach einem Neustart fehlt ihnen das Alter (`age_ms`).
+- Antwortet der Pi mit einem endgültigen Fehler (HTTP 4xx, z. B. 422), wird der Lauf verworfen statt die Queue zu blockieren. 5xx und Verbindungsfehler werden wiederholt.
+- `age_ms` im Lauf sagt dem Pi, wie lange die Messung zurückliegt: Er ordnet den Lauf der Person zu, die **zur Messzeit** aktiv war.
+- Die Boot-ID ist ein dauerhafter Zähler (Startwert beim ersten Start zufällig); die Event-ID `<device>-<boot>-<lauf>` ist damit auch nach Neustarts eindeutig.
 
 ## Diagnose
 
