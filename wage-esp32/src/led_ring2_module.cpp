@@ -199,9 +199,6 @@ static void ring2ResetPatternAnimation(uint8_t mode, uint32_t now) {
     ring2TickMs = now;
   }
 }
-void ring2LogWrite(uint32_t now) {
-  (void)now;
-}
 static inline void ring2Fill(const CRGB& color) { if (!ring2Ready()) return; for (uint16_t i = 0; i < RING2_PIXEL_COUNT; ++i) ring2Leds[i] = scaleColor(color, ring2BrightnessByte); }
 
 void ring2Init(CRGB* leds) {
@@ -356,7 +353,6 @@ bool ring2Service(uint32_t now) {
   return false;
 }
 void ring2MarkDirty() { ring2FrameDirty = true; }
-bool ring2IsStandbyState() { return ring2State == State::STANDBY; }
 void ring2SetState(State s) {
   if (ring2State == s) return;
   if (MASTER_DEBUG_LOG) Serial.printf("[RING2 STATE] %u -> %u\n", (unsigned)ring2State, (unsigned)s);

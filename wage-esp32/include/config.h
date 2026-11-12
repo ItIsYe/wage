@@ -67,7 +67,7 @@ static constexpr int SCREEN_H = 64;
 static constexpr uint8_t LED_STRIP_PIN = 5;
 static constexpr uint16_t PIXEL_COUNT = 160;
 static constexpr uint8_t PIXEL_GROUP_SIZE = 3;                        // je 3 physische Pixel = 1 logische Gruppe
-static constexpr uint16_t PIXEL_GROUPS = PIXEL_COUNT / PIXEL_GROUP_SIZE; // 53 Gruppen bei 160 Pixeln
+static constexpr uint16_t PIXEL_GROUPS = (PIXEL_COUNT + PIXEL_GROUP_SIZE - 1) / PIXEL_GROUP_SIZE; // 54 Gruppen bei 160 Pixeln (die letzte hat 1 Pixel; vorher blieb Pixel 159 in allen Mustern dunkel)
 static constexpr uint8_t DEFAULT_PIXEL_BRIGHTNESS_PERCENT = 50; // Ring1 Helligkeit in %
 static constexpr uint8_t DEFAULT_STANDBY_BRIGHTNESS_PERCENT = 90; // Ring1 Helligkeit im Standby in %
 static constexpr bool DEFAULT_PIXEL_DEBUG_ALL_ON = false; // Debug: alle Pixel einschalten

@@ -4,7 +4,7 @@
 
 #include "types.h"
 
-void externalInterfaceInit(const RuntimeConfig& cfg, const char* firmwareVersion);
+void externalInterfaceInit(const RuntimeConfig& cfg, const char* firmwareVersion, uint32_t bootId);
 void externalInterfaceUpdateConfig(const RuntimeConfig& cfg);
 bool externalInterfaceEnqueueRun(const RunDataSnapshot& snapshot);
 // safeToRetry: Heartbeat und Senden der Queue sind erlaubt (Waage im Leerlauf).

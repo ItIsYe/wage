@@ -62,6 +62,7 @@ RunDataSnapshot runModuleBuildSnapshot(uint32_t finishedAtMs, uint32_t durationM
   snap.bootId        = g_bootId;
   snap.runNumber     = ++g_runCounter;
   snap.finishedAtMs  = finishedAtMs;
+  snap.ageKnown      = true;
   snap.durationMs    = durationMs;
   snap.referenceWeightG   = g_referenceWeightG;
   snap.minWeightG         = g_minDuringTiming;
