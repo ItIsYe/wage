@@ -46,5 +46,5 @@ exec "$BROWSER" \
   --disable-renderer-backgrounding \
   --disable-backgrounding-occluded-windows \
   --memory-pressure-off \
-  --max-old-space-size=256 \
+  --js-flags=--max-old-space-size=256 \
   --app="$URL"

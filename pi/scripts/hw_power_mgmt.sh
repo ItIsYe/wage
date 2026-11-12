@@ -3,7 +3,9 @@
 # Hardware-Energieverwaltung für wage-pi
 # Wird beim Boot via systemd ausgeführt
 
-set -euo pipefail
+# Bewusst ohne "set -e": jeder Schritt ist optional. Schlug frueher z.B. ein sysfs-Schreibzugriff fehl,
+# brach das Skript ab und das led_shutdown-Flag am Ende wurde nie zurueckgesetzt.
+set -uo pipefail
 
 log() { echo "[$(date -Iseconds)] [hw_power] $*"; }
 
@@ -71,13 +73,14 @@ log "GPU-Speicher: ${GPU_MEM}MB"
 
 log "Hardware Power Management abgeschlossen"
 
-# Zeitstempel im gleichen Format wie das Backend (ISO mit Zeitzone); ein naiver Wert
-# liess die Power-Save-Berechnung mit TypeError scheitern.
-# led_shutdown Flag zurücksetzen (wird beim Auto-Shutdown gesetzt)
-DB="/home/wage/wage/pi/data/wage_pi.sqlite3"
+# led_shutdown Flag zurücksetzen (wird beim Auto-Shutdown gesetzt) und den Start als letzte
+# Aktivitaet vermerken (Power-Save/Auto-Shutdown zaehlen ab jetzt). last_run_received_at bleibt
+# unveraendert: es ist der Zeitpunkt des letzten echten Laufs.
+# Zeitstempel im gleichen Format wie das Backend (ISO mit Zeitzone).
+DB="$(cd "$(dirname "$0")/.." && pwd)/data/wage_pi.sqlite3"
 if [ -f "$DB" ]; then
     sqlite3 "$DB" "UPDATE app_state SET value='0' WHERE key='led_shutdown'; \
-        INSERT INTO app_state(key,value) VALUES('last_run_received_at',strftime('%Y-%m-%dT%H:%M:%S+00:00','now')) \
+        INSERT INTO app_state(key,value) VALUES('last_activity_at',strftime('%Y-%m-%dT%H:%M:%S+00:00','now')) \
         ON CONFLICT(key) DO UPDATE SET value=strftime('%Y-%m-%dT%H:%M:%S+00:00','now');" 2>/dev/null || true
-    log "led_shutdown und last_run_received_at zurückgesetzt"
+    log "led_shutdown und last_activity_at zurückgesetzt"
 fi

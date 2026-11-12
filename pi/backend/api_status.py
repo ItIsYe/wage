@@ -26,7 +26,7 @@ def _build_status() -> dict:
     with db_cursor() as (_, cur):
         # Nur benötigte Keys laden statt alle
         needed = ("active_person_id","last_run_id","last_run_received_at","last_event",
-                  "api_status","database_status","led_status","oled_status")
+                  "led_status","oled_status")
         app = {r["key"]: r["value"] for r in cur.execute(
             f"SELECT key,value FROM app_state WHERE key IN ({','.join('?'*len(needed))})",
             needed
@@ -34,7 +34,7 @@ def _build_status() -> dict:
         active_id = int(app.get("active_person_id", "1"))
         active_person = cur.execute("SELECT id, name FROM persons WHERE id=?", (active_id,)).fetchone()
         last_run = cur.execute("SELECT * FROM runs ORDER BY id DESC LIMIT 1").fetchone()
-        last_runs = [dict(r) for r in cur.execute("SELECT id, run_number, time_ms, start_weight_g, status, received_at, person_name FROM runs ORDER BY id DESC LIMIT 5").fetchall()]
+        last_runs = [dict(r) for r in cur.execute("SELECT id, run_number, time_ms, start_weight_g, status, received_at, measured_at, person_name FROM runs ORDER BY id DESC LIMIT 5").fetchall()]
         last_device = cur.execute("SELECT * FROM devices ORDER BY last_seen_at DESC LIMIT 1").fetchone()
 
     last_contact = last_device["last_seen_at"] if last_device else None
@@ -46,8 +46,10 @@ def _build_status() -> dict:
     network_mode = net.get("network_mode", "ap")
     api_target_for_esp = f"http://{net.get('ap_ip','192.168.50.1')}:8000/api/v1/runs" if network_mode == "ap" else f"http://{ip}:8000/api/v1/runs"
     result = {
-        "api_status": app.get("api_status", "ok"),
-        "database_status": app.get("database_status", "ok"),
+        # Diese Antwort kommt nur zustande, wenn API und Datenbank funktionieren (die Werte wurden
+        # frueher aus app_state gelesen, dort aber nie geschrieben).
+        "api_status": "ok",
+        "database_status": "ok",
         "pi_ip": ip,
         "pi_url": f"http://{ip}:8000",
         "active_person": dict(active_person) if active_person else None,

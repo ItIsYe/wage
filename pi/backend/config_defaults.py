@@ -10,7 +10,6 @@ DEFAULTS = {
     "ap_dhcp_end": "192.168.50.150",
     "client_ssid": "",
     "client_password": "",
-    "client_dhcp_enabled": "true",
     "last_network_apply_status": "never",
     "last_network_apply_at": "",
     # Pi Hardware
@@ -27,6 +26,8 @@ DEFAULTS = {
     "led_brightness_boot": "40",
     "led_brightness_error": "100",
     "pi_oled_rotation": "0",
+    "pi_oled_driver": "ssd1306",  # ssd1306 oder sh1106 (lässt sich nicht automatisch erkennen)
     "power_save_after_minutes": "1",
+    "auto_shutdown_after_minutes": "10",  # 0 = kein Auto-Shutdown; Debug-Modus schaltet ihn ebenfalls ab
     "debug_mode": "0",  # 0=aus, 1=an (kein Auto-Shutdown; Power-Save bleibt aktiv)
 }

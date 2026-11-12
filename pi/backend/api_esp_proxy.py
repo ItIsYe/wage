@@ -112,19 +112,28 @@ async def _proxy(path: str, request: Request):
         content = content.replace(b"href='/esp-proxy/ota'", b"href='/ota'")
         content = content.replace(b'href="/esp-proxy/ota"', b'href="/ota"')
         # Pi-Navigation einfügen
+        # Pi-Navigation: eine Zeile, seitlich wischbar, fingergrosse Links (wie base.html)
+        link_style = (b"color:#fff;text-decoration:none;font-weight:700;padding:0 14px;border-radius:10px;"
+                      b"display:inline-flex;align-items:center;min-height:42px;flex:0 0 auto;font-family:system-ui,Arial,sans-serif;")
+        links = [(b"/", b"Dashboard"), (b"/runs", b"L\xc3\xa4ufe"), (b"/stats", b"Statistiken"), (b"/persons", b"Personen"),
+                 (b"/status", b"Status"), (b"/config", b"Konfiguration"), (b"/esp-proxy/", b"Waage-Config"), (b"/ota", b"OTA-Update")]
         nav = (
-            b"<header><nav style='background:#111827;padding:16px;position:sticky;top:0;z-index:999;'>"
-            b"<a href='/' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Dashboard</a>"
-            b"<a href='/runs' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>L\xc3\xa4ufe</a>"
-            b"<a href='/persons' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Personen</a>"
-            b"<a href='/status' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Status</a>"
-            b"<a href='/config' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;'>Konfiguration</a>"
-            b"<a href='/esp-proxy/' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;margin-right:4px;background:#2563eb;'>Waage-Config</a>"
-            b"<a href='/ota' style='color:#fff;text-decoration:none;font-weight:700;padding:10px 14px;border-radius:10px;'>OTA-Update</a>"
-            b"</nav></header>"
+            b"<header><nav style='background:#111827;padding:4px 8px;position:sticky;top:0;z-index:999;display:flex;"
+            b"gap:2px;overflow-x:auto;white-space:nowrap;'>"
+            + b"".join(
+                b"<a href='" + href + b"' style='" + link_style + (b"background:#2563eb;" if href == b"/esp-proxy/" else b"") + b"'>" + text + b"</a>"
+                for href, text in links
+            )
+            + b"</nav></header>"
         )
         # Navigation hinter das (erste) <body ...> einfügen, Attribute des Tags bleiben erhalten
         content = re.sub(rb"(<body[^>]*>)", lambda m: m.group(1) + nav, content, count=1)
+        # Bildschirmtastatur des Pi auch auf den ESP-Seiten (im Kiosk gibt es sonst keine Tastatur)
+        keyboard = b"<link rel='stylesheet' href='/static/keyboard.css?v=13'><script src='/static/keyboard.js?v=13'></script>"
+        if re.search(rb"</body>", content, flags=re.IGNORECASE):
+            content = re.sub(rb"(</body>)", lambda m: keyboard + m.group(1), content, count=1, flags=re.IGNORECASE)
+        else:
+            content += keyboard
 
     return Response(
         content=content,

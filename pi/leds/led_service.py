@@ -7,7 +7,7 @@ from pathlib import Path
 # nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.runtime import seconds_since  # noqa: E402
+from common.runtime import seconds_since, seconds_since_latest  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 POLL_SECONDS = 1.0           # DB-Status alle 1s abfragen
@@ -34,7 +34,7 @@ def _get_hw_config() -> dict:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
                 "SELECT key, value FROM app_state WHERE key IN "
-                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes','power_save_after_minutes','last_run_received_at','led_brightness_rainbow','led_brightness_pulse_offline','led_brightness_wave','led_brightness_power_save','led_brightness_boot','led_brightness_error')"
+                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes','power_save_after_minutes','last_run_received_at','last_activity_at','led_brightness_rainbow','led_brightness_pulse_offline','led_brightness_wave','led_brightness_power_save','led_brightness_boot','led_brightness_error')"
             ).fetchall()
         _hw_config_cache = {r[0]: r[1] for r in rows}
     except Exception:
@@ -85,14 +85,11 @@ def _is_power_save() -> bool:
         minutes = int(hw.get("power_save_after_minutes", "1"))
         if minutes == 0:
             return False
-        last_run = hw.get("last_run_received_at", "")
-        if not last_run:
-            # Noch nie ein Lauf empfangen -> Service-Start als Referenz nehmen
-            elapsed = (time.time() - _service_start) / 60
-            return elapsed >= minutes
-        age = seconds_since(last_run)
+        # Inaktivitaet = Zeit seit dem letzten Lauf ODER der letzten Bedienung (Touch, Start)
+        age = seconds_since_latest(hw.get("last_run_received_at"), hw.get("last_activity_at"))
         if age is None:
-            return False
+            # Noch nie ein Lauf/eine Bedienung -> Service-Start als Referenz nehmen
+            age = time.time() - _service_start
         return age / 60 >= minutes
     except Exception:
         return False
@@ -214,7 +211,6 @@ def boot_sequence(strip, Color):
 class RainbowState:
     def __init__(self):
         self.offset = 0   # 0-255, Adafruit rainbowCycle-Stil
-        self.brightness = 0.0  # Sanfter Aufbau beim Start
 
 class PulseState:
     def __init__(self, color_fn): self.phase = 0.0; self.color_fn = color_fn
@@ -232,8 +228,8 @@ def _wheel(pos: int) -> tuple:
     return (0, pos * 3, 255 - pos * 3)
 
 
-def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int, max_brightness: int = 80):
-    """Flüssiger Regenbogen - exakt wie funktionierender Direkttest."""
+def rainbow_tick(strip, Color, state: RainbowState, total_pixels: int):
+    """Flüssiger Regenbogen. Die Helligkeit kommt über apply_brightness (led_brightness_rainbow)."""
     n = min(total_pixels, strip.numPixels())
     offset = state.offset
     for i in range(n):
@@ -267,37 +263,6 @@ def fill(strip, value):
     strip.show()
 
 
-def _strip_start(strip_sizes: list, strip_index: int) -> int:
-    return sum(strip_sizes[:strip_index])
-
-
-def fill_strip(strip, strip_index: int, value, strip_sizes: list):
-    """Einen einzelnen Streifen füllen."""
-    start = _strip_start(strip_sizes, strip_index)
-    end = start + strip_sizes[strip_index]
-    for i in range(start, min(end, strip.numPixels())):
-        strip.setPixelColor(i, value)
-    strip.show()
-
-
-def fill_strips(strip, values: list, strip_sizes: list):
-    """Jeden Streifen mit eigenem Wert füllen. values = Liste von Colors."""
-    start = 0
-    for idx, (color, sp) in enumerate(zip(values, strip_sizes)):
-        for i in range(start, min(start + sp, strip.numPixels())):
-            strip.setPixelColor(i, color)
-        start += sp
-    strip.show()
-
-
-def set_pixel(strip, strip_index: int, pixel_index: int, value, strip_sizes: list):
-    """Einzelnen Pixel auf einem Streifen setzen."""
-    pos = _strip_start(strip_sizes, strip_index) + pixel_index
-    if pos < strip.numPixels():
-        strip.setPixelColor(pos, value)
-        strip.show()
-
-
 if __name__ == "__main__":
     set_state("led_status", "starting:white")
 
@@ -305,14 +270,11 @@ if __name__ == "__main__":
     Color = None
     last_init_try = 0.0
     last_led_count = None
-    last_led_brightness = None
     last_run_id = None
     blink_until = 0.0
-    blink_toggle = False
     last_db_poll = 0.0
     status = "running:blue"
     online = False
-    _in_power_save = False
     twinkle_state = None
     rainbow_state = RainbowState()
     pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
@@ -333,7 +295,6 @@ if __name__ == "__main__":
             try:
                 strip, Color = make_strip()
                 last_led_count = _get_led_count()
-                last_led_brightness = _get_led_brightness()
                 from twinkle import TwinkleState
                 twinkle_state = TwinkleState(strip.numPixels())
                 boot_sequence(strip, Color)
@@ -341,11 +302,11 @@ if __name__ == "__main__":
             except Exception as exc:
                 set_state("led_status", f"degraded:{type(exc).__name__}")
 
-        # Konfigurationsänderung erkennen -> Strip neu initialisieren
+        # Geänderte Pixelzahl -> Strip neu initialisieren. Helligkeitsänderungen braucht es dafür nicht:
+        # apply_brightness() setzt sie im nächsten Tick (früher: Neuinitialisierung mit Hochdimmen).
         if strip is not None:
             current_count = _get_led_count()
-            current_brightness = _get_led_brightness()
-            if current_count != last_led_count or current_brightness != last_led_brightness:
+            if current_count != last_led_count:
                 try:
                     fill(strip, Color(0, 0, 0))
                     strip = None
@@ -367,16 +328,8 @@ if __name__ == "__main__":
                             fill(strip, Color(0, 0, 0))
                         break
                 s = get_status()
-                app = s["app"]
                 online = is_online(s["last_seen"])
-                api_ok = app.get("api_status", "ok") == "ok"
-                db_ok = app.get("database_status", "ok") == "ok"
-
                 current_status = "running:blue" if not s["last_seen"] else ("running:green" if online else "running:yellow")
-                if not (api_ok and db_ok):
-                    current_status = "error:red"
-                if app.get("last_event") == "fatal_error":
-                    current_status = "fatal:red_blink"
 
                 new_run_id = s["last_run_id"]
                 if last_run_id is not None and new_run_id and new_run_id != last_run_id:
@@ -388,6 +341,9 @@ if __name__ == "__main__":
                 if now < blink_until:
                     current_status = "event:run_received"
                 status = current_status
+            except sqlite3.Error:
+                # Datenbank nicht lesbar: rot anzeigen (Strip bleibt in Betrieb)
+                status = "error:red"
             except Exception as exc:
                 set_state("led_status", f"degraded:{type(exc).__name__}")
                 strip = None
@@ -407,10 +363,6 @@ if __name__ == "__main__":
                     set_state("led_status", "power_save")
                 elif status == "event:run_received":
                     pass
-                elif status == "fatal:red_blink":
-                    apply_brightness(strip, _get_led_brightness())
-                    blink_toggle = not blink_toggle
-                    fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100) if blink_toggle else 0, 0, 0))
                 elif status == "error:red":
                     apply_brightness(strip, _get_led_brightness())
                     fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100), 0, 0))
@@ -419,7 +371,7 @@ if __name__ == "__main__":
                     pulse_tick(strip, Color, pulse_offline_state, total, _get_led_brightness_for("led_brightness_pulse_offline", 60))
                 else:
                     apply_brightness(strip, _get_led_brightness_for("led_brightness_rainbow", 80))
-                    rainbow_tick(strip, Color, rainbow_state, total, _get_led_brightness_for("led_brightness_rainbow", 80))
+                    rainbow_tick(strip, Color, rainbow_state, total)
                 if not power_save or now < blink_until:
                     set_state("led_status", status)
             except Exception as exc:
@@ -428,5 +380,4 @@ if __name__ == "__main__":
                 Color = None
 
         # Im Power-Save: langsamer schlafen spart CPU
-        _in_power_save = (status == "power_save" or _is_power_save())
-        time.sleep(ANIM_SECONDS_POWERSAVE if _in_power_save else ANIM_SECONDS)
+        time.sleep(ANIM_SECONDS_POWERSAVE if _is_power_save() else ANIM_SECONDS)

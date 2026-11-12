@@ -70,6 +70,9 @@ def delete_person(person_id: int):
         active_row = cur.execute("SELECT value FROM app_state WHERE key='active_person_id'").fetchone()
         active = int(active_row[0]) if active_row else 1
         cur.execute("UPDATE runs SET person_id=1, person_name='Unbekannt' WHERE person_id=?", (person_id,))
+        # Historie behalten (wie die Laeufe auf "Unbekannt"): sonst landeten spaeter eintreffende Laeufe
+        # aus ihrer Zeit bei der Person, die davor aktiv war.
+        cur.execute("UPDATE person_activations SET person_id=1 WHERE person_id=?", (person_id,))
         cur.execute("DELETE FROM persons WHERE id=?", (person_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Person nicht gefunden")

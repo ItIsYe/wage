@@ -87,4 +87,3 @@ class NetworkConfigIn(BaseModel):
     ap_dhcp_end: Optional[str] = None
     client_ssid: Optional[str] = None
     client_password: Optional[str] = None
-    client_dhcp_enabled: Optional[bool] = None

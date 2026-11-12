@@ -17,7 +17,6 @@ router = APIRouter(prefix="/api/v1/system/update", tags=["system-update"])
 REPO_PATH = Path(os.getenv("WAGE_REPO_PATH", "/home/wage/wage")).resolve()
 TARGET_BRANCH = os.getenv("WAGE_REPO_BRANCH", "beta")
 UPDATE_SCOPE = "pi-only"
-AP_BLOCK_REASON = "Updates sind nur im Haus-WLAN-Client-Modus möglich"
 GIT_TIMEOUT_SECONDS = 30
 FETCH_CACHE_SECONDS = 60  # GET /status holt höchstens einmal pro Minute von GitHub
 PIP_TIMEOUT_SECONDS = 180
@@ -185,7 +184,7 @@ def _calculate_pi_sync_sets() -> tuple[list[str], list[str], list[str]]:
     return changed, obsolete, sorted(PROTECTED_RUNTIME_FILES)
 
 
-def _persist_update_state(status: str, local_commit: str, remote_commit: str, changed: list[str], obsolete: list[str], protected_runtime: list[str], ui_state: str = "idle", ui_message: str = "", progress_step: str = "", progress_percent: int = 0, local_code_overwritten: bool = True) -> str:
+def _persist_update_state(status: str, local_commit: str, remote_commit: str, changed: list[str], obsolete: list[str], protected_runtime: list[str], ui_state: str = "idle", ui_message: str = "", progress_step: str = "", progress_percent: int = 0) -> str:
     return write_state({
         "last_update_status": status,
         "last_update_local_commit": local_commit,
@@ -198,7 +197,7 @@ def _persist_update_state(status: str, local_commit: str, remote_commit: str, ch
         "last_update_ui_message": ui_message,
         "last_update_progress_step": progress_step,
         "last_update_progress_percent": str(progress_percent),
-        "last_update_local_code_overwritten": "1" if local_code_overwritten else "0",
+        "last_update_local_code_overwritten": "1",
     })
 
 

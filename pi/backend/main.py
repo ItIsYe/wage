@@ -120,10 +120,12 @@ async def page_ota(request: Request):
 
 @app.post("/api/v1/system/restart-services")
 def restart_services():
+    """Startet den OLED-Dienst neu (OLED-Drehung/-Typ werden nur beim Start gelesen).
+    Der LED-Dienst übernimmt Änderungen selbst innerhalb von ~1 s und wird nicht mehr neu gestartet."""
     import subprocess
     try:
         subprocess.Popen(
-            ["sudo", "systemctl", "restart", "wage-pi-leds", "wage-pi-oled"],
+            ["sudo", "systemctl", "restart", "wage-pi-oled"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         return {"ok": True}

@@ -112,8 +112,19 @@
         </select>
       </div>
       <div class="form-group">
+        <label>OLED-Typ</label>
+        <select id="pi-oled-driver">
+          <option value="ssd1306">SSD1306</option>
+          <option value="sh1106">SH1106 (Bild verschoben? dann diesen wählen)</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label>Energiesparmodus nach Inaktivität (Minuten, 0 = deaktiviert)</label>
         <input type="number" id="power-save-after-minutes" min="0" max="1440" value="1">
+      </div>
+      <div class="form-group">
+        <label>Auto-Shutdown nach Inaktivität (Minuten, 0 = aus; im Debug-Modus nie)</label>
+        <input type="number" id="auto-shutdown-after-minutes" min="0" max="1440" value="10">
       </div>
     </div>
     <p class="hint">Streifengrößen und LED-Helligkeiten stehen unter <a href="/config/leds">3) LED-Konfiguration</a>.</p>

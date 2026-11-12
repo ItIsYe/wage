@@ -35,8 +35,7 @@ if [[ "$ACTION" == "up" ]]; then
   fi
 
 elif [[ "$ACTION" == "down" ]]; then
-  # eth0 weg — Default-Route wieder auf wlan falls AP-Gateway existiert
-  AP_GW="$(ip route show dev "$WLAN_IFACE" | awk '/src/{print $1; exit}')"
+  # eth0 weg: dessen Default-Route entfernen (im AP-Modus gibt es dann kein Internet)
   ip route del default dev "$IFACE" 2>/dev/null || true
   log "LAN $IFACE down: Default-Route entfernt"
 fi

@@ -36,7 +36,6 @@ def _to_public(cfg: dict[str, str]) -> dict:
         "ap_dhcp_end": cfg.get("ap_dhcp_end", "192.168.50.150"),
         "client_ssid": cfg.get("client_ssid", ""),
         "client_password_set": bool(cfg.get("client_password")),
-        "client_dhcp_enabled": str(cfg.get("client_dhcp_enabled", "true")).lower() == "true",
         "last_network_apply_status": cfg.get("last_network_apply_status", "never"),
         "last_network_apply_at": cfg.get("last_network_apply_at", ""),
         "current_pi_ip": pi_ip,
