@@ -1305,6 +1305,8 @@ async function loadLedConfig() {
     set('led-power-save', 'led-power-save-val', d.led_brightness_power_save ?? 12);
     set('led-boot', 'led-boot-val', d.led_brightness_boot ?? 40);
     set('led-error', 'led-error-val', d.led_brightness_error ?? 100);
+    const maxEl = document.getElementById('pi-led-max-current');
+    if (maxEl) maxEl.value = d.pi_led_max_current_ma ?? 1200;
   } catch (e) {
     flash('LED-Config konnte nicht geladen werden: ' + e.message);
   }
@@ -1323,6 +1325,8 @@ async function saveLedConfig() {
       led_brightness_boot: parseInt(document.getElementById('led-boot').value),
       led_brightness_error: parseInt(document.getElementById('led-error').value),
     };
+    const maxEl = document.getElementById('pi-led-max-current');
+    if (maxEl && maxEl.value !== '') payload.pi_led_max_current_ma = parseInt(maxEl.value);
     const d = await api('/api/v1/config/leds', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},

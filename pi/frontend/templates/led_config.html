@@ -23,6 +23,16 @@
 </div>
 
 <div class="card">
+  <h3>Strombegrenzung</h3>
+  <div class="form-group">
+    <label>Max. LED-Strom (mA) <small>— 0 = aus</small></label>
+    <input type="number" id="pi-led-max-current" min="0" max="10000" step="100" value="1200">
+    <small>Die LEDs werden automatisch gedimmt, wenn das Muster mehr Strom bräuchte. Verhindert, dass der Pi
+    durch Unterspannung neu startet. Startet der Pi trotzdem neu, Wert verringern.</small>
+  </div>
+</div>
+
+<div class="card">
   <h3>Pattern-Helligkeiten (0–255)</h3>
 
   <div class="slider-row">
