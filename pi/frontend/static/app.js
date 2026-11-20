@@ -307,6 +307,15 @@ async function loadNetworkConfig() {
   try {
     const [cfg, status] = await Promise.all([api('/api/v1/config/network'), api('/api/v1/config/network/status')]);
     (document.querySelector(`input[name="network-mode"][value="${cfg.network_mode}"]`) || {}).checked = true;
+    const usbHint = byId('usb-wifi-hint');
+    const usbRadio = document.querySelector('input[name="network-mode"][value="ap_client"]');
+    if (usbRadio) usbRadio.disabled = !cfg.usb_wifi_present && cfg.network_mode !== 'ap_client';
+    if (usbHint) {
+      const usb = (cfg.wifi_interfaces || []).find((i) => i.usb);
+      usbHint.textContent = usb
+        ? `USB-WLAN-Stick erkannt (${usb.name}): Der AP für die Waage bleibt aktiv, der Stick verbindet sich mit dem Haus-WLAN.`
+        : 'Kein USB-WLAN-Stick erkannt – „AP + Haus-WLAN“ ist erst mit Stick möglich.';
+    }
     byId('ap-ssid').value = cfg.ap_ssid || '';
     byId('ap-ip').value = cfg.ap_ip || '';
     byId('ap-dhcp-start').value = cfg.ap_dhcp_start || '';
@@ -321,7 +330,7 @@ async function loadNetworkConfig() {
       const shortNmConn = nmConn.length > 140 ? `${nmConn.slice(0, 140)}…` : nmConn;
       statusRoot.innerHTML = `<div class="card network-status-card">
         <h3>Netzwerk-Status</h3>
-        <div><strong>Gespeicherter Modus:</strong> ${esc(cfg.network_mode)}</div>
+        <div><strong>Gespeicherter Modus:</strong> ${esc(cfg.network_mode_label || cfg.network_mode)}</div>
         <div><strong>Aktiver Status:</strong> ${esc(status.status)}</div>
         <div><strong>AP-Sicherheit:</strong> ${esc(cfg.ap_security)}</div>
         <div><strong>Pi-IP:</strong> ${esc(cfg.current_pi_ip)}</div>
