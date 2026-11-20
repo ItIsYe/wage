@@ -201,3 +201,97 @@ def test_esp_proxy_injects_keyboard(client, monkeypatch):
     html = client.get("/esp-proxy/").text
     assert "/static/keyboard.js" in html and "/static/keyboard.css" in html and "action='/esp-proxy/save'" in html
     assert client.get("/static/keyboard.js").status_code == 200
+
+
+def _fw_paths(fw, monkeypatch, tmp_path):
+    for name, value in {"CACHE_DIR": tmp_path, "MANIFEST_CACHE_PATH": tmp_path / "manifest.json",
+                        "FIRMWARE_CACHE_PATH": tmp_path / "firmware.bin", "FIRMWARE_META_PATH": tmp_path / "firmware_meta.json",
+                        "LOCK_PATH": tmp_path / "sync.lock"}.items():
+        monkeypatch.setattr(fw, name, value)
+
+
+def test_firmware_sync_offline_uses_cache(client, monkeypatch, tmp_path):
+    from fastapi import HTTPException
+    from backend import api_esp_firmware as fw
+    _fw_paths(fw, monkeypatch, tmp_path)
+
+    def offline():
+        raise HTTPException(status_code=502, detail="GitHub nicht erreichbar")
+    monkeypatch.setattr(fw, "_fetch_release", offline)
+    assert client.post("/api/v1/esp-firmware/sync").status_code == 502       # nichts im Cache
+
+    good = b"firmware-v1" * 100
+    _fake_release(fw, monkeypatch, sha256(good).hexdigest(), good, "v1")
+    assert client.post("/api/v1/esp-firmware/sync").status_code == 200
+    monkeypatch.setattr(fw, "_fetch_release", offline)
+    r = client.post("/api/v1/esp-firmware/sync")
+    assert r.status_code == 200 and r.json()["offline"] is True and r.json()["manifest"]["version"] == "v1"
+    # Beschaedigte Firmware im Cache wird ohne Internet nicht ausgeliefert
+    fw.FIRMWARE_CACHE_PATH.write_bytes(b"kaputt")
+    assert client.post("/api/v1/esp-firmware/sync").status_code == 502
+
+
+def test_firmware_sync_waits_for_running_sync(client, monkeypatch, tmp_path):
+    import fcntl
+    import threading
+    from backend import api_esp_firmware as fw
+    _fw_paths(fw, monkeypatch, tmp_path)
+    good = b"firmware-v1" * 100
+    _fake_release(fw, monkeypatch, sha256(good).hexdigest(), good, "v1")
+    tmp_path.mkdir(exist_ok=True)
+    holder = open(fw.LOCK_PATH, "w")
+    fcntl.flock(holder, fcntl.LOCK_EX)
+    threading.Timer(1.0, lambda: (fcntl.flock(holder, fcntl.LOCK_UN), holder.close())).start()
+    assert client.post("/api/v1/esp-firmware/sync").status_code == 200       # vorher sofort 409
+
+
+def test_activity_rules():
+    from backend.activity import is_user_activity
+    assert is_user_activity("GET", "/config")
+    assert is_user_activity("POST", "/api/v1/persons")
+    assert is_user_activity("POST", "/esp-proxy/save")
+    assert not is_user_activity("POST", "/api/v1/runs")                 # Lauf der Waage
+    assert not is_user_activity("POST", "/api/v1/runs/heartbeat")
+    assert not is_user_activity("GET", "/api/v1/status/stream")         # Dashboard im Kiosk
+    assert not is_user_activity("GET", "/api/v1/system/update/status")
+    assert not is_user_activity("POST", "/api/v1/esp-firmware/sync")    # Cron
+    assert not is_user_activity("GET", "/static/app.js")
+    assert not is_user_activity("GET", "/esp-proxy/ota/status")
+
+
+def test_page_view_counts_as_activity(client, monkeypatch):
+    from backend import activity
+    from backend.api_update import _read_state
+    monkeypatch.setattr(activity, "MIN_WRITE_INTERVAL_SECONDS", 0)
+    client.get("/api/v1/status")
+    assert _read_state(["last_activity_at"])["last_activity_at"] == ""
+    client.get("/config")
+    assert _read_state(["last_activity_at"])["last_activity_at"] != ""
+
+
+def test_update_detects_mode_only_change(tmp_path, monkeypatch):
+    """Ein reiner Rechte-Fix (Skript ausführbar gemacht) muss als Update erkannt werden."""
+    from backend import api_update
+
+    def git(*args, cwd):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
+                       capture_output=True)
+
+    src = tmp_path / "src"
+    (src / "pi" / "scripts").mkdir(parents=True)
+    script = src / "pi" / "scripts" / "x.sh"
+    script.write_text("echo hi\n")
+    git("init", "-q", "-b", "beta", cwd=src)
+    git("add", "-A", cwd=src)
+    git("commit", "-qm", "a", cwd=src)
+    subprocess.run(["git", "clone", "-q", "--bare", str(src), str(tmp_path / "origin.git")], check=True)
+    work = tmp_path / "work"
+    subprocess.run(["git", "clone", "-q", "-b", "beta", str(tmp_path / "origin.git"), str(work)], check=True)
+    monkeypatch.setattr(api_update, "REPO_PATH", work)
+    assert api_update._calculate_pi_sync_sets()[0] == []
+
+    git("update-index", "--chmod=+x", "pi/scripts/x.sh", cwd=src)
+    git("commit", "-qm", "chmod", cwd=src)
+    git("push", "-q", str(tmp_path / "origin.git"), "beta", cwd=src)
+    git("fetch", "-q", "origin", "beta", cwd=work)
+    assert api_update._calculate_pi_sync_sets()[0] == ["pi/scripts/x.sh"]

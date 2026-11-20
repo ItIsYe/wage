@@ -63,7 +63,15 @@ def _local_midnight_utc_iso() -> str:
     return local_midnight.astimezone(timezone.utc).isoformat()
 
 
+_last_status = None
+
+
 def set_status(v: str):
+    """oled_status in die DB schreiben, aber nur bei Änderung. Vorher alle 2 s (rund 43.000
+    Schreibvorgänge pro Tag auf die SD-Karte), obwohl sich der Wert fast nie ändert."""
+    global _last_status
+    if v == _last_status:
+        return
     try:
         with sqlite3.connect(DB) as c:
             c.execute(
@@ -71,6 +79,7 @@ def set_status(v: str):
                 (v,),
             )
             c.commit()
+        _last_status = v
     except Exception:
         pass
 

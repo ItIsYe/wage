@@ -4,6 +4,7 @@ import fcntl
 import hashlib
 import json
 import os
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,10 @@ FIRMWARE_CACHE_PATH = CACHE_DIR / "firmware.bin"
 # reicht nicht: GET /manifest legt es auch ohne Firmware im Cache ab.
 FIRMWARE_META_PATH = CACHE_DIR / "firmware_meta.json"
 LOCK_PATH = CACHE_DIR / "sync.lock"
+# Läuft schon ein Sync (Cron, Oberfläche, Waage), wird so lange gewartet statt sofort 409 zu melden.
+# Sonst brach das Update der Waage ab, wenn zufällig gleichzeitig der Cron lief. Kleiner als der
+# Sync-Timeout der Waage (60 s).
+LOCK_WAIT_SECONDS = 45
 
 
 def _ensure_cache_dir() -> None:
@@ -41,10 +46,15 @@ def _sync_lock():
     """Verhindert parallele Syncs (Cron + Button + ESP, mehrere Worker) auf dieselben Dateien."""
     _ensure_cache_dir()
     with open(LOCK_PATH, "w") as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            raise HTTPException(status_code=409, detail="Firmware-Sync läuft bereits")
+        deadline = time.monotonic() + LOCK_WAIT_SECONDS
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise HTTPException(status_code=409, detail="Firmware-Sync läuft bereits")
+                time.sleep(0.5)
         try:
             yield
         finally:
@@ -176,6 +186,18 @@ def cache_status():
     }
 
 
+def _cached_sync_result() -> dict | None:
+    """Ergebnis für /sync aus dem Cache, wenn Firmware, Manifest und Prüfsumme zusammenpassen."""
+    meta = _read_json(FIRMWARE_META_PATH) or {}
+    manifest = _read_json(MANIFEST_CACHE_PATH)
+    if not manifest or not FIRMWARE_CACHE_PATH.exists():
+        return None
+    expected = str(manifest.get("sha256", "")).strip().lower()
+    if not expected or meta.get("sha256") != expected or _sha256(FIRMWARE_CACHE_PATH) != expected:
+        return None
+    return {"ok": True, "manifest": manifest, "sha256": expected, "cached": True, "offline": True}
+
+
 @router.post("/sync")
 def sync_firmware():
     """Lädt Manifest + firmware.bin frisch von GitHub Releases, prüft die SHA256-Summe gegen das Manifest
@@ -185,7 +207,14 @@ def sync_firmware():
     /api/v1/esp-firmware/latest.bin vom Pi, ohne selbst GitHub erreichen zu müssen.
     """
     with _sync_lock():
-        release = _fetch_release()
+        try:
+            release = _fetch_release()
+        except HTTPException as exc:
+            # Ohne Internet (AP-Modus ohne LAN/Stick) mit der zuletzt geladenen, geprüften Firmware weiterarbeiten
+            cached = _cached_sync_result()
+            if exc.status_code == 502 and cached is not None:
+                return cached
+            raise
         assets = release.get("assets", [])
         manifest_asset = _find_asset(assets, "manifest.json")
         firmware_asset = _find_asset(assets, "firmware.bin")

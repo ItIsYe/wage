@@ -655,8 +655,12 @@ async function otaCheck() {
   setOtaStatus('Prüfe...', 0);
   try {
     // Manifest vom Pi holen
-    const mr = await fetch('/api/v1/esp-firmware/manifest?refresh=true');
+    // Frisch von GitHub; ohne Internet das Manifest der zwischengespeicherten Firmware
+    let mr = await fetch('/api/v1/esp-firmware/manifest?refresh=true');
+    if (!mr.ok) mr = await fetch('/api/v1/esp-firmware/manifest');
+    if (!mr.ok) throw new Error('Keine Firmware-Information verfügbar (kein Internet und nichts zwischengespeichert)');
     const manifest = await mr.json();
+    if (!manifest.version) throw new Error('Manifest ohne Versionsangabe');
     const available = manifest.version || '-';
     document.getElementById('ota-available').textContent = available;
 

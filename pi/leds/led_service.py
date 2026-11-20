@@ -185,6 +185,22 @@ def make_strip():
     return strip, Color
 
 
+def release_strip(strip) -> None:
+    """Hardware (DMA/PWM) des alten Strips freigeben. rpi_ws281x raeumt sonst erst beim Programmende auf
+    (atexit, kein __del__): jede Neuinitialisierung liess den alten Treiber belegt zurueck."""
+    if strip is None:
+        return
+    try:
+        strip._cleanup()
+    except Exception:
+        pass
+
+
+# So viele Status-Abfragen in Folge duerfen an der Datenbank scheitern (z.B. "database is locked" waehrend
+# eines Backups), bevor die LEDs rot zeigen. Ein einzelner Fehler soll nicht kurz rot aufblitzen.
+DB_ERROR_RED_AFTER = 5
+
+
 def green_wave(strip, Color, strip_sizes: list):
     """Grüne Welle läuft nacheinander durch alle Streifen nach einem Lauf."""
     apply_brightness(strip, _get_led_brightness_for("led_brightness_wave", 120))
@@ -294,6 +310,7 @@ if __name__ == "__main__":
     twinkle_state = None
     rainbow_state = RainbowState()
     pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
+    db_errors = 0
 
     if START_DELAY_SECONDS > 0:
         set_state("led_status", "starting:delay")
@@ -330,10 +347,11 @@ if __name__ == "__main__":
             if current_count != last_led_count:
                 try:
                     fill(strip, Color(0, 0, 0))
-                    strip = None
-                    last_init_try = 0.0
                 except Exception:
-                    strip = None
+                    pass
+                release_strip(strip)
+                strip = None
+                last_init_try = 0.0
                 continue
 
         # DB-Status alle POLL_SECONDS abfragen
@@ -349,6 +367,7 @@ if __name__ == "__main__":
                             fill(strip, Color(0, 0, 0))
                         break
                 s = get_status()
+                db_errors = 0
                 online = is_online(s["last_seen"])
                 current_status = "running:blue" if not s["last_seen"] else ("running:green" if online else "running:yellow")
 
@@ -363,10 +382,13 @@ if __name__ == "__main__":
                     current_status = "event:run_received"
                 status = current_status
             except sqlite3.Error:
-                # Datenbank nicht lesbar: rot anzeigen (Strip bleibt in Betrieb)
-                status = "error:red"
+                # Datenbank nicht lesbar: erst nach mehreren Fehlern in Folge rot anzeigen (Strip bleibt in Betrieb)
+                db_errors += 1
+                if db_errors >= DB_ERROR_RED_AFTER:
+                    status = "error:red"
             except Exception as exc:
                 set_state("led_status", f"degraded:{type(exc).__name__}")
+                release_strip(strip)
                 strip = None
                 Color = None
 
@@ -397,6 +419,7 @@ if __name__ == "__main__":
                     set_state("led_status", status)
             except Exception as exc:
                 set_state("led_status", f"degraded:{type(exc).__name__}")
+                release_strip(strip)
                 strip = None
                 Color = None
 

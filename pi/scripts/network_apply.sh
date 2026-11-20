@@ -106,24 +106,21 @@ if [[ "$MODE" == "ap" ]]; then
 fi
 sleep 1
 
-if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
-  # Ein Client-Profil aus aelteren Versionen (benannt nach der SSID) darf nach einem Neustart nicht das
-  # AP-Profil verdraengen
-  if [[ -n "$CLIENT_SSID" ]]; then
-    nmcli connection modify "$CLIENT_SSID" connection.autoconnect no >/dev/null 2>&1 || true
-  fi
-  log "Modus=$MODE SSID=$AP_SSID IP=$AP_IP ifname=$WLAN_IFACE passwort_gesetzt=$([[ -n "$AP_PASSWORD" ]] && echo true || echo false)"
-  [[ -n "$AP_SSID" ]] || fail "AP-SSID darf nicht leer sein"
-  [[ -n "$AP_IP" ]] || fail "AP-IP darf nicht leer sein"
+# AP fuer die Waage auf $WLAN_IFACE starten (auch als Rueckfall, wenn das Haus-WLAN im Client-Modus
+# scheitert). Rueckgabe != 0 bei Fehler, Grund in AP_ERR.
+start_ap() {
+  AP_ERR=""
+  [[ -n "$AP_SSID" ]] || { AP_ERR="AP-SSID darf nicht leer sein"; return 1; }
+  [[ -n "$AP_IP" ]] || { AP_ERR="AP-IP darf nicht leer sein"; return 1; }
 
   [[ "$AP_BAND" == "bg" ]] || AP_BAND="bg"
   [[ "$AP_CHANNEL" =~ ^[0-9]+$ ]] || AP_CHANNEL="6"
   [[ "$AP_PMF" == "0" || "$AP_PMF" == "1" ]] || AP_PMF="0"
 
   if [[ -z "$AP_PASSWORD" ]]; then
-    fail "AP-Passwort fehlt. Bitte im Webinterface ein AP-Passwort mit mindestens 8 Zeichen setzen."
+    AP_ERR="AP-Passwort fehlt. Bitte im Webinterface ein AP-Passwort mit mindestens 8 Zeichen setzen."; return 1
   elif [[ ${#AP_PASSWORD} -lt 8 ]]; then
-    fail "AP-Passwort zu kurz (mindestens 8 Zeichen erforderlich)"
+    AP_ERR="AP-Passwort zu kurz (mindestens 8 Zeichen erforderlich)"; return 1
   fi
 
   DHCP_NOTE=""
@@ -137,7 +134,8 @@ if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
   fi
 
   nmcli connection delete wage-net-ap >/dev/null 2>&1 || true
-  nmcli connection add type wifi ifname "$WLAN_IFACE" con-name wage-net-ap autoconnect yes ssid "$AP_SSID" >/dev/null
+  nmcli connection add type wifi ifname "$WLAN_IFACE" con-name wage-net-ap autoconnect yes ssid "$AP_SSID" >/dev/null \
+    || { AP_ERR="AP-Profil konnte nicht angelegt werden"; return 1; }
   nmcli connection modify wage-net-ap \
     802-11-wireless.mode ap \
     802-11-wireless.band "$AP_BAND" \
@@ -149,7 +147,8 @@ if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
     802-11-wireless-security.pairwise ccmp \
     802-11-wireless-security.group ccmp \
     802-11-wireless-security.pmf "$AP_PMF" \
-    802-11-wireless-security.psk "$AP_PASSWORD"
+    802-11-wireless-security.psk "$AP_PASSWORD" \
+    || { AP_ERR="AP-Profil konnte nicht eingerichtet werden"; return 1; }
 
   if ! nmcli connection up wage-net-ap >/dev/null 2>&1; then
     sleep 2
@@ -160,9 +159,9 @@ if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
         log "AP startet nicht - entferne eigenen DHCP-Bereich und versuche es mit dem Standard erneut"
         rm -f "$DHCP_CONF"
         DHCP_NOTE="WARNUNG: DHCP-Bereich konnte nicht angewendet werden, Standard-Bereich aktiv"
-        nmcli connection up wage-net-ap >/dev/null || fail "AP konnte nicht gestartet werden"
+        nmcli connection up wage-net-ap >/dev/null || { AP_ERR="AP konnte nicht gestartet werden"; return 1; }
       else
-        fail "AP konnte nicht gestartet werden"
+        AP_ERR="AP konnte nicht gestartet werden"; return 1
       fi
     fi
   fi
@@ -181,9 +180,20 @@ if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
     else
       log "LAN-Interface $ETH_IFACE gefunden aber kein Gateway"
     fi
-  elif [[ "$MODE" == "ap" ]]; then
+  elif [[ "$MODE" != "ap_client" ]]; then
     log "Kein LAN verbunden — kein Internet im AP-Modus (normal)"
   fi
+  return 0
+}
+
+if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
+  # Ein Client-Profil aus aelteren Versionen (benannt nach der SSID) darf nach einem Neustart nicht das
+  # AP-Profil verdraengen
+  if [[ -n "$CLIENT_SSID" ]]; then
+    nmcli connection modify "$CLIENT_SSID" connection.autoconnect no >/dev/null 2>&1 || true
+  fi
+  log "Modus=$MODE SSID=$AP_SSID IP=$AP_IP ifname=$WLAN_IFACE passwort_gesetzt=$([[ -n "$AP_PASSWORD" ]] && echo true || echo false)"
+  start_ap || fail "$AP_ERR"
 
   if [[ "$MODE" == "ap_client" ]]; then
     # Der AP laeuft bereits; scheitert der Stick, bleibt die Waage trotzdem erreichbar.
@@ -197,7 +207,21 @@ if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
 else
   log "Modus=client"
   [[ -n "$CLIENT_SSID" ]] || fail "Client-SSID fehlt"
-  connect_client "$WLAN_IFACE" || fail "WLAN-Verbindung fehlgeschlagen (rc=$CONNECT_RC): $CONNECT_OUT"
+  if ! connect_client "$WLAN_IFACE"; then
+    # Ohne Rueckfall waere der AP abgebaut: die Waage verliert den Pi, der Pi ist nur noch per LAN erreichbar.
+    CLIENT_ERR="WLAN-Verbindung fehlgeschlagen (rc=$CONNECT_RC): $CONNECT_OUT"
+    log "$CLIENT_ERR"
+    log "Rueckfall: starte den AP fuer die Waage wieder..."
+    # Halb angelegtes Client-Profil entfernen, sonst konkurriert es nach einem Neustart mit dem AP
+    nmcli connection delete "$CLIENT_CON" >/dev/null 2>&1 || true
+    if start_ap; then
+      # Gespeicherten Modus an den tatsaechlichen Zustand anpassen (SSID/Passwort bleiben gespeichert)
+      sqlite3 "$DB_PATH" "UPDATE app_state SET value='ap' WHERE key='network_mode';" 2>/dev/null || true
+      fail "$CLIENT_ERR – AP wurde wiederhergestellt, Modus auf AP zurueckgesetzt"
+    else
+      fail "$CLIENT_ERR – AP-Rueckfall ebenfalls fehlgeschlagen: $AP_ERR"
+    fi
+  fi
   # Das AP-Profil (autoconnect yes) koennte sonst nach einem Neustart wieder statt des Haus-WLANs starten
   nmcli connection modify wage-net-ap connection.autoconnect no >/dev/null 2>&1 || true
   log "Client-Modus erfolgreich aktiviert: $CONNECT_OUT"

@@ -7,6 +7,7 @@ Nach auto_shutdown_after_minutes (Standard 10, 0 = aus) faehrt der Pi herunter, 
 Bedienung (Touch, Dienststart) wird als last_activity_at gespeichert, Laeufe als last_run_received_at
 (frueher schrieb dieser Dienst die Bedienung in last_run_received_at).
 """
+import os
 import sqlite3
 import threading
 import time
@@ -20,7 +21,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.runtime import seconds_since_latest  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
-BACKLIGHT = Path("/sys/class/backlight/10-0045/brightness")
+def _find_backlight() -> Path | None:
+    """Backlight des Displays: WAGE_PI_BACKLIGHT oder das erste Gerät unter /sys/class/backlight.
+    Vorher fest 10-0045 (offizielles 7"-DSI-Display); bei anderen Displays blieb der Bildschirm an."""
+    override = os.getenv("WAGE_PI_BACKLIGHT")
+    if override:
+        return Path(override)
+    found = sorted(Path("/sys/class/backlight").glob("*/brightness"))
+    return found[0] if found else None
+
+
+BACKLIGHT = _find_backlight()
+
+
+def _max_brightness() -> int:
+    try:
+        return int((BACKLIGHT.parent / "max_brightness").read_text().strip())
+    except (AttributeError, OSError, ValueError):
+        return 255
 POLL_SECONDS = 10.0
 STARTUP_GRACE_SECONDS = 300  # 5 Minuten nach Boot kein Power-Save
 DEFAULT_SHUTDOWN_AFTER_MINUTES = 10
@@ -150,7 +168,7 @@ def _screen_off_cmd():
 
 def _screen_on_cmd():
     try:
-        BACKLIGHT.write_text("255\n")
+        BACKLIGHT.write_text(f"{_max_brightness()}\n")
     except Exception:
         pass
 

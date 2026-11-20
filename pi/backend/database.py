@@ -96,7 +96,7 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         """
     )
     # Migration: neue Spalten für bestehende DBs ergänzen
-    existing_cols = {row[0] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()}  # [1] = Name
     for col, typedef in [
         ("min_weight_g", "REAL"),
         ("start_drop_threshold_g", "REAL"),
@@ -108,13 +108,13 @@ def _init_schema(conn: sqlite3.Connection) -> None:
                 conn.execute(f"ALTER TABLE runs ADD COLUMN {col} {typedef}")
             except sqlite3.OperationalError:
                 pass
-    dev_cols = {row[0] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+    dev_cols = {row[1] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}  # [1] = Name
     if "last_ip" not in dev_cols:
         try:
             conn.execute("ALTER TABLE devices ADD COLUMN last_ip TEXT")
         except sqlite3.OperationalError:
             pass
-    per_cols = {row[0] for row in conn.execute("PRAGMA table_info(persons)").fetchall()}
+    per_cols = {row[1] for row in conn.execute("PRAGMA table_info(persons)").fetchall()}  # [1] = Name
     for col, typedef in [("tags", "TEXT DEFAULT ''"), ("note", "TEXT DEFAULT ''")]:
         if col not in per_cols:
             try:
