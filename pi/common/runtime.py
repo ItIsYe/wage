@@ -69,3 +69,38 @@ def get_pi_ip() -> str:
             _ip_cache, _ip_cache_at = addr, time.monotonic()
             return addr
     return "127.0.0.1"
+
+
+class ServiceStop(SystemExit):
+    """Wird vom SIGTERM-Handler der Dienste ausgelöst (Dienst wird gestoppt / Pi fährt herunter).
+    Abgeleitet von SystemExit, damit die 'except Exception'-Blöcke der Hauptschleifen sie nicht schlucken."""
+
+
+def install_stop_handler() -> None:
+    """SIGTERM in ServiceStop umwandeln. Ohne Handler beendet SIGTERM den Prozess sofort: die LEDs
+    behielten ihre letzte Farbe und das OLED sein letztes Bild, auch nach dem Herunterfahren
+    (beim Pi bleibt die Versorgung nach dem Halt meist an)."""
+    import signal
+
+    def _raise(signum, frame):
+        raise ServiceStop(0)
+
+    signal.signal(signal.SIGTERM, _raise)
+
+
+def system_stop_kind() -> str | None:
+    """'reboot' oder 'poweroff', wenn das System gerade neu startet bzw. herunterfährt; sonst None
+    (z.B. nur der Dienst wird neu gestartet, etwa beim Update)."""
+    try:
+        jobs = subprocess.run(["systemctl", "list-jobs", "--no-legend"], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        jobs = ""
+    if "reboot.target" in jobs:
+        return "reboot"
+    if "poweroff.target" in jobs or "halt.target" in jobs:
+        return "poweroff"
+    try:
+        state = subprocess.run(["systemctl", "is-system-running"], capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        state = ""
+    return "poweroff" if state == "stopping" else None

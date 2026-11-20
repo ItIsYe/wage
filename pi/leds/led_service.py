@@ -7,7 +7,7 @@ from pathlib import Path
 # nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.runtime import seconds_since, seconds_since_latest  # noqa: E402
+from common.runtime import ServiceStop, install_stop_handler, seconds_since, seconds_since_latest  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 POLL_SECONDS = 1.0           # DB-Status alle 1s abfragen
@@ -312,6 +312,8 @@ if __name__ == "__main__":
     pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
     db_errors = 0
 
+    install_stop_handler()
+
     if START_DELAY_SECONDS > 0:
         set_state("led_status", "starting:delay")
         time.sleep(START_DELAY_SECONDS)
@@ -325,103 +327,115 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    while True:
-        now = time.time()
-        if strip is None and now - last_init_try >= REINIT_SECONDS:
-            last_init_try = now
-            try:
-                strip, Color = make_strip()
-                last_led_count = _get_led_count()
-                from twinkle import TwinkleState
-                twinkle_state = TwinkleState(strip.numPixels())
-                boot_sequence(strip, Color)
-                set_state("led_status", "starting:white")
-            except Exception as exc:
-                set_state("led_status", f"degraded:{type(exc).__name__}")
-
-        # Geänderte Pixelzahl -> Strip neu initialisieren. Helligkeitsänderungen braucht es dafür nicht:
-        # apply_brightness() setzt sie im nächsten Tick (früher: Neuinitialisierung mit Hochdimmen).
-        if strip is not None:
-            strip.max_current_ma = _get_max_current_ma()  # wirkt sofort, ohne Neuinitialisierung
-            current_count = _get_led_count()
-            if current_count != last_led_count:
+    try:
+        while True:
+            now = time.time()
+            if strip is None and now - last_init_try >= REINIT_SECONDS:
+                last_init_try = now
                 try:
-                    fill(strip, Color(0, 0, 0))
-                except Exception:
-                    pass
-                release_strip(strip)
-                strip = None
-                last_init_try = 0.0
-                continue
+                    strip, Color = make_strip()
+                    last_led_count = _get_led_count()
+                    from twinkle import TwinkleState
+                    twinkle_state = TwinkleState(strip.numPixels())
+                    boot_sequence(strip, Color)
+                    set_state("led_status", "starting:white")
+                except Exception as exc:
+                    set_state("led_status", f"degraded:{type(exc).__name__}")
 
-        # DB-Status alle POLL_SECONDS abfragen
-        _poll_interval = POLL_SECONDS_POWERSAVE if _is_power_save() else POLL_SECONDS
-        if now - last_db_poll >= _poll_interval:
-            last_db_poll = now
-            try:
-                # Shutdown-Signal prüfen
-                with __import__('sqlite3').connect(DB) as _c:
-                    _sd = _c.execute("SELECT value FROM app_state WHERE key='led_shutdown'").fetchone()
-                    if _sd and _sd[0] == '1':
+            # Geänderte Pixelzahl -> Strip neu initialisieren. Helligkeitsänderungen braucht es dafür nicht:
+            # apply_brightness() setzt sie im nächsten Tick (früher: Neuinitialisierung mit Hochdimmen).
+            if strip is not None:
+                strip.max_current_ma = _get_max_current_ma()  # wirkt sofort, ohne Neuinitialisierung
+                current_count = _get_led_count()
+                if current_count != last_led_count:
+                    try:
+                        fill(strip, Color(0, 0, 0))
+                    except Exception:
+                        pass
+                    release_strip(strip)
+                    strip = None
+                    last_init_try = 0.0
+                    continue
+
+            # DB-Status alle POLL_SECONDS abfragen
+            _poll_interval = POLL_SECONDS_POWERSAVE if _is_power_save() else POLL_SECONDS
+            if now - last_db_poll >= _poll_interval:
+                last_db_poll = now
+                try:
+                    # Shutdown-Signal prüfen
+                    with __import__('sqlite3').connect(DB) as _c:
+                        _sd = _c.execute("SELECT value FROM app_state WHERE key='led_shutdown'").fetchone()
+                        if _sd and _sd[0] == '1':
+                            if strip and Color:
+                                fill(strip, Color(0, 0, 0))
+                            break
+                    s = get_status()
+                    db_errors = 0
+                    online = is_online(s["last_seen"])
+                    current_status = "running:blue" if not s["last_seen"] else ("running:green" if online else "running:yellow")
+
+                    new_run_id = s["last_run_id"]
+                    if last_run_id is not None and new_run_id and new_run_id != last_run_id:
+                        blink_until = now + 5.0
                         if strip and Color:
-                            fill(strip, Color(0, 0, 0))
-                        break
-                s = get_status()
-                db_errors = 0
-                online = is_online(s["last_seen"])
-                current_status = "running:blue" if not s["last_seen"] else ("running:green" if online else "running:yellow")
+                            green_wave(strip, Color, _get_strip_config())
+                    last_run_id = new_run_id
 
-                new_run_id = s["last_run_id"]
-                if last_run_id is not None and new_run_id and new_run_id != last_run_id:
-                    blink_until = now + 5.0
-                    if strip and Color:
-                        green_wave(strip, Color, _get_strip_config())
-                last_run_id = new_run_id
+                    if now < blink_until:
+                        current_status = "event:run_received"
+                    status = current_status
+                except sqlite3.Error:
+                    # Datenbank nicht lesbar: erst nach mehreren Fehlern in Folge rot anzeigen (Strip bleibt in Betrieb)
+                    db_errors += 1
+                    if db_errors >= DB_ERROR_RED_AFTER:
+                        status = "error:red"
+                except Exception as exc:
+                    set_state("led_status", f"degraded:{type(exc).__name__}")
+                    release_strip(strip)
+                    strip = None
+                    Color = None
 
-                if now < blink_until:
-                    current_status = "event:run_received"
-                status = current_status
-            except sqlite3.Error:
-                # Datenbank nicht lesbar: erst nach mehreren Fehlern in Folge rot anzeigen (Strip bleibt in Betrieb)
-                db_errors += 1
-                if db_errors >= DB_ERROR_RED_AFTER:
-                    status = "error:red"
-            except Exception as exc:
-                set_state("led_status", f"degraded:{type(exc).__name__}")
-                release_strip(strip)
-                strip = None
-                Color = None
+            # LED-Animation bei jedem ANIM_SECONDS Tick rendern
+            if strip and Color:
+                try:
+                    total = strip.numPixels()
+                    power_save = _is_power_save()
+                    if power_save and now >= blink_until:
+                        if twinkle_state is None or twinkle_state.n != total:
+                            from twinkle import TwinkleState
+                            twinkle_state = TwinkleState(total)
+                        apply_brightness(strip, _get_led_brightness())
+                        twinkle_state.tick(strip, Color, _get_led_brightness_for("led_brightness_power_save", 12))
+                        set_state("led_status", "power_save")
+                    elif status == "event:run_received":
+                        pass
+                    elif status == "error:red":
+                        apply_brightness(strip, _get_led_brightness())
+                        fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100), 0, 0))
+                    elif not online:
+                        apply_brightness(strip, _get_led_brightness())
+                        pulse_tick(strip, Color, pulse_offline_state, total, _get_led_brightness_for("led_brightness_pulse_offline", 60))
+                    else:
+                        apply_brightness(strip, _get_led_brightness_for("led_brightness_rainbow", 80))
+                        rainbow_tick(strip, Color, rainbow_state, total)
+                    if not power_save or now < blink_until:
+                        set_state("led_status", status)
+                except Exception as exc:
+                    set_state("led_status", f"degraded:{type(exc).__name__}")
+                    release_strip(strip)
+                    strip = None
+                    Color = None
 
-        # LED-Animation bei jedem ANIM_SECONDS Tick rendern
-        if strip and Color:
+            # Im Power-Save: langsamer schlafen spart CPU
+            time.sleep(ANIM_SECONDS_POWERSAVE if _is_power_save() else ANIM_SECONDS)
+    except ServiceStop:
+        # Dienst wird gestoppt (Herunterfahren, Neustart, Update): LEDs ausschalten. Ohne das behielt der
+        # Streifen die letzte Farbe, auch wenn der Pi schon aus war (die LEDs haben eigene Versorgung).
+        if strip is not None and Color is not None:
             try:
-                total = strip.numPixels()
-                power_save = _is_power_save()
-                if power_save and now >= blink_until:
-                    if twinkle_state is None or twinkle_state.n != total:
-                        from twinkle import TwinkleState
-                        twinkle_state = TwinkleState(total)
-                    apply_brightness(strip, _get_led_brightness())
-                    twinkle_state.tick(strip, Color, _get_led_brightness_for("led_brightness_power_save", 12))
-                    set_state("led_status", "power_save")
-                elif status == "event:run_received":
-                    pass
-                elif status == "error:red":
-                    apply_brightness(strip, _get_led_brightness())
-                    fill(strip, Color(_get_led_brightness_for("led_brightness_error", 100), 0, 0))
-                elif not online:
-                    apply_brightness(strip, _get_led_brightness())
-                    pulse_tick(strip, Color, pulse_offline_state, total, _get_led_brightness_for("led_brightness_pulse_offline", 60))
-                else:
-                    apply_brightness(strip, _get_led_brightness_for("led_brightness_rainbow", 80))
-                    rainbow_tick(strip, Color, rainbow_state, total)
-                if not power_save or now < blink_until:
-                    set_state("led_status", status)
-            except Exception as exc:
-                set_state("led_status", f"degraded:{type(exc).__name__}")
-                release_strip(strip)
-                strip = None
-                Color = None
-
-        # Im Power-Save: langsamer schlafen spart CPU
-        time.sleep(ANIM_SECONDS_POWERSAVE if _is_power_save() else ANIM_SECONDS)
+                fill(strip, Color(0, 0, 0))
+            except Exception:
+                pass
+        release_strip(strip)
+        set_state("led_status", "stopped")
+        raise
