@@ -40,14 +40,16 @@ sudo reboot
 
 Über das Webinterface: **Konfiguration → 5) System-Update → Nach Updates prüfen**.
 
-Oder manuell:
+Das Update läuft als `pi/scripts/update.sh`: DB-Backup, Code-Sync, Pakete, Dienste, Migration,
+Neustart der Dienste (Backend zuletzt, Kiosk nur wenn er sich geändert hat). Am Ende zeigt die
+Oberfläche **Update abgeschlossen**, unter „Letztes Update" steht **update erfolgreich**.
+Die Datenbank in `pi/data/` ist nicht im Repo und wird nie überschrieben.
+
+Oder manuell (gleicher Ablauf wie im Webinterface):
 ```bash
 cd ~/wage
-git pull origin beta
-/home/wage/wage/pi/.venv/bin/pip install -r pi/requirements.txt -q
-sudo install -m 0644 pi/systemd/wage-pi-*.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl restart wage-pi-backend wage-pi-leds wage-pi-oled wage-pi-screen-save wage-pi-kiosk
+git fetch origin beta && git reset --hard origin/beta
+bash pi/scripts/update.sh
 ```
 
 ## Update-Umfang
