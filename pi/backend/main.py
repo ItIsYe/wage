@@ -22,6 +22,7 @@ from .api_esp_firmware import router as esp_firmware_router
 from .api_hardware_config import router as hardware_config_router
 from .api_stats import router as stats_router
 from .api_led_config import router as led_config_router
+from .activity import ActivityMiddleware
 from .api_esp_proxy import router as esp_proxy_router
 from .config import APP_VERSION, PI_ROOT
 from .config_migration import ensure_config_defaults
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="wage-pi", version=APP_VERSION, lifespan=lifespan)
+app.add_middleware(ActivityMiddleware)  # Bedienung im Browser zählt für Power-Save/Auto-Shutdown
 app.mount("/static", StaticFiles(directory=str(PI_ROOT / "frontend" / "static")), name="static")
 templates = Jinja2Templates(directory=str(PI_ROOT / "frontend" / "templates"))
 
@@ -74,48 +76,48 @@ app.include_router(led_config_router)
 
 @app.get("/config/leds", response_class=HTMLResponse)
 async def page_led_config(request: Request):
-    return templates.TemplateResponse("led_config.html", {"request": request})
+    return templates.TemplateResponse(request, "led_config.html")
 
 
 @app.get("/stats", response_class=HTMLResponse)
 async def page_stats(request: Request):
-    return templates.TemplateResponse("stats.html", {"request": request})
+    return templates.TemplateResponse(request, "stats.html")
 app.include_router(esp_proxy_router)
 
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard_page(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "dashboard.html")
 
 
 @app.get("/runs/new", response_class=HTMLResponse)
 async def page_run_new(request: Request):
-    return templates.TemplateResponse("run_new.html", {"request": request})
+    return templates.TemplateResponse(request, "run_new.html")
 
 
 @app.get("/runs/{run_id}", response_class=HTMLResponse)
 async def page_run_detail(request: Request, run_id: int):
-    return templates.TemplateResponse("run_detail.html", {"request": request, "run_id": run_id})
+    return templates.TemplateResponse(request, "run_detail.html", {"run_id": run_id})
 
 
 @app.get("/runs", response_class=HTMLResponse)
 def runs_page(request: Request):
-    return templates.TemplateResponse("runs.html", {"request": request})
+    return templates.TemplateResponse(request, "runs.html")
 
 
 @app.get("/persons", response_class=HTMLResponse)
 def persons_page(request: Request):
-    return templates.TemplateResponse("persons.html", {"request": request})
+    return templates.TemplateResponse(request, "persons.html")
 
 
 @app.get("/status", response_class=HTMLResponse)
 def status_page(request: Request):
-    return templates.TemplateResponse("status.html", {"request": request})
+    return templates.TemplateResponse(request, "status.html")
 
 
 @app.get("/ota", response_class=HTMLResponse)
 async def page_ota(request: Request):
-    return templates.TemplateResponse("ota.html", {"request": request})
+    return templates.TemplateResponse(request, "ota.html")
 
 
 @app.post("/api/v1/system/restart-services")
@@ -183,4 +185,4 @@ def system_reboot():
 
 @app.get("/config", response_class=HTMLResponse)
 def config_page(request: Request):
-    return templates.TemplateResponse("config.html", {"request": request})
+    return templates.TemplateResponse(request, "config.html")

@@ -19,8 +19,6 @@ TARGET_BRANCH = os.getenv("WAGE_REPO_BRANCH", "beta")
 UPDATE_SCOPE = "pi-only"
 GIT_TIMEOUT_SECONDS = 30
 FETCH_CACHE_SECONDS = 60  # GET /status holt höchstens einmal pro Minute von GitHub
-PIP_TIMEOUT_SECONDS = 180
-SYSTEMCTL_TIMEOUT_SECONDS = 30
 UPDATE_RELEVANT_DIRS = ("pi/backend", "pi/common", "pi/frontend", "pi/oled", "pi/leds", "pi/screen", "pi/scripts", "pi/systemd")
 UPDATE_RELEVANT_FILES = ("pi/requirements.txt", "pi/README.md")
 PROTECTED_RUNTIME_PATHS = ["pi/data/", "pi/logs/"]
@@ -127,12 +125,14 @@ def _is_update_relevant_pi_path(path: str) -> bool:
     return any(normalized.startswith(f"{d}/") for d in UPDATE_RELEVANT_DIRS)
 
 
-def _list_remote_update_files_with_hashes() -> dict[str, str]:
+def _list_remote_update_files_with_hashes() -> dict[str, tuple[str, bool]]:
+    """Datei -> (Blob-Hash, ausführbar) laut origin. Der Modus zählt mit: Ein reiner Rechte-Fix
+    (z.B. Skript ausführbar gemacht) wurde sonst nie als Update erkannt."""
     pathspecs = [*UPDATE_RELEVANT_DIRS, *UPDATE_RELEVANT_FILES]
     proc = _run(_git_cmd("ls-tree", "-r", f"origin/{TARGET_BRANCH}", "--", *pathspecs), cwd=REPO_PATH)
     if proc.returncode != 0:
         raise HTTPException(status_code=500, detail=f"Remote-Dateiliste fehlgeschlagen: {proc.stderr.strip() or proc.stdout.strip()}")
-    files: dict[str, str] = {}
+    files: dict[str, tuple[str, bool]] = {}
     for line in proc.stdout.splitlines():
         if "\t" not in line:
             continue
@@ -140,10 +140,10 @@ def _list_remote_update_files_with_hashes() -> dict[str, str]:
         parts = meta.split()
         if len(parts) < 3:
             continue
-        blob_hash = parts[2]
+        mode, blob_hash = parts[0], parts[2]
         normalized = file_path.strip().replace("\\", "/")
         if normalized.startswith("pi/") and _is_update_relevant_pi_path(normalized):
-            files[normalized] = blob_hash
+            files[normalized] = (blob_hash, mode == "100755")
     return files
 
 
@@ -176,10 +176,21 @@ def _local_blob_hash(path: str) -> str:
     return hashlib.sha1(header + data).hexdigest()
 
 
+def _local_is_executable(path: str) -> bool:
+    file_path = REPO_PATH / path
+    try:
+        return bool(file_path.stat().st_mode & 0o100)
+    except OSError:
+        return False
+
+
 def _calculate_pi_sync_sets() -> tuple[list[str], list[str], list[str]]:
     remote = _list_remote_update_files_with_hashes()
     local = _list_local_update_files()
-    changed = sorted([path for path, remote_hash in remote.items() if _local_blob_hash(path) != remote_hash])
+    changed = sorted(
+        path for path, (remote_hash, remote_exec) in remote.items()
+        if _local_blob_hash(path) != remote_hash or _local_is_executable(path) != remote_exec
+    )
     obsolete = sorted([path for path in local if path not in remote and not is_protected_pi_runtime_path(path)])
     return changed, obsolete, sorted(PROTECTED_RUNTIME_FILES)
 
