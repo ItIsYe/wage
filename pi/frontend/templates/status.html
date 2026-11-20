@@ -23,6 +23,25 @@
 
 <div class="card card-row">
   <div class="card-row-info">
+    <b>🖥 Pi-Bildschirm</b>
+    <small id="kiosk-hint">Waage-Oberfläche beenden, um den Pi-Desktop zu benutzen. Zurück über das Symbol „Waage-Oberfläche“ auf dem Desktop.</small>
+  </div>
+  <div style="display:flex;gap:8px;flex-shrink:0">
+    <button id="btn-kiosk-stop" onclick="kioskStop()" class="btn-secondary">Zum Pi-Desktop</button>
+    <button id="btn-kiosk-start" onclick="kioskStart()" class="btn-secondary" style="display:none">Oberfläche starten</button>
+  </div>
+</div>
+
+<div class="card card-row">
+  <div class="card-row-info">
+    <b>♻️ Dienste neu starten</b>
+    <small>Startet LEDs, OLED, Bildschirmschoner und Backend neu (ca. 10 s, Pi bleibt an)</small>
+  </div>
+  <button id="btn-restart-all" onclick="restartAllServices()" class="btn-secondary" style="flex-shrink:0">Neu starten</button>
+</div>
+
+<div class="card card-row">
+  <div class="card-row-info">
     <b>🔄 Pi neu starten</b>
     <small>Startet den Pi neu — LEDs und OLED gehen vorher aus</small>
   </div>

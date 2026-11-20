@@ -142,6 +142,16 @@ Helligkeiten konfigurierbar unter **Konfiguration → 3) LED-Konfiguration**:
 - **Regenbogen, Grüne Welle, Boot:** legen die Helligkeit des Streifens (0–255) für das jeweilige Muster direkt fest.
 - **Gelb pulsend, Sternenhimmel, Fehler:** Farbwert des Musters, wirkt zusätzlich zur globalen Helligkeit (**Konfiguration → 4) Pi Hardware**).
 
+## Pi-Desktop und Dienste
+
+- **Zum Pi-Desktop:** Status → „Pi-Bildschirm“ → *Zum Pi-Desktop* beendet die Waage-Oberfläche (Kiosk);
+  darunter erscheint der normale Pi-Desktop. Von Handy/Laptop aus lässt sich der Kiosk dort auch wieder starten.
+- **Zurück zur Oberfläche:** Symbol **Waage-Oberfläche** auf dem Desktop (oder im Startmenü).
+- **Dienste neu starten:** Symbol **wage-Dienste neu starten** auf dem Desktop oder Status → *Dienste neu starten*
+  (LEDs, OLED, Bildschirmschoner, Backend; der Pi bleibt an). Gleiches Skript: `pi/scripts/restart_services.sh`.
+- Die Symbole legt `pi/scripts/install_desktop_shortcuts.sh` an (läuft bei Installation und jedem Update).
+- Nach einem Neustart des Pi startet die Waage-Oberfläche wieder automatisch.
+
 ## Power-Save & Auto-Shutdown
 
 „Inaktiv“ heißt: kein Lauf **und** keine Bedienung (Touch, Neustart). Läufe stehen in `last_run_received_at`, Bedienung in `last_activity_at`.
