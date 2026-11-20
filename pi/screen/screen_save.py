@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-wage-pi-screen-save: Schaltet den Pi-Bildschirm (DSI) aus wenn kein Lauf
-für X Minuten eingegangen ist. Aktiviert ihn bei neuem Lauf oder Touch wieder.
+wage-pi-screen-save: Schaltet den Pi-Bildschirm (DSI) aus, wenn X Minuten weder ein Lauf
+eingegangen ist noch der Bildschirm bedient wurde. Aktiviert ihn bei neuem Lauf oder Touch wieder.
+Nach auto_shutdown_after_minutes (Standard 10, 0 = aus) faehrt der Pi herunter, ausser im Debug-Modus.
+
+Bedienung (Touch, Dienststart) wird als last_activity_at gespeichert, Laeufe als last_run_received_at
+(frueher schrieb dieser Dienst die Bedienung in last_run_received_at).
 """
 import sqlite3
 import threading
@@ -13,13 +17,13 @@ from pathlib import Path
 # nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.runtime import seconds_since  # noqa: E402
+from common.runtime import seconds_since_latest  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 BACKLIGHT = Path("/sys/class/backlight/10-0045/brightness")
 POLL_SECONDS = 10.0
 STARTUP_GRACE_SECONDS = 300  # 5 Minuten nach Boot kein Power-Save
-SHUTDOWN_AFTER_MINUTES = 10
+DEFAULT_SHUTDOWN_AFTER_MINUTES = 10
 
 _screen_off = False
 _touch_wakeup = False
@@ -31,7 +35,7 @@ def _get_config() -> dict:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
                 "SELECT key, value FROM app_state WHERE key IN "
-                "('power_save_after_minutes','last_run_received_at','debug_mode')"
+                "('power_save_after_minutes','auto_shutdown_after_minutes','last_run_received_at','last_activity_at','debug_mode')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
     except Exception:
@@ -55,28 +59,40 @@ def _is_power_save() -> bool:
         minutes = int(cfg.get("power_save_after_minutes", "1"))
         if minutes == 0:
             return False
-        last_run = cfg.get("last_run_received_at", "")
-        if not last_run:
-            return False
-        age = seconds_since(last_run)
-        if age is None:
-            return False
-        return age / 60 >= minutes
+        minutes_idle = _inactivity_minutes(cfg)
+        return minutes_idle is not None and minutes_idle >= minutes
     except Exception:
         return False
 
 
-def _inactivity_minutes() -> float:
-    """Gibt zurück wie viele Minuten seit dem letzten Lauf vergangen sind."""
+def _inactivity_minutes(cfg: dict | None = None) -> float | None:
+    """Minuten seit dem letzten Lauf oder der letzten Bedienung; None, wenn beides unbekannt ist."""
     try:
-        cfg = _get_config()
-        last_run = cfg.get("last_run_received_at", "")
-        if not last_run:
-            return 0.0
-        age = seconds_since(last_run)
-        return 0.0 if age is None else age / 60
+        cfg = _get_config() if cfg is None else cfg
+        age = seconds_since_latest(cfg.get("last_run_received_at"), cfg.get("last_activity_at"))
+        return None if age is None else age / 60
     except Exception:
-        return 0.0
+        return None
+
+
+def _shutdown_after_minutes(cfg: dict) -> int:
+    try:
+        return int(cfg.get("auto_shutdown_after_minutes", DEFAULT_SHUTDOWN_AFTER_MINUTES))
+    except (TypeError, ValueError):
+        return DEFAULT_SHUTDOWN_AFTER_MINUTES
+
+
+def _mark_activity() -> None:
+    try:
+        with sqlite3.connect(DB) as c:
+            c.execute(
+                "INSERT INTO app_state(key,value) VALUES('last_activity_at',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (datetime.now(timezone.utc).isoformat(),)
+            )
+            c.commit()
+    except Exception:
+        pass
 
 
 def _shutdown():
@@ -92,20 +108,8 @@ def _shutdown():
             c.commit()
     except Exception:
         pass
-    # Direkt über rpi_ws281x alle Pixel schwarz setzen
-    try:
-        subprocess.run(
-            ["python3", "-c",
-             "from rpi_ws281x import PixelStrip,Color; "
-             "import sqlite3; "
-             "db=sqlite3.connect('/home/wage/wage/pi/data/wage_pi.sqlite3'); "
-             "n=sum(int(x) for x in (db.execute(\"SELECT value FROM app_state WHERE key='pi_led_strip_sizes'\").fetchone() or ('80,80,82,82',))[0].split(',')); "
-             "s=PixelStrip(n,18); s.begin(); "
-             "[s.setPixelColor(i,Color(0,0,0)) for i in range(n)]; s.show()"],
-            timeout=5, capture_output=True
-        )
-    except Exception:
-        pass
+    # Die LEDs schaltet der LED-Dienst (root) beim Flag led_shutdown selbst aus. Ein direkter
+    # rpi_ws281x-Aufruf von hier (Benutzer wage, System-Python) konnte nie wirken.
     # OLED: Shutdown-Meldung anzeigen
     try:
         from luma.core.interface.serial import i2c
@@ -176,19 +180,9 @@ def _touch_watcher():
 def main():
     global _screen_off, _touch_wakeup
 
-    # Beim Start: Bildschirm einschalten und last_run_received_at auf jetzt setzen
+    # Beim Start: Bildschirm einschalten, Inaktivitaets-Zeit beginnt jetzt
     _screen_on_cmd()
-    try:
-        with sqlite3.connect(DB) as c:
-            now_iso = datetime.now(timezone.utc).isoformat()
-            c.execute(
-                "INSERT INTO app_state(key,value) VALUES('last_run_received_at',?) "
-                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (now_iso,)
-            )
-            c.commit()
-    except Exception:
-        pass
+    _mark_activity()
 
     # Touch-Watcher in Hintergrund-Thread starten
     t = threading.Thread(target=_touch_watcher, daemon=True)
@@ -196,6 +190,7 @@ def main():
 
     while True:
         try:
+            cfg = _get_config()
             should_save = _is_power_save()
 
             # Touch-Event: Bildschirm wecken und Timer zurücksetzen
@@ -204,18 +199,7 @@ def main():
                 if _screen_off:
                     _screen_on_cmd()
                     _screen_off = False
-                # last_run_received_at aktualisieren damit Timer zurückgesetzt wird
-                try:
-                    with sqlite3.connect(DB) as c:
-                        now_iso = datetime.now(timezone.utc).isoformat()
-                        c.execute(
-                            "INSERT INTO app_state(key,value) VALUES('last_run_received_at',?) "
-                            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                            (now_iso,)
-                        )
-                        c.commit()
-                except Exception:
-                    pass
+                _mark_activity()  # Timer fuer Power-Save und Auto-Shutdown zuruecksetzen
 
             elif should_save and not _screen_off:
                 _screen_off_cmd()
@@ -224,13 +208,12 @@ def main():
                 _screen_on_cmd()
                 _screen_off = False
 
-            # Auto-Shutdown nach 10 Minuten Inaktivität
-            if time.monotonic() - _start_time >= STARTUP_GRACE_SECONDS:
-                if _inactivity_minutes() >= SHUTDOWN_AFTER_MINUTES:
-                    if _is_debug_mode():
-                        pass  # Kein Shutdown im Debug-Modus
-                    else:
-                        _shutdown()
+            # Auto-Shutdown nach X Minuten Inaktivitaet (0 = aus; im Debug-Modus nie)
+            shutdown_after = _shutdown_after_minutes(cfg)
+            if shutdown_after > 0 and time.monotonic() - _start_time >= STARTUP_GRACE_SECONDS:
+                idle = _inactivity_minutes(cfg)
+                if idle is not None and idle >= shutdown_after and not _is_debug_mode():
+                    _shutdown()
 
         except Exception:
             pass

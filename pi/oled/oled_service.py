@@ -7,7 +7,7 @@ from pathlib import Path
 # nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.runtime import get_pi_ip, seconds_since  # noqa: E402
+from common.runtime import get_pi_ip, seconds_since, seconds_since_latest  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 OLED_ADDRESS = int(os.getenv("WAGE_PI_OLED_ADDRESS", "0x3c"), 16)
@@ -18,7 +18,7 @@ def _get_hw_config() -> dict:
     try:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
-                "SELECT key, value FROM app_state WHERE key IN ('pi_oled_rotation','power_save_after_minutes','last_run_received_at')"
+                "SELECT key, value FROM app_state WHERE key IN ('pi_oled_rotation','pi_oled_driver','power_save_after_minutes','last_run_received_at','last_activity_at')"
             ).fetchall()
             return {r[0]: r[1] for r in rows}
     except Exception:
@@ -37,12 +37,10 @@ def _is_power_save() -> bool:
         minutes = int(hw.get("power_save_after_minutes", "1"))
         if minutes == 0:
             return False
-        last_run = hw.get("last_run_received_at", "")
-        if not last_run:
-            return False  # Noch kein Lauf -> kein Power-Save
-        age = seconds_since(last_run)
+        # Inaktivitaet = Zeit seit dem letzten Lauf oder der letzten Bedienung
+        age = seconds_since_latest(hw.get("last_run_received_at"), hw.get("last_activity_at"))
         if age is None:
-            return False
+            return False  # noch kein Lauf / keine Bedienung -> kein Power-Save
         return age / 60 >= minutes
     except Exception:
         return False
@@ -51,6 +49,18 @@ try:
     from backend.config import OFFLINE_THRESHOLD_SECONDS
 except Exception:
     OFFLINE_THRESHOLD_SECONDS = 90
+
+
+def _local_midnight_utc_iso() -> str:
+    """Beginn des heutigen Tages (Ortszeit des Pi) als UTC-ISO, passend zu den gespeicherten Zeiten."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    try:
+        tz = ZoneInfo(os.getenv("WAGE_PI_TIMEZONE", "Europe/Berlin"))  # wie die Statistik
+    except Exception:
+        tz = timezone.utc
+    local_midnight = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    return local_midnight.astimezone(timezone.utc).isoformat()
 
 
 def set_status(v: str):
@@ -72,6 +82,10 @@ def get_runtime_status() -> dict:
         active = int(app.get("active_person_id", "1"))
         person = c.execute("SELECT id,name FROM persons WHERE id=?", (active,)).fetchone()
         dev = c.execute("SELECT last_seen_at FROM devices ORDER BY last_seen_at DESC LIMIT 1").fetchone()
+        runs_today = c.execute(
+            "SELECT COUNT(*) FROM runs WHERE COALESCE(measured_at, received_at) >= ?",
+            (_local_midnight_utc_iso(),),
+        ).fetchone()[0]
     ip = get_pi_ip()
     last_seen = dev["last_seen_at"] if dev else None
     age = seconds_since(last_seen)
@@ -82,8 +96,7 @@ def get_runtime_status() -> dict:
         "person": dict(person) if person else {"id": 1, "name": "Unbekannt"},
         "last_seen": last_seen,
         "scale_online": online,
-        "api_status": app.get("api_status", "ok"),
-        "database_status": app.get("database_status", "ok"),
+        "runs_today": runs_today,
     }
 
 
@@ -112,12 +125,10 @@ if __name__ == "__main__":
                 serial = i2c(port=1, address=OLED_ADDRESS)
                 hw = _get_hw_config()
                 rotation = int(hw.get("pi_oled_rotation", "0"))
-                try:
-                    dev = ssd1306(serial, rotate=rotation)
-                    driver = "ssd1306"
-                except Exception:
-                    dev = sh1106(serial, rotate=rotation)
-                    driver = "sh1106"
+                # Der Typ ist einstellbar (Konfiguration -> Pi Hardware): die SSD1306-Initialisierung
+                # gelingt auch bei einem SH1106, ein automatischer Fallback kann also nie greifen.
+                driver = "sh1106" if hw.get("pi_oled_driver") == "sh1106" else "ssd1306"
+                dev = (sh1106 if driver == "sh1106" else ssd1306)(serial, rotate=rotation)
                 set_status(f"running:{driver}")
             except Exception as exc:
                 set_status(f"degraded:{type(exc).__name__}")
@@ -161,7 +172,7 @@ if __name__ == "__main__":
                 draw.text((0, 12), s["url"][:22], fill=255)
                 draw.text((0, 24), f"Aktiv: {s['person']['name'][:12]}", fill=255)
                 draw.text((0, 36), f"Waage: {'online' if s['scale_online'] else 'offline'}", fill=255)
-                draw.text((0, 48), f"API/DB: {s['api_status']}/{s['database_status']}", fill=255)
+                draw.text((0, 48), f"Laeufe heute: {s['runs_today']}", fill=255)
 
             dev.display(img)
             set_status(f"running:{driver}")

@@ -38,13 +38,18 @@ header {
   padding: 0 20px;
 }
 
+/* Eine Zeile, bei Platzmangel seitlich wischbar (vorher zwei Zeilen = 64 px fester Kopf auf 480 px Hoehe) */
 nav {
   display: flex;
   gap: 2px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   min-height: 52px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+nav::-webkit-scrollbar { display: none; }
 
 nav a {
   color: var(--text-muted);
@@ -52,14 +57,20 @@ nav a {
   font-size: 0.875rem;
   font-weight: 600;
   padding: 7px 12px;
+  min-height: 42px;               /* Fingergroesse */
+  display: inline-flex;
+  align-items: center;
   border-radius: var(--radius-sm);
   transition: color .15s, background .15s;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 nav a:hover  { color: var(--text); background: var(--bg-card2); }
 nav a.active { color: #fff; background: var(--accent); }
-nav a.disabled { opacity: .3; pointer-events: none; cursor: not-allowed; }
+/* Waage offline: nur abgeschwaecht, aber antippbar (die Seite erklaert dann, was fehlt).
+   Vorher pointer-events:none - der Status wird nur beim Laden geprueft, die Links blieben gesperrt. */
+nav a.disabled { opacity: .45; }
 
 /* === Main === */
 main { padding: 24px 20px; max-width: 1400px; margin: 0 auto; }
@@ -195,6 +206,11 @@ td, th { border-bottom: 1px solid var(--border); padding: 10px 14px; text-align:
 th { background: var(--bg-card2); color: var(--text-muted); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: .06em; }
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: rgba(255,255,255,.02); }
+.runs-table td.run-actions { white-space: nowrap; }
+.runs-table td.run-actions button { padding: 8px 10px; margin: 2px 0; }
+.runs-table select { min-width: 130px; }
+.runs-table input { min-width: 110px; }
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
 /* === Nachrichten === */
 .msg { min-height: 1.4rem; font-size: 0.875rem; font-weight: 600; margin-bottom: 10px; }
@@ -293,18 +309,13 @@ pre { white-space: pre-wrap; word-wrap: break-word; background: var(--bg-card2);
 .busy-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; animation: pulse-dot 1s infinite ease-in-out; }
 @keyframes pulse-dot { 0%,100%{transform:scale(.8);opacity:.5} 50%{transform:scale(1.2);opacity:1} }
 
-/* === Touch Keyboard === */
-body.touch-keyboard-open { padding-bottom: var(--touch-keyboard-height, 0); }
-.touch-keyboard { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; background: #0f172a; color: #fff; padding: 8px; max-height: 35vh; overflow-y: auto; box-shadow: 0 -8px 22px rgba(0,0,0,.4); border-top: 1px solid var(--border); }
-.touch-keyboard.hidden { display: none; }
-.touch-key-row { display: grid; grid-template-columns: repeat(10, minmax(0,1fr)); gap: 6px; margin-bottom: 6px; }
-.touch-key { border: 1px solid #334155; background: #1e293b; color: #fff; border-radius: 8px; min-height: 44px; font-size: 0.95rem; padding: 6px; cursor: pointer; }
-.touch-key-action { background: #334155; }
-.touch-key.is-active { background: var(--accent); }
-.touch-key-space { grid-column: span 4; }
-.touch-keyboard .touch-key-row:last-child { grid-template-columns: repeat(5, minmax(0,1fr)); }
-
 /* === Responsive === */
+@media (max-width: 900px) {
+  header { padding: 0 8px; }
+  nav a { padding: 6px 10px; }
+  main { padding: 14px; }
+  td, th { padding: 8px 8px; }
+}
 @media (max-width: 720px) {
   main { padding: 14px; }
   .kpi { font-size: 1.4rem; }
@@ -313,6 +324,4 @@ body.touch-keyboard-open { padding-bottom: var(--touch-keyboard-height, 0); }
   .grid.two-fixed { grid-template-columns: 1fr; }
   .slider-row { flex-direction: column; align-items: stretch; }
   .slider-row label { min-width: unset; }
-  .touch-key-row { gap: 4px; }
-  .touch-key { min-height: 40px; font-size: 0.9rem; padding: 4px; }
 }

@@ -10,6 +10,7 @@ LOG="$PI/logs/update.log"
 BACKUP_DIR="$PI/data/backups"
 DB="$PI/data/wage_pi.sqlite3"
 PY="$PI/.venv/bin/python3"
+BRANCH="${WAGE_REPO_BRANCH:-beta}"   # wie backend/api_update.py
 
 mkdir -p "$PI/logs" "$BACKUP_DIR"
 
@@ -55,7 +56,9 @@ log "1/7 DB-Backup..."
 progress "DB-Backup..." 10
 if [ -f "$DB" ]; then
     BACKUP="$BACKUP_DIR/wage_pi_$(date +%Y%m%d_%H%M%S).sqlite3"
-    cp "$DB" "$BACKUP"
+    # SQLite-Backup-API statt cp: im WAL-Modus stehen die neuesten Laeufe evtl. noch in der -wal-Datei
+    # und fehlten in einer einfachen Kopie.
+    "$PY" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()" "$DB" "$BACKUP"
     log "  Backup: $BACKUP"
     # Alte Backups aufräumen (max. 10 behalten)
     ls -t "$BACKUP_DIR"/wage_pi_*.sqlite3 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
@@ -67,9 +70,9 @@ log "2/7 Code aktualisieren..."
 progress "Code wird aktualisiert..." 20
 cd "$ROOT"
 OLD_COMMIT="$(git rev-parse HEAD)"
-git fetch origin beta 2>&1 | while read l; do log "  git: $l"; done
-git reset --hard origin/beta 2>&1 | while read l; do log "  git: $l"; done
-# Kein "sudo chown": die sudoers-Regel (install.sh) erlaubt nur systemctl und install. Ohne Passwort
+git fetch origin "$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
+git reset --hard "origin/$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
+# Kein "sudo chown": die sudoers-Regel (setup_sudoers.sh) erlaubt nur systemctl und install. Ohne Passwort
 # brach sudo hier ab und das Update wurde nach dem Code-Sync als fehlgeschlagen gemeldet. Das Skript
 # läuft als wage, die Dateien gehören damit ohnehin wage; als root (manueller Aufruf) wird korrigiert.
 if [ "$(id -u)" = "0" ] && id wage >/dev/null 2>&1; then

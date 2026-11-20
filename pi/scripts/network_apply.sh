@@ -107,6 +107,11 @@ fi
 sleep 1
 
 if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
+  # Ein Client-Profil aus aelteren Versionen (benannt nach der SSID) darf nach einem Neustart nicht das
+  # AP-Profil verdraengen
+  if [[ -n "$CLIENT_SSID" ]]; then
+    nmcli connection modify "$CLIENT_SSID" connection.autoconnect no >/dev/null 2>&1 || true
+  fi
   log "Modus=$MODE SSID=$AP_SSID IP=$AP_IP ifname=$WLAN_IFACE passwort_gesetzt=$([[ -n "$AP_PASSWORD" ]] && echo true || echo false)"
   [[ -n "$AP_SSID" ]] || fail "AP-SSID darf nicht leer sein"
   [[ -n "$AP_IP" ]] || fail "AP-IP darf nicht leer sein"
@@ -193,5 +198,7 @@ else
   log "Modus=client"
   [[ -n "$CLIENT_SSID" ]] || fail "Client-SSID fehlt"
   connect_client "$WLAN_IFACE" || fail "WLAN-Verbindung fehlgeschlagen (rc=$CONNECT_RC): $CONNECT_OUT"
+  # Das AP-Profil (autoconnect yes) koennte sonst nach einem Neustart wieder statt des Haus-WLANs starten
+  nmcli connection modify wage-net-ap connection.autoconnect no >/dev/null 2>&1 || true
   log "Client-Modus erfolgreich aktiviert: $CONNECT_OUT"
 fi
