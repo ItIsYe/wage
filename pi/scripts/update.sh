@@ -49,36 +49,46 @@ if [ "$(id -u)" != "0" ]; then
     done
 fi
 
-log "=== wage-pi Update gestartet ==="
+if [ -z "${WAGE_UPDATE_OLD_COMMIT:-}" ]; then
+    log "=== wage-pi Update gestartet ==="
 
-# === 1. DB-Backup ===
-log "1/7 DB-Backup..."
-progress "DB-Backup..." 10
-if [ -f "$DB" ]; then
-    BACKUP="$BACKUP_DIR/wage_pi_$(date +%Y%m%d_%H%M%S).sqlite3"
-    # SQLite-Backup-API statt cp: im WAL-Modus stehen die neuesten Laeufe evtl. noch in der -wal-Datei
-    # und fehlten in einer einfachen Kopie.
-    "$PY" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()" "$DB" "$BACKUP"
-    log "  Backup: $BACKUP"
-    # Alte Backups aufräumen (max. 10 behalten)
-    ls -t "$BACKUP_DIR"/wage_pi_*.sqlite3 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
-    log "  Alte Backups bereinigt (max. 10)"
+    # === 1. DB-Backup ===
+    log "1/7 DB-Backup..."
+    progress "DB-Backup..." 10
+    if [ -f "$DB" ]; then
+        BACKUP="$BACKUP_DIR/wage_pi_$(date +%Y%m%d_%H%M%S).sqlite3"
+        # SQLite-Backup-API statt cp: im WAL-Modus stehen die neuesten Laeufe evtl. noch in der -wal-Datei
+        # und fehlten in einer einfachen Kopie.
+        "$PY" -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()" "$DB" "$BACKUP"
+        log "  Backup: $BACKUP"
+        # Alte Backups aufräumen (max. 10 behalten)
+        ls -t "$BACKUP_DIR"/wage_pi_*.sqlite3 2>/dev/null | tail -n +11 | xargs rm -f 2>/dev/null || true
+        log "  Alte Backups bereinigt (max. 10)"
+    fi
+
+    # === 2. git pull ===
+    log "2/7 Code aktualisieren..."
+    progress "Code wird aktualisiert..." 20
+    cd "$ROOT"
+    OLD_COMMIT="$(git rev-parse HEAD)"
+    git fetch origin "$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
+    git reset --hard "origin/$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
+    # Kein "sudo chown": die sudoers-Regel (setup_sudoers.sh) erlaubt nur systemctl und install. Ohne Passwort
+    # brach sudo hier ab und das Update wurde nach dem Code-Sync als fehlgeschlagen gemeldet. Das Skript
+    # läuft als wage, die Dateien gehören damit ohnehin wage; als root (manueller Aufruf) wird korrigiert.
+    if [ "$(id -u)" = "0" ] && id wage >/dev/null 2>&1; then
+        chown -R wage:wage "$ROOT" || log "  Warnung: Besitzrechte konnten nicht korrigiert werden"
+    fi
+    log "  Code aktuell: $(git log --oneline -1)"
+
+    # Die restlichen Schritte mit der GERADE GELADENEN update.sh ausfuehren. Bash liest das laufende
+    # Skript aus der alten Datei weiter: neue Schritte (z.B. Desktop-Symbole) liefen sonst erst beim
+    # uebernaechsten Update.
+    log "  Weiter mit der aktualisierten update.sh"
+    exec env WAGE_UPDATE_OLD_COMMIT="$OLD_COMMIT" bash "$PI/scripts/update.sh"
 fi
-
-# === 2. git pull ===
-log "2/7 Code aktualisieren..."
-progress "Code wird aktualisiert..." 20
+OLD_COMMIT="$WAGE_UPDATE_OLD_COMMIT"
 cd "$ROOT"
-OLD_COMMIT="$(git rev-parse HEAD)"
-git fetch origin "$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
-git reset --hard "origin/$BRANCH" 2>&1 | while read l; do log "  git: $l"; done
-# Kein "sudo chown": die sudoers-Regel (setup_sudoers.sh) erlaubt nur systemctl und install. Ohne Passwort
-# brach sudo hier ab und das Update wurde nach dem Code-Sync als fehlgeschlagen gemeldet. Das Skript
-# läuft als wage, die Dateien gehören damit ohnehin wage; als root (manueller Aufruf) wird korrigiert.
-if [ "$(id -u)" = "0" ] && id wage >/dev/null 2>&1; then
-    chown -R wage:wage "$ROOT" || log "  Warnung: Besitzrechte konnten nicht korrigiert werden"
-fi
-log "  Code aktuell: $(git log --oneline -1)"
 
 # === 3. Python-Pakete ===
 log "3/7 Python-Pakete aktualisieren..."
