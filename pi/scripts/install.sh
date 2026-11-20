@@ -24,7 +24,7 @@ echo "NM-Dispatcher installiert: /etc/NetworkManager/dispatcher.d/99-wage-eth-ro
 
 # Cronjob: ESP-Firmware alle 5 Minuten automatisch syncen
 chmod +x "$ROOT/scripts/firmware_sync_cron.sh"
-CRON_JOB="*/5 * * * * $ROOT/scripts/firmware_sync_cron.sh >> $ROOT/logs/firmware_sync.log 2>&1"
+CRON_JOB="*/5 * * * * /bin/bash $ROOT/scripts/firmware_sync_cron.sh >> $ROOT/logs/firmware_sync.log 2>&1"
 ( crontab -l 2>/dev/null | grep -v "firmware_sync_cron"; echo "$CRON_JOB" ) | crontab -
 echo "Cronjob eingerichtet: ESP-Firmware-Sync alle 5 Minuten"
 
