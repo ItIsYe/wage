@@ -48,17 +48,66 @@ dhcp_range_valid() {
   (( (s >> 8) == (a >> 8) && (e >> 8) == (a >> 8) && s <= e && !(a >= s && a <= e) ))
 }
 
-WLAN_IFACE="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1; exit}')"
-[[ -n "$WLAN_IFACE" ]] || fail "Kein WLAN-Interface gefunden"
+# WLAN-Interfaces: eingebautes WLAN (AP fuer die Waage) und optional ein USB-WLAN-Stick
+# (Verbindung ins Haus-WLAN im Modus ap_client). Die Namen wlan0/wlan1 koennen sich je nach
+# Boot-Reihenfolge vertauschen, deshalb wird ueber den USB-Pfad unterschieden.
+SYSFS_NET="${WAGE_SYSFS_NET:-/sys/class/net}"   # ueberschreibbar fuer Tests
+is_usb_iface() { [[ "$(readlink -f "$SYSFS_NET/$1/device" 2>/dev/null)" == */usb* ]]; }
+WIFI_IFACES=($(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2=="wifi"{print $1}'))
+[[ ${#WIFI_IFACES[@]} -gt 0 ]] || fail "Kein WLAN-Interface gefunden"
+ONBOARD_IFACE=""; USB_IFACE=""
+for i in "${WIFI_IFACES[@]}"; do
+  if is_usb_iface "$i"; then [[ -n "$USB_IFACE" ]] || USB_IFACE="$i"
+  else [[ -n "$ONBOARD_IFACE" ]] || ONBOARD_IFACE="$i"; fi
+done
+WLAN_IFACE="${ONBOARD_IFACE:-${WIFI_IFACES[0]}}"   # AP bzw. Client im Einzelmodus
+log "WLAN-Interfaces: eingebaut=${ONBOARD_IFACE:-–} usb=${USB_IFACE:-–}"
+
+CLIENT_CON="wage-net-client"
+
+# Verbindung ins Haus-WLAN auf dem angegebenen Interface. Rueckgabe != 0 bei Fehler.
+connect_client() {
+  local iface="$1"
+  log "Client: SSID=$CLIENT_SSID ifname=$iface passwort_gesetzt=$([[ -n "$CLIENT_PASSWORD" ]] && echo true || echo false)"
+  nmcli device wifi rescan ifname "$iface" 2>/dev/null || true
+  sleep 2
+  # Alte Verbindungen fuer diese SSID loeschen, damit NM keine kaputte Config wiederverwendet
+  nmcli connection delete "$CLIENT_CON" >/dev/null 2>&1 || true
+  nmcli connection delete "$CLIENT_SSID" >/dev/null 2>&1 || true
+  CONNECT_OUT=""; CONNECT_RC=0
+  if [[ -n "$CLIENT_PASSWORD" ]]; then
+    CONNECT_OUT=$(nmcli --wait 20 device wifi connect "$CLIENT_SSID" password "$CLIENT_PASSWORD" ifname "$iface" name "$CLIENT_CON" 2>&1) || CONNECT_RC=$?
+  else
+    CONNECT_OUT=$(nmcli --wait 20 device wifi connect "$CLIENT_SSID" ifname "$iface" name "$CLIENT_CON" 2>&1) || CONNECT_RC=$?
+  fi
+  [[ $CONNECT_RC -eq 0 ]] || return 1
+  # Verbindung fest an dieses Interface binden, damit sie nach dem Booten nicht auf dem AP-WLAN landet
+  nmcli connection modify "$CLIENT_CON" connection.interface-name "$iface" connection.autoconnect yes >/dev/null 2>&1 || true
+  return 0
+}
+
+if [[ "$MODE" == "ap_client" ]]; then
+  [[ -n "$USB_IFACE" ]] || fail "Modus AP + Haus-WLAN braucht einen USB-WLAN-Stick, es wurde keiner gefunden"
+  [[ -n "$ONBOARD_IFACE" ]] || fail "Kein eingebautes WLAN fuer den AP gefunden"
+  [[ -n "$CLIENT_SSID" ]] || fail "Client-SSID fehlt"
+  WLAN_IFACE="$ONBOARD_IFACE"
+fi
 
 # Bestehende WLAN-Verbindungen sauber trennen bevor umgeschaltet wird
 log "Trenne bestehende WLAN-Verbindungen..."
 nmcli connection down wage-net-ap >/dev/null 2>&1 || true
 nmcli device disconnect "$WLAN_IFACE" >/dev/null 2>&1 || true
+if [[ -n "$USB_IFACE" ]]; then
+  nmcli device disconnect "$USB_IFACE" >/dev/null 2>&1 || true
+fi
+if [[ "$MODE" == "ap" ]]; then
+  # Reiner AP-Modus: eine Haus-WLAN-Verbindung des Sticks darf nach dem Booten nicht wieder hochkommen
+  nmcli connection delete "$CLIENT_CON" >/dev/null 2>&1 || true
+fi
 sleep 1
 
-if [[ "$MODE" == "ap" ]]; then
-  log "Modus=ap SSID=$AP_SSID IP=$AP_IP passwort_gesetzt=$([[ -n "$AP_PASSWORD" ]] && echo true || echo false)"
+if [[ "$MODE" == "ap" || "$MODE" == "ap_client" ]]; then
+  log "Modus=$MODE SSID=$AP_SSID IP=$AP_IP ifname=$WLAN_IFACE passwort_gesetzt=$([[ -n "$AP_PASSWORD" ]] && echo true || echo false)"
   [[ -n "$AP_SSID" ]] || fail "AP-SSID darf nicht leer sein"
   [[ -n "$AP_IP" ]] || fail "AP-IP darf nicht leer sein"
 
@@ -127,30 +176,22 @@ if [[ "$MODE" == "ap" ]]; then
     else
       log "LAN-Interface $ETH_IFACE gefunden aber kein Gateway"
     fi
-  else
+  elif [[ "$MODE" == "ap" ]]; then
     log "Kein LAN verbunden — kein Internet im AP-Modus (normal)"
   fi
+
+  if [[ "$MODE" == "ap_client" ]]; then
+    # Der AP laeuft bereits; scheitert der Stick, bleibt die Waage trotzdem erreichbar.
+    if connect_client "$USB_IFACE"; then
+      log "Haus-WLAN ueber USB-Stick ($USB_IFACE) verbunden: $CONNECT_OUT"
+      log "Modus AP + Haus-WLAN erfolgreich aktiviert"
+    else
+      fail "AP aktiv, aber Haus-WLAN ueber USB-Stick fehlgeschlagen (rc=$CONNECT_RC): $CONNECT_OUT"
+    fi
+  fi
 else
-  log "Modus=client SSID=$CLIENT_SSID passwort_gesetzt=$([[ -n "$CLIENT_PASSWORD" ]] && echo true || echo false)"
+  log "Modus=client"
   [[ -n "$CLIENT_SSID" ]] || fail "Client-SSID fehlt"
-
-  # Kurz scannen damit NM das Netz kennt
-  nmcli device wifi rescan ifname "$WLAN_IFACE" 2>/dev/null || true
-  sleep 2
-
-  # Bestehende Verbindung für diese SSID löschen damit NM keine kaputte Config wiederverwendet
-  nmcli connection delete "$CLIENT_SSID" 2>/dev/null || true
-
-  CONNECT_OUT=""
-  CONNECT_RC=0
-  if [[ -n "$CLIENT_PASSWORD" ]]; then
-    CONNECT_OUT=$(nmcli --wait 20 device wifi connect "$CLIENT_SSID" password "$CLIENT_PASSWORD" ifname "$WLAN_IFACE" 2>&1) || CONNECT_RC=$?
-  else
-    CONNECT_OUT=$(nmcli --wait 20 device wifi connect "$CLIENT_SSID" ifname "$WLAN_IFACE" 2>&1) || CONNECT_RC=$?
-  fi
-
-  if [[ $CONNECT_RC -ne 0 ]]; then
-    fail "WLAN-Verbindung fehlgeschlagen (rc=$CONNECT_RC): $CONNECT_OUT"
-  fi
+  connect_client "$WLAN_IFACE" || fail "WLAN-Verbindung fehlgeschlagen (rc=$CONNECT_RC): $CONNECT_OUT"
   log "Client-Modus erfolgreich aktiviert: $CONNECT_OUT"
 fi

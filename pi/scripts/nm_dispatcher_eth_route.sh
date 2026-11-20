@@ -14,10 +14,11 @@ LOG_FILE="/home/wage/wage/pi/logs/network_apply.log"
 log() { echo "[$(date -Iseconds)] [dispatcher] $*" >> "$LOG_FILE" 2>/dev/null || true; }
 
 # Prüfen ob wage-net AP aktiv ist
-WLAN_IFACE="$(nmcli -t -f DEVICE,TYPE device status 2>/dev/null | awk -F: '$2=="wifi"{print $1; exit}')"
-AP_ACTIVE="$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep wage-net-ap | head -1)"
+# Interface des AP (nicht einfach das erste WLAN: im Modus AP + Haus-WLAN gibt es zwei, und die
+# Default-Route des USB-Sticks ins Haus-WLAN darf hier nicht entfernt werden)
+WLAN_IFACE="$(nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | awk -F: '$1=="wage-net-ap"{print $2; exit}')"
 
-if [[ -z "$AP_ACTIVE" ]]; then
+if [[ -z "$WLAN_IFACE" ]]; then
   # AP nicht aktiv, nichts zu tun
   exit 0
 fi
