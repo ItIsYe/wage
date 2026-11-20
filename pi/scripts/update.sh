@@ -26,13 +26,27 @@ set_update_state() {
 progress() { set_update_state updating "installiere update..." "Pi-Update wird durchgeführt..." "$1" "$2"; }
 
 on_error() {
-    local rc=$? line=$1
+    local rc=$? line=$1 cmd=$2
     trap - ERR
-    log "FEHLER: Update abgebrochen (Zeile $line, Exit-Code $rc)"
-    set_update_state error "update fehlgeschlagen" "Update fehlgeschlagen (Zeile $line) – Details in pi/logs/update.log" "Update fehlgeschlagen" 100
+    log "FEHLER: Update abgebrochen (Zeile $line, Exit-Code $rc): $cmd"
+    set_update_state error "update fehlgeschlagen" "Update fehlgeschlagen (Zeile $line: $cmd) – Details in pi/logs/update.log" "Update fehlgeschlagen" 100
     exit "$rc"
 }
-trap 'on_error $LINENO' ERR
+trap 'on_error $LINENO "$BASH_COMMAND"' ERR
+
+# sudo-Rechte VOR dem Update prüfen: Das Webinterface startet dieses Skript ohne Terminal, sudo kann
+# also kein Passwort abfragen. Fehlt die Regel aus install.sh, bricht das Update sonst mitten drin ab.
+if [ "$(id -u)" != "0" ]; then
+    for c in "systemctl daemon-reload" "install --version"; do
+        if ! sudo -n -l $c >/dev/null 2>&1; then
+            MSG="sudo-Rechte fehlen für '${c%% *}'. Einmalig auf dem Pi ausführen: sudo bash pi/scripts/setup_sudoers.sh"
+            log "FEHLER: $MSG"
+            trap - ERR
+            set_update_state error "update fehlgeschlagen" "$MSG" "Update fehlgeschlagen" 100
+            exit 1
+        fi
+    done
+fi
 
 log "=== wage-pi Update gestartet ==="
 
