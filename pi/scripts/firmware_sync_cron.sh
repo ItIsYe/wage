@@ -24,8 +24,9 @@ if [[ -n "$CACHE_INFO" ]]; then
   CACHED_VERSION=$(echo "$CACHE_INFO" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version','') if d.get('has_firmware') else '')" 2>/dev/null || true)
 fi
 
-# Neuestes Manifest direkt von GitHub lesen
-LATEST=$(curl -sf --max-time 10 \
+# Neuestes Manifest direkt von GitHub lesen. Die Download-URL eines Release-Assets leitet per 302
+# auf release-assets.githubusercontent.com weiter: ohne -L lieferte curl nichts ("Versions-Abruf fehlgeschlagen").
+LATEST=$(curl -sfL --max-time 10 \
   -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/ItIsYe/wage/releases/tags/esp32-latest" 2>/dev/null || true)
 
@@ -49,7 +50,7 @@ if [[ -z "$MANIFEST_URL" ]]; then
   exit 0
 fi
 
-LATEST_VERSION=$(curl -sf --max-time 10 "$MANIFEST_URL" 2>/dev/null | \
+LATEST_VERSION=$(curl -sfL --max-time 20 "$MANIFEST_URL" 2>/dev/null | \
   python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',''))" 2>/dev/null || true)
 
 if [[ -z "$LATEST_VERSION" ]]; then
@@ -63,7 +64,7 @@ if [[ "$CACHED_VERSION" == "$LATEST_VERSION" ]]; then
 fi
 
 log "Neue Version gefunden: $CACHED_VERSION -> $LATEST_VERSION — starte Sync..."
-RESULT=$(curl -sf --max-time 60 -X POST "$API_BASE/api/v1/esp-firmware/sync" 2>/dev/null || true)
+RESULT=$(curl -sf --max-time 120 -X POST "$API_BASE/api/v1/esp-firmware/sync" 2>/dev/null || true)
 if [[ -n "$RESULT" ]]; then
   log "Sync erfolgreich: $LATEST_VERSION"
 else
