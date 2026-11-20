@@ -135,6 +135,65 @@ def restart_services():
         return {"ok": False, "detail": str(e)}
 
 
+KIOSK_SERVICE = "wage-pi-kiosk"
+RESTART_SCRIPT = PI_ROOT / "scripts" / "restart_services.sh"
+
+
+def _systemctl(*args: str, timeout: int = 10):
+    import subprocess
+    return subprocess.run(["sudo", "-n", "systemctl", *args], capture_output=True, text=True, timeout=timeout)
+
+
+@app.get("/api/v1/system/kiosk")
+def kiosk_state():
+    """Läuft die Waage-Oberfläche (Kiosk-Browser) auf dem Pi-Bildschirm?"""
+    import subprocess
+    try:
+        out = subprocess.run(["systemctl", "is-active", KIOSK_SERVICE], capture_output=True, text=True, timeout=5)
+        state = out.stdout.strip() or "unknown"
+    except (OSError, subprocess.SubprocessError):
+        state = "unknown"
+    return {"active": state == "active", "state": state}
+
+
+@app.post("/api/v1/system/kiosk/stop")
+def kiosk_stop():
+    """Waage-Oberfläche auf dem Pi-Bildschirm beenden -> Pi-Desktop wird sichtbar.
+    Zurück über das Desktop-Symbol "Waage-Oberfläche" oder POST /api/v1/system/kiosk/start."""
+    try:
+        proc = _systemctl("--no-block", "stop", KIOSK_SERVICE)
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+    if proc.returncode != 0:
+        return {"ok": False, "message": (proc.stderr or proc.stdout).strip() or "systemctl fehlgeschlagen"}
+    return {"ok": True, "message": "Waage-Oberfläche wird beendet – der Pi-Desktop erscheint."}
+
+
+@app.post("/api/v1/system/kiosk/start")
+def kiosk_start():
+    """Waage-Oberfläche auf dem Pi-Bildschirm (wieder) starten."""
+    try:
+        proc = _systemctl("--no-block", "start", KIOSK_SERVICE)
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+    if proc.returncode != 0:
+        return {"ok": False, "message": (proc.stderr or proc.stdout).strip() or "systemctl fehlgeschlagen"}
+    return {"ok": True, "message": "Waage-Oberfläche wird auf dem Pi-Bildschirm gestartet."}
+
+
+@app.post("/api/v1/system/restart-all")
+def restart_all_services():
+    """LEDs, OLED, Screen-Save und zuletzt das Backend neu starten (gleiches Skript wie auf dem Desktop).
+    Das Backend ist danach einige Sekunden nicht erreichbar."""
+    import subprocess
+    try:
+        subprocess.Popen(["bash", str(RESTART_SCRIPT)], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+    return {"ok": True, "message": "Dienste werden neu gestartet – die Seite lädt gleich neu."}
+
+
 @app.get("/api/v1/system/debug-mode")
 def get_debug_mode():
     with db_cursor() as (_, cur):

@@ -122,6 +122,15 @@ if [ -f "$PI/scripts/nm_dispatcher_eth_route.sh" ]; then
     log "  NM-Dispatcher aktualisiert"
 fi
 
+# Desktop-Symbole (Waage-Oberfläche starten, Dienste neu starten) für den Desktop-Benutzer wage
+if [ "$(id -u)" = "0" ]; then
+    sudo -u wage -H bash "$PI/scripts/install_desktop_shortcuts.sh" >/dev/null 2>&1 \
+        && log "  Desktop-Symbole aktualisiert" || log "  Hinweis: Desktop-Symbole konnten nicht angelegt werden"
+else
+    bash "$PI/scripts/install_desktop_shortcuts.sh" >/dev/null 2>&1 \
+        && log "  Desktop-Symbole aktualisiert" || log "  Hinweis: Desktop-Symbole konnten nicht angelegt werden"
+fi
+
 # === 6. DB-Migration und Config-Defaults ===
 log "6/7 DB-Migration..."
 progress "Datenbank wird migriert..." 80

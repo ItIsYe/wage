@@ -35,6 +35,9 @@ echo "Web:  http://<pi-ip>:8000"
 # sudo-Rechte für Update, Dienste, Netzwerk und Herunterfahren (geprüft mit visudo,
 # Pfade passend zu diesem System). Gleiches Skript wie für nachträgliche Einrichtung.
 sudo bash "$ROOT/scripts/setup_sudoers.sh" wage
+
+# Desktop-Symbole: "Waage-Oberfläche" (Kiosk starten) und "wage-Dienste neu starten"
+if [ "$(id -un)" = "wage" ]; then bash "$ROOT/scripts/install_desktop_shortcuts.sh"; else sudo -u wage -H bash "$ROOT/scripts/install_desktop_shortcuts.sh"; fi
 echo 'SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chmod 666 /sys/class/backlight/%k/brightness"' | sudo tee /etc/udev/rules.d/99-backlight.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger

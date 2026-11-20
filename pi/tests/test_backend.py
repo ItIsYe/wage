@@ -295,3 +295,23 @@ def test_update_detects_mode_only_change(tmp_path, monkeypatch):
     git("push", "-q", str(tmp_path / "origin.git"), "beta", cwd=src)
     git("fetch", "-q", "origin", "beta", cwd=work)
     assert api_update._calculate_pi_sync_sets()[0] == ["pi/scripts/x.sh"]
+
+
+def test_kiosk_and_restart_endpoints(client, monkeypatch):
+    from types import SimpleNamespace
+    from backend import main
+    calls = []
+    monkeypatch.setattr(main, "_systemctl", lambda *a, **k: calls.append(a) or SimpleNamespace(returncode=0, stdout="", stderr=""))
+    assert client.post("/api/v1/system/kiosk/stop").json()["ok"] is True
+    assert client.post("/api/v1/system/kiosk/start").json()["ok"] is True
+    assert calls == [("--no-block", "stop", "wage-pi-kiosk"), ("--no-block", "start", "wage-pi-kiosk")]
+    # Fehlende sudo-Regel wird gemeldet statt verschluckt
+    monkeypatch.setattr(main, "_systemctl", lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr="sudo: a password is required"))
+    r = client.post("/api/v1/system/kiosk/stop").json()
+    assert r["ok"] is False and "password" in r["message"]
+    assert "state" in client.get("/api/v1/system/kiosk").json()
+    import subprocess as sp
+    started = []
+    monkeypatch.setattr(sp, "Popen", lambda args, **k: started.append(args))
+    assert client.post("/api/v1/system/restart-all").json()["ok"] is True
+    assert started and started[0][-1].endswith("restart_services.sh")

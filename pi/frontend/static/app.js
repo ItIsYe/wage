@@ -1218,6 +1218,91 @@ async function toggleDebugMode() {
 loadDebugMode();
 
 
+// === Pi-Bildschirm (Kiosk) und Dienste ===
+
+// Läuft diese Seite im Kiosk-Browser auf dem Pi selbst?
+function isOnPiScreen() {
+  return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(location.hostname);
+}
+
+async function loadKioskState() {
+  const stopBtn = byId('btn-kiosk-stop');
+  const startBtn = byId('btn-kiosk-start');
+  if (!stopBtn || !startBtn) return;
+  let state = 'unknown';
+  try { state = (await api('/api/v1/system/kiosk')).state || 'unknown'; } catch (_) {}
+  const known = ['active', 'activating', 'inactive', 'failed', 'deactivating'].includes(state);
+  const active = state === 'active' || state === 'activating';
+  // Im Kiosk selbst läuft die Oberfläche ja gerade: dort nur "Zum Pi-Desktop".
+  // Von Handy/Laptop aus je nach Zustand; ist der Zustand unbekannt, beide Knöpfe.
+  stopBtn.style.display = (isOnPiScreen() || active || !known) ? '' : 'none';
+  startBtn.style.display = (!isOnPiScreen() && (!active || !known)) ? '' : 'none';
+  const hint = byId('kiosk-hint');
+  if (hint && !isOnPiScreen()) {
+    hint.textContent = !known
+      ? 'Waage-Oberfläche auf dem Pi-Bildschirm beenden (Pi-Desktop) oder wieder starten.'
+      : active
+        ? 'Die Waage-Oberfläche läuft auf dem Pi-Bildschirm. "Zum Pi-Desktop" beendet sie dort.'
+        : 'Auf dem Pi-Bildschirm ist gerade der Desktop zu sehen.';
+  }
+}
+
+async function kioskStop() {
+  const msg = isOnPiScreen()
+    ? 'Waage-Oberfläche beenden und zum Pi-Desktop wechseln?\n\nZurück geht es über das Symbol „Waage-Oberfläche“ auf dem Desktop.'
+    : 'Waage-Oberfläche auf dem Pi-Bildschirm beenden? Dort erscheint dann der Pi-Desktop.';
+  if (!confirm(msg)) return;
+  try {
+    const d = await api('/api/v1/system/kiosk/stop', { method: 'POST' });
+    flash(d.message || 'Waage-Oberfläche wird beendet...', d.ok);
+  } catch (e) {
+    // Im Kiosk bricht die Verbindung ab, weil der Browser beendet wird - das ist gewollt.
+    if (!isOnPiScreen()) flash(`Fehler: ${e.message}`);
+  }
+  setTimeout(loadKioskState, 3000);
+}
+
+async function kioskStart() {
+  try {
+    const d = await api('/api/v1/system/kiosk/start', { method: 'POST' });
+    flash(d.message || 'Waage-Oberfläche wird gestartet...', d.ok);
+  } catch (e) {
+    flash(`Fehler: ${e.message}`);
+  }
+  setTimeout(loadKioskState, 3000);
+}
+
+async function restartAllServices() {
+  if (!confirm('LEDs, OLED, Bildschirmschoner und Backend neu starten?\nDie Seite ist dabei einige Sekunden nicht erreichbar.')) return;
+  const btn = byId('btn-restart-all');
+  if (btn) btn.disabled = true;
+  try {
+    const d = await api('/api/v1/system/restart-all', { method: 'POST' });
+    flash(d.message || 'Dienste werden neu gestartet...', d.ok);
+    if (!d.ok) { if (btn) btn.disabled = false; return; }
+  } catch (e) {
+    flash(`Fehler: ${e.message}`);
+    if (btn) btn.disabled = false;
+    return;
+  }
+  // Warten, bis das Backend weg und wieder da ist, dann neu laden (höchstens 60 s)
+  const started = Date.now();
+  let wentDown = false;
+  while (Date.now() - started < 60000) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const r = await fetch('/api/v1/health', { cache: 'no-store' });
+      if (r.ok && (wentDown || Date.now() - started > 15000)) break;
+      if (!r.ok) wentDown = true;
+    } catch (_) {
+      wentDown = true;
+    }
+  }
+  location.reload();
+}
+
+loadKioskState();
+
 // === Pi Herunterfahren ===
 
 async function shutdownPi() {
