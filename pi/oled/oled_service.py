@@ -7,7 +7,7 @@ from pathlib import Path
 # nicht pi/. Ohne das Elternverzeichnis liessen sich backend/ und common/ nicht importieren.
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from common.runtime import get_pi_ip, seconds_since, seconds_since_latest  # noqa: E402
+from common.runtime import ServiceStop, get_pi_ip, install_stop_handler, seconds_since, seconds_since_latest, system_stop_kind  # noqa: E402
 
 DB = Path(__file__).resolve().parents[1] / "data" / "wage_pi.sqlite3"
 OLED_ADDRESS = int(os.getenv("WAGE_PI_OLED_ADDRESS", "0x3c"), 16)
@@ -109,6 +109,43 @@ def get_runtime_status() -> dict:
     }
 
 
+def _led_shutdown_flag() -> bool:
+    try:
+        with sqlite3.connect(DB) as c:
+            row = c.execute("SELECT value FROM app_state WHERE key='led_shutdown'").fetchone()
+        return bool(row and row[0] == "1")
+    except Exception:
+        return False
+
+
+def show_stop_screen(dev, Image, ImageDraw) -> None:
+    """Beim Stoppen des Dienstes: bei Herunterfahren/Neustart eine Meldung stehen lassen, sonst leeren.
+    Das OLED behält das Bild auch nach dem Halt des Pi (Versorgung bleibt meist an)."""
+    if dev is None or Image is None:
+        return
+    kind = system_stop_kind()
+    if kind is None and _led_shutdown_flag():
+        kind = "poweroff"  # Herunterfahren über die Oberfläche / Auto-Shutdown
+    try:
+        if kind is None:
+            dev.clear()  # nur der Dienst wird neu gestartet (z.B. Update)
+            return
+        dev.show()
+        img = Image.new("1", dev.size)
+        draw = ImageDraw.Draw(img)
+        draw.text((0, 0), "wage-pi", fill=255)
+        if kind == "reboot":
+            draw.text((0, 20), "Neustart ...", fill=255)
+        else:
+            draw.text((0, 16), "Ausgeschaltet", fill=255)
+            draw.text((0, 34), "Strom kann nach", fill=255)
+            draw.text((0, 46), "10 s getrennt werden", fill=255)
+        dev.display(img)
+        dev.persist = True  # luma loescht das Display sonst beim Beenden
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     set_status("starting")
     dev = None
@@ -118,75 +155,81 @@ if __name__ == "__main__":
     qr_cache_img = None
     last_try = 0.0
 
-    while True:
-        now = time.time()
-        if dev is None and now - last_try >= REINIT_SECONDS:
-            last_try = now
-            try:
-                from PIL import Image, ImageDraw
-                from luma.core.interface.serial import i2c
-                from luma.oled.device import sh1106, ssd1306
+    install_stop_handler()
+    try:
+        while True:
+            now = time.time()
+            if dev is None and now - last_try >= REINIT_SECONDS:
+                last_try = now
                 try:
-                    import qrcode
-                except Exception:
-                    qrcode = None
+                    from PIL import Image, ImageDraw
+                    from luma.core.interface.serial import i2c
+                    from luma.oled.device import sh1106, ssd1306
+                    try:
+                        import qrcode
+                    except Exception:
+                        qrcode = None
 
-                serial = i2c(port=1, address=OLED_ADDRESS)
-                hw = _get_hw_config()
-                rotation = int(hw.get("pi_oled_rotation", "0"))
-                # Der Typ ist einstellbar (Konfiguration -> Pi Hardware): die SSD1306-Initialisierung
-                # gelingt auch bei einem SH1106, ein automatischer Fallback kann also nie greifen.
-                driver = "sh1106" if hw.get("pi_oled_driver") == "sh1106" else "ssd1306"
-                dev = (sh1106 if driver == "sh1106" else ssd1306)(serial, rotate=rotation)
+                    serial = i2c(port=1, address=OLED_ADDRESS)
+                    hw = _get_hw_config()
+                    rotation = int(hw.get("pi_oled_rotation", "0"))
+                    # Der Typ ist einstellbar (Konfiguration -> Pi Hardware): die SSD1306-Initialisierung
+                    # gelingt auch bei einem SH1106, ein automatischer Fallback kann also nie greifen.
+                    driver = "sh1106" if hw.get("pi_oled_driver") == "sh1106" else "ssd1306"
+                    dev = (sh1106 if driver == "sh1106" else ssd1306)(serial, rotate=rotation)
+                    set_status(f"running:{driver}")
+                except Exception as exc:
+                    set_status(f"degraded:{type(exc).__name__}")
+                    dev = None
+
+            try:
+                if dev is None:
+                    time.sleep(2)
+                    continue
+
+                # Energiesparmodus: Display aus
+                if _is_power_save():
+                    dev.hide()
+                    set_status("power_save")
+                    time.sleep(10)  # Im Power-Save seltener prüfen
+                    continue
+                else:
+                    dev.show()
+
+                s = get_runtime_status()
+                img = Image.new("1", dev.size)
+                draw = ImageDraw.Draw(img)
+
+                can_qr = qrcode is not None and min(dev.size) >= 64
+                if can_qr and (qr_cache_img is None or qr_cache_url != s["url"]):
+                    qr = qrcode.QRCode(border=1, box_size=2)
+                    qr.add_data(s["url"])
+                    qr.make(fit=True)
+                    qr_cache_img = qr.make_image(fill_color="black", back_color="white").convert("1")
+                    qr_cache_url = s["url"]
+
+                show_qr = can_qr and int(now) % 10 < 4
+                if show_qr and qr_cache_img is not None:
+                    img.paste(qr_cache_img.resize((64, 64)), (0, 0))
+                    draw.text((68, 0), "wage-pi", fill=255)
+                    draw.text((68, 14), s["ip"][:15], fill=255)
+                    draw.text((68, 28), "Web :8000", fill=255)
+                    draw.text((68, 42), driver, fill=255)
+                else:
+                    draw.text((0, 0), "wage-pi", fill=255)
+                    draw.text((0, 12), s["url"][:22], fill=255)
+                    draw.text((0, 24), f"Aktiv: {s['person']['name'][:12]}", fill=255)
+                    draw.text((0, 36), f"Waage: {'online' if s['scale_online'] else 'offline'}", fill=255)
+                    draw.text((0, 48), f"Laeufe heute: {s['runs_today']}", fill=255)
+
+                dev.display(img)
                 set_status(f"running:{driver}")
+                time.sleep(2)
             except Exception as exc:
                 set_status(f"degraded:{type(exc).__name__}")
                 dev = None
-
-        try:
-            if dev is None:
                 time.sleep(2)
-                continue
-
-            # Energiesparmodus: Display aus
-            if _is_power_save():
-                dev.hide()
-                set_status("power_save")
-                time.sleep(10)  # Im Power-Save seltener prüfen
-                continue
-            else:
-                dev.show()
-
-            s = get_runtime_status()
-            img = Image.new("1", dev.size)
-            draw = ImageDraw.Draw(img)
-
-            can_qr = qrcode is not None and min(dev.size) >= 64
-            if can_qr and (qr_cache_img is None or qr_cache_url != s["url"]):
-                qr = qrcode.QRCode(border=1, box_size=2)
-                qr.add_data(s["url"])
-                qr.make(fit=True)
-                qr_cache_img = qr.make_image(fill_color="black", back_color="white").convert("1")
-                qr_cache_url = s["url"]
-
-            show_qr = can_qr and int(now) % 10 < 4
-            if show_qr and qr_cache_img is not None:
-                img.paste(qr_cache_img.resize((64, 64)), (0, 0))
-                draw.text((68, 0), "wage-pi", fill=255)
-                draw.text((68, 14), s["ip"][:15], fill=255)
-                draw.text((68, 28), "Web :8000", fill=255)
-                draw.text((68, 42), driver, fill=255)
-            else:
-                draw.text((0, 0), "wage-pi", fill=255)
-                draw.text((0, 12), s["url"][:22], fill=255)
-                draw.text((0, 24), f"Aktiv: {s['person']['name'][:12]}", fill=255)
-                draw.text((0, 36), f"Waage: {'online' if s['scale_online'] else 'offline'}", fill=255)
-                draw.text((0, 48), f"Laeufe heute: {s['runs_today']}", fill=255)
-
-            dev.display(img)
-            set_status(f"running:{driver}")
-            time.sleep(2)
-        except Exception as exc:
-            set_status(f"degraded:{type(exc).__name__}")
-            dev = None
-            time.sleep(2)
+    except ServiceStop:
+        show_stop_screen(dev, Image, ImageDraw)
+        set_status("stopped")
+        raise

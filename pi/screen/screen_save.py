@@ -114,7 +114,7 @@ def _mark_activity() -> None:
 
 
 def _shutdown():
-    """Pi herunterfahren — vorher OLED und LEDs ausschalten."""
+    """Pi herunterfahren (gleicher Ablauf wie "Herunterfahren" in der Oberfläche)."""
     import subprocess
     # LEDs ausschalten
     try:
@@ -126,26 +126,9 @@ def _shutdown():
             c.commit()
     except Exception:
         pass
-    # Die LEDs schaltet der LED-Dienst (root) beim Flag led_shutdown selbst aus. Ein direkter
-    # rpi_ws281x-Aufruf von hier (Benutzer wage, System-Python) konnte nie wirken.
-    # OLED: Shutdown-Meldung anzeigen
-    try:
-        from luma.core.interface.serial import i2c
-        from luma.oled.device import sh1106, ssd1306
-        from PIL import Image, ImageDraw
-        serial = i2c(port=1, address=0x3c)
-        try:
-            dev = ssd1306(serial)
-        except Exception:
-            dev = sh1106(serial)
-        img = Image.new("1", dev.size, 0)
-        draw = ImageDraw.Draw(img)
-        draw.text((0, 8),  "wage-pi", fill=255)
-        draw.text((0, 22), "Wird", fill=255)
-        draw.text((0, 34), "ausgeschaltet...", fill=255)
-        dev.display(img)
-    except Exception:
-        pass
+    # LEDs und OLED schalten ihre Dienste beim Herunterfahren selbst aus bzw. zeigen "Ausgeschaltet"
+    # (SIGTERM-Handler in leds/led_service.py und oled/oled_service.py). Ein zweiter Zugriff auf das
+    # OLED von hier aus konkurrierte mit dem OLED-Dienst um den I2C-Bus.
     # Backlight aus
     try:
         BACKLIGHT.write_text("0\n")
