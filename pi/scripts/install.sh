@@ -32,17 +32,9 @@ echo "Installation abgeschlossen"
 echo "Start: sudo systemctl start wage-pi-backend wage-pi-oled wage-pi-leds"
 echo "Web:  http://<pi-ip>:8000"
 
-# shutdown ohne Passwort für wage User (Auto-Shutdown)
-echo "wage ALL=(ALL) NOPASSWD: /sbin/shutdown, /sbin/reboot" | sudo tee /etc/sudoers.d/wage-shutdown
-sudo chmod 440 /etc/sudoers.d/wage-shutdown
-
-# systemctl und install für Update-Script
-echo "wage ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/install, /usr/sbin/systemctl" | sudo tee /etc/sudoers.d/wage-update
-sudo chmod 440 /etc/sudoers.d/wage-update
-
-# network_apply.sh für Netzwerk-Konfiguration
-echo "wage ALL=(ALL) NOPASSWD: /home/wage/wage/pi/scripts/network_apply.sh" | sudo tee /etc/sudoers.d/wage-network
-sudo chmod 440 /etc/sudoers.d/wage-network
+# sudo-Rechte für Update, Dienste, Netzwerk und Herunterfahren (geprüft mit visudo,
+# Pfade passend zu diesem System). Gleiches Skript wie für nachträgliche Einrichtung.
+sudo bash "$ROOT/scripts/setup_sudoers.sh" wage
 echo 'SUBSYSTEM=="backlight", ACTION=="add", RUN+="/bin/chmod 666 /sys/class/backlight/%k/brightness"' | sudo tee /etc/udev/rules.d/99-backlight.rules
 sudo udevadm control --reload-rules
 sudo udevadm trigger
