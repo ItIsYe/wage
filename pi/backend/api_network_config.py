@@ -21,13 +21,42 @@ router = APIRouter(prefix="/api/v1/config/network", tags=["network-config"])
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "network_apply.sh"
 
 
+AP_MODES = {"ap", "ap_client"}  # Modi, in denen der Pi den AP für die Waage betreibt
+MODE_LABELS = {"ap": "AP", "client": "Haus-WLAN-Client", "ap_client": "AP + Haus-WLAN (USB-Stick)"}
+
+
+def _wifi_interfaces() -> list[dict]:
+    """WLAN-Interfaces mit Kennzeichnung, ob es ein USB-Stick ist (Pfad unter /usb in sysfs)."""
+    result = []
+    base = Path("/sys/class/net")
+    try:
+        names = sorted(p.name for p in base.iterdir() if (p / "wireless").exists() or (p / "phy80211").exists())
+    except OSError:
+        return result
+    for name in names:
+        try:
+            device_path = str((base / name / "device").resolve())
+        except OSError:
+            device_path = ""
+        result.append({"name": name, "usb": "/usb" in device_path})
+    return result
+
+
+def _usb_wifi_iface() -> str | None:
+    return next((i["name"] for i in _wifi_interfaces() if i["usb"]), None)
+
+
 def _to_public(cfg: dict[str, str]) -> dict:
     mode = cfg.get("network_mode", "ap")
     pi_ip = get_pi_ip()
-    api_target = f"http://{cfg.get('ap_ip','192.168.50.1')}:8000" if mode == "ap" else f"http://{pi_ip}:8000"
+    api_target = f"http://{cfg.get('ap_ip','192.168.50.1')}:8000" if mode in AP_MODES else f"http://{pi_ip}:8000"
+    wifi = _wifi_interfaces()
     ap_password_set = bool(cfg.get("ap_password"))
     return {
         "network_mode": mode,
+        "network_mode_label": MODE_LABELS.get(mode, mode),
+        "wifi_interfaces": wifi,
+        "usb_wifi_present": any(i["usb"] for i in wifi),
         "ap_ssid": cfg.get("ap_ssid", "wage-net"),
         "ap_password_set": ap_password_set,
         "ap_security": "wpa-psk",
@@ -56,8 +85,10 @@ def _read_config() -> dict[str, str]:
 
 def _validate_network_config(cfg: dict[str, str]) -> None:
     mode = cfg.get("network_mode", "ap")
-    if mode not in {"ap", "client"}:
-        raise HTTPException(status_code=400, detail="Ungültiger Netzwerkmodus. Erlaubt: ap oder client.")
+    if mode not in {"ap", "client", "ap_client"}:
+        raise HTTPException(status_code=400, detail="Ungültiger Netzwerkmodus. Erlaubt: ap, client oder ap_client.")
+    if mode == "ap_client" and not _usb_wifi_iface():
+        raise HTTPException(status_code=400, detail="AP + Haus-WLAN braucht einen USB-WLAN-Stick. Es wurde keiner gefunden.")
     if not cfg.get("ap_ssid", "").strip():
         raise HTTPException(status_code=400, detail="AP-SSID darf nicht leer sein.")
     if not cfg.get("ap_ip", "").strip():
@@ -71,11 +102,11 @@ def _validate_network_config(cfg: dict[str, str]) -> None:
     ap_password = cfg.get("ap_password", "")
     if ap_password and len(ap_password) < 8:
         raise HTTPException(status_code=400, detail="AP-Passwort muss mindestens 8 Zeichen lang sein.")
-    if mode == "ap" and len(ap_password) < 8:
+    if mode in AP_MODES and len(ap_password) < 8:
         raise HTTPException(status_code=400, detail="AP-Passwort muss gesetzt sein und mindestens 8 Zeichen haben.")
-    if mode == "client" and not cfg.get("client_ssid", "").strip():
-        raise HTTPException(status_code=400, detail="Client-SSID darf im Client-Modus nicht leer sein.")
-    if mode == "ap":
+    if mode in {"client", "ap_client"} and not cfg.get("client_ssid", "").strip():
+        raise HTTPException(status_code=400, detail="Haus-WLAN-SSID darf in diesem Modus nicht leer sein.")
+    if mode in AP_MODES:
         _validate_dhcp_range(cfg)
 
 
@@ -114,12 +145,10 @@ def scan_wifi_networks():
     """Verfügbare WLAN-Netzwerke scannen — funktioniert auch im AP-Modus."""
     try:
         devices = subprocess.check_output(["nmcli", "-t", "-f", "DEVICE,TYPE", "device", "status"], text=True, timeout=5)
-        iface = None
-        for line in devices.splitlines():
-            fields = _terse_fields(line)
-            if len(fields) >= 2 and fields[1] == "wifi":  # nicht "wifi-p2p"
-                iface = fields[0]
-                break
+        nm_wifi = [f[0] for f in (_terse_fields(l) for l in devices.splitlines()) if len(f) >= 2 and f[1] == "wifi"]  # nicht "wifi-p2p"
+        # USB-Stick bevorzugen: das eingebaute WLAN ist im AP-Betrieb belegt und scannt schlecht
+        usb = _usb_wifi_iface()
+        iface = usb if usb in nm_wifi else (nm_wifi[0] if nm_wifi else None)
         if not iface:
             return {"networks": [], "error": "Kein WLAN-Interface gefunden"}
 
@@ -291,7 +320,7 @@ def network_status():
             ).strip()
             out = subprocess.check_output(["nmcli", "-t", "-f", "TYPE,STATE,CONNECTION", "device"], text=True, timeout=5)
             if "wifi:connected" in out:
-                active = "Client aktiv" if cfg["network_mode"] == "client" else "AP aktiv"
+                active = {"client": "Client aktiv", "ap_client": "AP + Haus-WLAN aktiv"}.get(cfg["network_mode"], "AP aktiv")
         except Exception:
             active = "unbekannt"
     return {"status": active, "current_nmcli_connection": current_connection, **cfg}

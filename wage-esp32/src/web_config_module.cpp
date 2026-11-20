@@ -18,8 +18,9 @@ extern RuntimeConfig activeConfig;
 #define FIRMWARE_VERSION "dev"
 #endif
 static const char* FIRMWARE_VERSION_STR = FIRMWARE_VERSION;
-static const char* errToStrLocal(ErrCode e);
-static const char* stateToStrLocal(State s);
+// Aus main.cpp
+extern const char* errToStr(ErrCode e);
+extern const char* stateToStr(State s);
 
 static RuntimeConfig pendingConfig;
 static bool pendingConfigValid = false;
@@ -113,14 +114,16 @@ static bool parseUIntArg(const char* key, uint32_t& out) {
   if (!server.hasArg(key)) return false;
   const String v = server.arg(key);
   if (v.length() == 0) return false;
-  out = (uint32_t) v.toInt();
+  const long parsed = v.toInt();
+  out = parsed < 0 ? 0xFFFFFFFFUL : (uint32_t)parsed;  // negativ -> faellt bei der Bereichspruefung durch
   return true;
 }
 
 static bool parseU8Arg(const char* key, uint8_t& out) {
   uint32_t tmp = 0;
   if (!parseUIntArg(key, tmp)) return false;
-  out = (uint8_t) tmp;
+  // Werte > 255 nicht abschneiden (300 wurde sonst zu 44 und bestand die Pruefung)
+  out = (uint8_t)(tmp > 255U ? 255U : tmp);
   return true;
 }
 
@@ -137,14 +140,14 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   String h;
   h.reserve(11000);
   h += F("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  h += F("<title>Waage Config</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:12px auto;padding:0 10px;}fieldset{margin:12px 0;padding:10px;}label{display:block;margin:7px 0 3px;}input[type=text],input[type=number],select{width:100%;padding:8px;box-sizing:border-box;}small{color:#666;}button{padding:10px 14px;margin-top:10px;}.meta p{margin:4px 0;}.err{background:#ffdede;border:1px solid #cc3a3a;padding:8px;margin:10px 0;color:#7a0000;}</style></head><body>");
+  h += F("<title>Waage Config</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:12px auto;padding:0 10px;}fieldset{margin:12px 0;padding:10px;}label{display:block;margin:7px 0 3px;}input:not([type=checkbox]):not([type=radio]),select{width:100%;padding:10px;font-size:16px;min-height:44px;box-sizing:border-box;}input[type=checkbox]{width:24px;height:24px;vertical-align:middle;margin-right:8px;}small{color:#666;}button{padding:12px 18px;font-size:16px;min-height:44px;margin-top:10px;}.meta p{margin:4px 0;}.err{background:#ffdede;border:1px solid #cc3a3a;padding:8px;margin:10px 0;color:#7a0000;}</style></head><body>");
   h += F("<h2>Waage Config</h2><div class='meta'>");
   h += F("<p><b>IP:</b> "); h += htmlEscape(networkInfo); h += F("</p>");
   h += F("<p><b>Modus:</b> "); h += (wifiApMode ? F("Fallback-AP") : F("WLAN")); h += F("</p>");
   h += F("<p><b>Feste IP aktiv:</b> "); h += (c.wifiUseStaticIp ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Firmware:</b> "); h += FIRMWARE_VERSION_STR; h += F(" (<a href='/ota'>Update pruefen</a>)</p>");
-  h += F("<p><b>State:</b> "); h += stateToStrLocal(state); h += F("</p>");
-  h += F("<p><b>Fehlerstatus:</b> "); h += errToStrLocal(err); h += F("</p>");
+  h += F("<p><b>State:</b> "); h += stateToStr(state); h += F("</p>");
+  h += F("<p><b>Fehlerstatus:</b> "); h += errToStr(err); h += F("</p>");
   h += F("<p><b>Reset angefordert:</b> "); h += (resetRequested ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Pending:</b> "); h += (pendingConfigValid ? F("ja") : F("nein")); h += F("</p>");
   h += F("<p><b>Hinweis:</b> Netzwerk / WLAN-Aenderungen werden gespeichert und erst nach Neustart aktiv.</p></div>");
@@ -158,7 +161,7 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<form method='POST' action='/save'>");
   h += F("<fieldset><legend>System & Geraete-Identitaet</legend><label>Geraete-Name / Device-ID (eindeutig)</label><input name='deviceId' maxlength='31' value='"); h += htmlEscape(String(c.deviceId)); h += F("'><small>Min: 1, Max: 31 Zeichen. Wird fuer Wiedererkennung, Logs und externe Zuordnung genutzt. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Firmware-Version</label><input value='"); h += FIRMWARE_VERSION_STR; h += F("' readonly>");
-  h += F("<label>State</label><input value='"); h += stateToStrLocal(state); h += F("' readonly></fieldset>");
+  h += F("<label>State</label><input value='"); h += stateToStr(state); h += F("' readonly></fieldset>");
   h += F("<fieldset><legend>Messwerte & Schwellwerte</legend>");
   h += F("<label>Messstart bei Gewichtsabfall (%)</label><input type='number' step='0.1' min='0' max='100' name='startDropPercent' value='"); h += String(c.startDropPercent,2); h += F("'><small>Min: 0, Max: 100. Startet die Messung beim Unterschreiten des Abfalls.</small>");
   h += F("<label>Messende bei Gewichtsanstieg (%)</label><input type='number' step='0.1' min='0' max='100' name='stopRisePercent' value='"); h += String(c.stopRisePercent,2); h += F("'><small>Min: 0, Max: 100. Beendet die Messung beim Rueckanstieg.</small>");
@@ -171,8 +174,8 @@ static String renderConfigPage(const RuntimeConfig& c, const String& errorMsg = 
   h += F("<label>Bildwechsel-Intervall im Standby (ms)</label><input type='number' min='30' max='1000' name='standbyFrameMs' value='"); h += String(c.standbyFrameMs); h += F("'><small>Min: 30, Max: 1000 ms. Kleinere Werte = schnelleres Flackern. Wirkt nach Speichern sofort im Standby.</small>");
   h += F("<label>Zeit bis Musterwechsel: Minimum (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMinMs' value='"); h += String(c.standbyChangeMinMs); h += F("'><small>Min: 100, Max: 5000 ms. Untere Grenze, wann ein neues Twinkle-Muster gewaehlt wird. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Zeit bis Musterwechsel: Maximum (ms)</label><input type='number' min='100' max='5000' name='standbyChangeMaxMs' value='"); h += String(c.standbyChangeMaxMs); h += F("'><small>Min: 100, Max: 5000 ms. Obere Grenze fuer den zufaelligen Musterwechsel (muss >= Minimum sein). Wirkt nach Speichern sofort.</small>");
-  h += F("<label>Anzahl aktiver LEDs im Twinkle: Minimum</label><input type='number' min='0' max='25' name='standbyOnMin' value='"); h += String(c.standbyOnMin); h += F("'><small>Min: 0, Max: 25. Bezieht sich auf Ring 1. Ring 2 wird im Verhaeltnis der Pixelzahl umgerechnet. Wirkt nach Speichern sofort.</small>");
-  h += F("<label>Anzahl aktiver LEDs im Twinkle: Maximum</label><input type='number' min='0' max='25' name='standbyOnMax' value='"); h += String(c.standbyOnMax); h += F("'><small>Min: 0, Max: 25. Muss groesser/gleich Minimum sein. Bezieht sich auf Ring 1 und wird fuer Ring 2 im Verhaeltnis der Pixelzahl umgerechnet. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Anzahl aktiver LEDs im Twinkle: Minimum</label><input type='number' min='0' max='"); h += String(PIXEL_GROUPS); h += F("' name='standbyOnMin' value='"); h += String(c.standbyOnMin); h += F("'><small>Min: 0, Max: Anzahl der Dreiergruppen von Ring 1. Bezieht sich auf Ring 1. Ring 2 wird im Verhaeltnis der Pixelzahl umgerechnet. Wirkt nach Speichern sofort.</small>");
+  h += F("<label>Anzahl aktiver LEDs im Twinkle: Maximum</label><input type='number' min='0' max='"); h += String(PIXEL_GROUPS); h += F("' name='standbyOnMax' value='"); h += String(c.standbyOnMax); h += F("'><small>Min: 0, Max: Anzahl der Dreiergruppen von Ring 1. Muss groesser/gleich Minimum sein. Bezieht sich auf Ring 1 und wird fuer Ring 2 im Verhaeltnis der Pixelzahl umgerechnet. Wirkt nach Speichern sofort.</small>");
   h += F("<label>Standby-Helligkeit Minimum (0-255)</label><input type='number' min='0' max='255' name='standbyValueMin' value='"); h += String(c.standbyValueMin); h += F("'><small>Min: 0, Max: 255. Untere Grenze der LED-Helligkeit im Standby.</small>");
   h += F("<label>Standby-Helligkeit Maximum (0-255)</label><input type='number' min='0' max='255' name='standbyValueMax' value='"); h += String(c.standbyValueMax); h += F("'><small>Min: 0, Max: 255. Obere Grenze der LED-Helligkeit im Standby (muss >= Minimum sein). Wirkt nach Speichern sofort.</small>");
   h += F("<label>Standby-Farbsaettigung (0-255)</label><input type='number' min='0' max='255' name='standbySaturation' value='"); h += String(c.standbySaturation); h += F("'><small>Min: 0, Max: 255. 0 = weiss/grau, 255 = volle Farbkraft. Wirkt nach Speichern sofort.</small></fieldset>");
@@ -258,9 +261,9 @@ static String renderBusyPage(const String& hint = "") {
   String h;
   h.reserve(1200);
   h += F("<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>");
-  h += F("<title>Waage aktiv</title><style>body{font-family:Arial,sans-serif;max-width:560px;margin:12px auto;padding:0 10px;}button{padding:10px 14px;margin-top:10px;}p{margin:8px 0;}.hint{background:#fff3cd;border:1px solid #d6b656;padding:8px;color:#6b5200;}</style></head><body>");
+  h += F("<title>Waage aktiv</title><style>body{font-family:Arial,sans-serif;max-width:560px;margin:12px auto;padding:0 10px;}button{padding:12px 18px;font-size:16px;min-height:44px;margin-top:10px;}p{margin:8px 0;}.hint{background:#fff3cd;border:1px solid #d6b656;padding:8px;color:#6b5200;}</style></head><body>");
   h += F("<h2>Waage aktiv</h2>");
-  h += F("<p><b>State:</b> "); h += stateToStrLocal(state); h += F("</p>");
+  h += F("<p><b>State:</b> "); h += stateToStr(state); h += F("</p>");
   h += F("<p>Config in Idle oder Standby bearbeiten</p>");
   if (hint.length()) { h += F("<p class='hint'>"); h += htmlEscape(hint); h += F("</p>"); }
   if (resetStatusMsg.length()) { h += F("<p class='hint'><b>Status:</b> "); h += htmlEscape(resetStatusMsg); h += F("</p>"); }
@@ -367,8 +370,8 @@ void webConfigLoadFromPrefs(RuntimeConfig& cfg, float& oledScale){
   if (cfg.standbyChangeMaxMs > STANDBY_CHANGE_MAX_LIMIT_MS) cfg.standbyChangeMaxMs = STANDBY_CHANGE_MAX_LIMIT_MS;
   if (cfg.standbyChangeMaxMs < cfg.standbyChangeMinMs) cfg.standbyChangeMaxMs = cfg.standbyChangeMinMs;
   if (cfg.standbyValueMax < cfg.standbyValueMin) cfg.standbyValueMax = cfg.standbyValueMin;
-  if (cfg.standbyOnMin > PIXEL_COUNT) cfg.standbyOnMin = PIXEL_COUNT;
-  if (cfg.standbyOnMax > PIXEL_COUNT) cfg.standbyOnMax = PIXEL_COUNT;
+  if (cfg.standbyOnMin > PIXEL_GROUPS) cfg.standbyOnMin = PIXEL_GROUPS;
+  if (cfg.standbyOnMax > PIXEL_GROUPS) cfg.standbyOnMax = PIXEL_GROUPS;
   if (cfg.standbyOnMax < cfg.standbyOnMin) cfg.standbyOnMax = cfg.standbyOnMin;
   cfg.oledTimingRefreshMs=prefs.getUInt("oledRef", cfg.oledTimingRefreshMs);
   cfg.scaleReadIntervalMs=prefs.getUInt("scaleInt", cfg.scaleReadIntervalMs);
@@ -592,13 +595,7 @@ void webConfigSetup() {
     parseU8Arg("pixelBrightnessPercent", n.pixelBrightnessPercent);
     parseU8Arg("standbyBrightnessPercent", n.standbyBrightnessPercent);
     parseBoolArg("pixelDebugAllOn", n.pixelDebugAllOn);
-    const bool diagWasOff = !activeConfig.ring1DiagnosticMode;
     parseBoolArg("ring1DiagnosticMode", n.ring1DiagnosticMode);
-    if (diagWasOff && n.ring1DiagnosticMode) {
-      ledRing1DiagnosticStart();
-    } else if (!diagWasOff && !n.ring1DiagnosticMode) {
-      ledRing1DiagnosticStop();
-    }
     parseBoolArg("ring2Enabled", n.ring2Enabled);
     parseU8Arg("ring2BrightnessPercent", n.ring2BrightnessPercent);
     parseU8Arg("ring2StandbyBrightnessPercent", n.ring2StandbyBrightnessPercent);
@@ -635,8 +632,8 @@ void webConfigSetup() {
     if (!errMsg.length() && (n.standbyChangeMinMs < STANDBY_CHANGE_MIN_LIMIT_MS || n.standbyChangeMinMs > STANDBY_CHANGE_MAX_LIMIT_MS)) errMsg = "Standby Change Min muss 100..5000 ms sein.";
     if (!errMsg.length() && (n.standbyChangeMaxMs < STANDBY_CHANGE_MIN_LIMIT_MS || n.standbyChangeMaxMs > STANDBY_CHANGE_MAX_LIMIT_MS)) errMsg = "Standby Change Max muss 100..5000 ms sein.";
     if (!errMsg.length() && n.standbyChangeMinMs > n.standbyChangeMaxMs) errMsg = "Standby Change Min darf nicht groesser als Max sein.";
-    if (!errMsg.length() && n.standbyOnMin > PIXEL_COUNT) errMsg = "Standby Anzahl Min darf Ringgroesse nicht ueberschreiten.";
-    if (!errMsg.length() && n.standbyOnMax > PIXEL_COUNT) errMsg = "Standby Anzahl Max darf Ringgroesse nicht ueberschreiten.";
+    if (!errMsg.length() && n.standbyOnMin > PIXEL_GROUPS) errMsg = "Standby Anzahl Min darf Ringgroesse nicht ueberschreiten.";
+    if (!errMsg.length() && n.standbyOnMax > PIXEL_GROUPS) errMsg = "Standby Anzahl Max darf Ringgroesse nicht ueberschreiten.";
     if (!errMsg.length() && n.standbyOnMin > n.standbyOnMax) errMsg = "Standby Anzahl Min darf nicht groesser als Max sein.";
     if (!errMsg.length() && n.standbyValueMin > n.standbyValueMax) errMsg = "Standby Value Min darf nicht groesser als Max sein.";
     if (!errMsg.length() && !(n.oledI2cClockHz >= 100000 && n.oledI2cClockHz <= 1000000)) errMsg = "oledI2cClockHz muss 100000..1000000 sein.";
@@ -656,23 +653,24 @@ void webConfigSetup() {
     if (!errMsg.length() && n.externalEnabled && strlen(n.externalApiPath) == 0) errMsg = "externalApiPath darf bei aktivierter Schnittstelle nicht leer sein.";
 
     if (errMsg.length()) { server.send(400, "text/html", renderConfigPage(n, errMsg)); return; }
+    // Diagnose erst nach erfolgreicher Pruefung starten/stoppen (vorher lief sie auch bei
+    // abgelehntem Formular los und liess sich dann nicht mehr ausschalten)
+    if (!activeConfig.ring1DiagnosticMode && n.ring1DiagnosticMode) ledRing1DiagnosticStart();
+    else if (activeConfig.ring1DiagnosticMode && !n.ring1DiagnosticMode) ledRing1DiagnosticStop();
     pendingConfig = n;
     pendingConfigValid = true;
     server.sendHeader("Location","/");
     server.send(303);
   });
-  server.on("/reset-error", HTTP_POST, [](){
+  // /reset-error (Konfigseite) und /reset (Seite "Waage aktiv") loesen denselben Reset aus
+  auto resetHandler = [](){
     resetRequested = true;
     resetStatusMsg = "Reset angefordert. Wird sicher ausgefuehrt.";
     server.sendHeader("Location","/");
     server.send(303);
-  });
-  server.on("/reset", HTTP_POST, [](){
-    resetRequested = true;
-    resetStatusMsg = "Reset angefordert. Wird sicher ausgefuehrt.";
-    server.sendHeader("Location","/");
-    server.send(303);
-  });
+  };
+  server.on("/reset-error", HTTP_POST, resetHandler);
+  server.on("/reset", HTTP_POST, resetHandler);
   auto disableDebugModesHandler = [](){
     disableDebugModesNow();
     server.send(200, "text/plain; charset=utf-8", "Debug deaktiviert");
@@ -876,7 +874,7 @@ void webService(uint32_t now){
         Serial.println(WiFi.localIP().toString());
         wifiApMode = false;
         networkInfo = WiFi.localIP().toString();
-        showNetworkStatus("WLAN", networkInfo);
+        showNetworkStatus("WLAN", networkInfo, false);  // im Betrieb nicht blockieren
         lastReconnectAttemptMs = 0;
       } else if ((now - apRetryStartMs) >= AP_RETRY_WAIT_MS) {
         apRetryInProgress = false;
@@ -904,27 +902,3 @@ bool webIsResetRequested() { return resetRequested; }
 void webClearResetRequested() { resetRequested = false; }
 void webSetResetStatusMsg(const String& msg) { resetStatusMsg = msg; }
 bool webIsWifiApMode() { return wifiApMode; }
-static const char* errToStrLocal(ErrCode e) {
-  switch (e) {
-    case ErrCode::OK: return "OK";
-    case ErrCode::NEGATIVE: return "NEGATIVE";
-  }
-  return "UNKNOWN";
-}
-
-static const char* stateToStrLocal(State s) {
-  switch (s) {
-    case State::BOOT_MSG: return "BOOT_MSG";
-    case State::BOOT_TARE: return "BOOT_TARE";
-    case State::IDLE_WAIT_GLASS: return "IDLE_WAIT_GLASS";
-    case State::GLASS_DETECTED: return "GLASS_DETECTED";
-    case State::READY_FOR_TIMING: return "READY_FOR_TIMING";
-    case State::TIMING: return "TIMING";
-    case State::SHOW_RESULT: return "SHOW_RESULT";
-    case State::WAIT_EMPTY_AFTER_RESULT: return "WAIT_EMPTY_AFTER_RESULT";
-    case State::CHECK_RETARE: return "CHECK_RETARE";
-    case State::STANDBY: return "STANDBY";
-    case State::ERROR_RECOVER: return "ERROR_RECOVER";
-  }
-  return "UNKNOWN";
-}

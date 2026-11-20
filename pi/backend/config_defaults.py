@@ -25,6 +25,9 @@ DEFAULTS = {
     "led_brightness_power_save": "12",
     "led_brightness_boot": "40",
     "led_brightness_error": "100",
+    # Höchster geschätzter LED-Strom in mA (0 = keine Begrenzung). Schützt den Pi vor Unterspannung,
+    # wenn Pi und LEDs an derselben Stromquelle hängen.
+    "pi_led_max_current_ma": "1200",
     "pi_oled_rotation": "0",
     "pi_oled_driver": "ssd1306",  # ssd1306 oder sh1106 (lässt sich nicht automatisch erkennen)
     "power_save_after_minutes": "1",

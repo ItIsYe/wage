@@ -22,6 +22,7 @@ LED_DEFAULTS = {
     "led_brightness_power_save": "12",
     "led_brightness_boot": "40",
     "led_brightness_error": "100",
+    "pi_led_max_current_ma": "1200",
 }
 LED_KEYS = list(LED_DEFAULTS)
 
@@ -36,6 +37,8 @@ class LedConfig(BaseModel):
     led_brightness_power_save: int = Field(ge=0, le=255)
     led_brightness_boot: int = Field(ge=0, le=255)
     led_brightness_error: int = Field(ge=0, le=255)
+    # Optional, damit ältere Seiten ohne dieses Feld weiter speichern können
+    pi_led_max_current_ma: Optional[int] = Field(default=None, ge=0, le=10000)
 
     @field_validator("pi_led_strip_sizes")
     @classmethod

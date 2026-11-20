@@ -23,4 +23,3 @@ void ring1FillDebugAllOn();
 void ring1DiagnosticStart();
 void ring1DiagnosticStop();
 bool ring1DiagnosticService(uint32_t now);
-bool ring1DiagnosticActive();

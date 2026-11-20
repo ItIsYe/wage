@@ -15,6 +15,10 @@ POLL_SECONDS_POWERSAVE = 10.0 # DB-Status im Power-Save alle 10s
 ANIM_SECONDS = 0.08          # LED-Animation alle 80ms (12 FPS) - stabiler bei 322 Pixeln
 ANIM_SECONDS_POWERSAVE = 0.5  # Power-Save: 2 FPS reichen
 REINIT_SECONDS = 10.0
+# Wartezeit nach Dienststart, bevor die LEDs eingeschaltet werden: in den ersten Sekunden
+# nach dem Booten braucht der Pi selbst den meisten Strom (Desktop, Kiosk-Browser, WLAN).
+START_DELAY_SECONDS = float(os.getenv("WAGE_PI_LED_START_DELAY", "20"))
+DEFAULT_MAX_CURRENT_MA = 1200
 
 
 # Die Hauptschleife fragt die Konfiguration mehrfach pro Animations-Tick (80 ms) ab.
@@ -34,7 +38,7 @@ def _get_hw_config() -> dict:
         with sqlite3.connect(DB) as c:
             rows = c.execute(
                 "SELECT key, value FROM app_state WHERE key IN "
-                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes','power_save_after_minutes','last_run_received_at','last_activity_at','led_brightness_rainbow','led_brightness_pulse_offline','led_brightness_wave','led_brightness_power_save','led_brightness_boot','led_brightness_error')"
+                "('pi_led_count','pi_led_brightness','pi_led_strip_count','pi_led_strip_pixels','pi_led_strip_sizes','power_save_after_minutes','last_run_received_at','last_activity_at','led_brightness_rainbow','led_brightness_pulse_offline','led_brightness_wave','led_brightness_power_save','led_brightness_boot','led_brightness_error','pi_led_max_current_ma')"
             ).fetchall()
         _hw_config_cache = {r[0]: r[1] for r in rows}
     except Exception:
@@ -66,6 +70,14 @@ def _get_strip_config() -> list[int]:
 
 def _get_led_count() -> int:
     return sum(_get_strip_config())
+
+
+def _get_max_current_ma() -> int:
+    hw = _get_hw_config()
+    try:
+        return max(0, int(hw.get("pi_led_max_current_ma", DEFAULT_MAX_CURRENT_MA)))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_CURRENT_MA
 
 
 def _get_led_brightness() -> int:
@@ -163,8 +175,12 @@ def make_strip():
     _applied_brightness = None
     from rpi_ws281x import Color, PixelStrip
 
-    strip = PixelStrip(_get_led_count(), 18, brightness=_get_led_brightness())
-    strip.begin()
+    from power_limit import LimitedStrip
+
+    raw = PixelStrip(_get_led_count(), 18, brightness=_get_led_brightness())
+    raw.begin()
+    # Strombegrenzung: verhindert, dass der Strip die Versorgung des Pi in die Unterspannung zieht
+    strip = LimitedStrip(raw, _get_max_current_ma())
     _applied_brightness = _get_led_brightness()
     return strip, Color
 
@@ -279,6 +295,10 @@ if __name__ == "__main__":
     rainbow_state = RainbowState()
     pulse_offline_state = PulseState(lambda b: (b, b, 0))     # reines Gelb
 
+    if START_DELAY_SECONDS > 0:
+        set_state("led_status", "starting:delay")
+        time.sleep(START_DELAY_SECONDS)
+
     # led_shutdown Flag beim Start zurücksetzen
     try:
         with __import__('sqlite3').connect(DB) as _c:
@@ -305,6 +325,7 @@ if __name__ == "__main__":
         # Geänderte Pixelzahl -> Strip neu initialisieren. Helligkeitsänderungen braucht es dafür nicht:
         # apply_brightness() setzt sie im nächsten Tick (früher: Neuinitialisierung mit Hochdimmen).
         if strip is not None:
+            strip.max_current_ma = _get_max_current_ma()  # wirkt sofort, ohne Neuinitialisierung
             current_count = _get_led_count()
             if current_count != last_led_count:
                 try:

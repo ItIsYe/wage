@@ -44,7 +44,7 @@ def _build_status() -> dict:
     ip = get_pi_ip()
     net = _read_config()
     network_mode = net.get("network_mode", "ap")
-    api_target_for_esp = f"http://{net.get('ap_ip','192.168.50.1')}:8000/api/v1/runs" if network_mode == "ap" else f"http://{ip}:8000/api/v1/runs"
+    api_target_for_esp = f"http://{net.get('ap_ip','192.168.50.1')}:8000/api/v1/runs" if network_mode in ("ap", "ap_client") else f"http://{ip}:8000/api/v1/runs"
     result = {
         # Diese Antwort kommt nur zustande, wenn API und Datenbank funktionieren (die Werte wurden
         # frueher aus app_state gelesen, dort aber nie geschrieben).
