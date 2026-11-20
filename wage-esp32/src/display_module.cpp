@@ -39,33 +39,40 @@ static uint8_t oledPageSnapshot[OLED_PAGES][OLED_PAGE_WIDTH] = {};
 static bool oledSnapshotValid = false;
 
 // Sendet eine einzelne Page direkt per I2C (SH1106G, Spalten-Offset 2)
-static void sh1106SendPage(uint8_t page, const uint8_t* data) {
+// Rueckgabe: true, wenn alle I2C-Uebertragungen bestaetigt wurden.
+static bool sh1106SendPage(uint8_t page, const uint8_t* data) {
+  bool ok = true;
   Wire.beginTransmission(OLED_ADDR);
   Wire.write(0x00);
   Wire.write(0xB0 | (page & 0x07));
   Wire.write(0x02);
   Wire.write(0x10);
-  Wire.endTransmission();
+  ok = (Wire.endTransmission() == 0) && ok;
   for (uint8_t col = 0; col < OLED_PAGE_WIDTH; col += 16) {
     Wire.beginTransmission(OLED_ADDR);
     Wire.write(0x40);
     const uint8_t chunk = (col + 16 <= OLED_PAGE_WIDTH) ? 16 : (OLED_PAGE_WIDTH - col);
     Wire.write(data + col, chunk);
-    Wire.endTransmission();
+    ok = (Wire.endTransmission() == 0) && ok;
   }
+  return ok;
 }
 
-// Partielles Update: nur geaenderte Pages uebertragen
+// Partielles Update: nur geaenderte Pages uebertragen. Der Vergleich gilt gegen das, was zuletzt
+// tatsaechlich auf dem Display angekommen ist (Snapshot). Die Zeichenfunktionen duerfen den Snapshot
+// deshalb NICHT verwerfen (frueher taten sie das bei jedem Bild, dann wurde immer alles gesendet).
 static void oledFlushPartial() {
   uint8_t* buf = display.getBuffer();
   if (!buf) { display.display(); return; }
+  bool allOk = true;
   for (uint8_t page = 0; page < OLED_PAGES; ++page) {
     const uint8_t* pageData = buf + (page * OLED_PAGE_WIDTH);
     if (oledSnapshotValid && memcmp(pageData, oledPageSnapshot[page], OLED_PAGE_WIDTH) == 0) continue;
-    sh1106SendPage(page, pageData);
+    if (!sh1106SendPage(page, pageData)) allOk = false;
     memcpy(oledPageSnapshot[page], pageData, OLED_PAGE_WIDTH);
   }
-  oledSnapshotValid = true;
+  // I2C-Fehler: beim naechsten Mal alles neu senden, sonst bliebe ein Fehlbild stehen
+  oledSnapshotValid = allOk;
 }
 
 static inline void oledFlush() {
@@ -94,7 +101,6 @@ void oledInit() {
   Wire.setClock(activeConfig.oledI2cClockHz);
   if (!display.begin(OLED_ADDR, true)) return;
   oledReady = true;
-  oledSnapshotValid = false;
   display.setRotation(activeConfig.oledRotation);
   display.clearDisplay();
   oledSnapshotValid = false;
@@ -157,7 +163,6 @@ void oledMsg2(const char* line1, const char* line2) {
   const int maxY = display.height() - lineHeight;
   if (line2Y > maxY) line2Y = maxY;
   display.clearDisplay();
-  oledSnapshotValid = false;
   display.setTextSize(textScale);
   display.setCursor(0, 0);
   display.println(line1);
@@ -166,7 +171,7 @@ void oledMsg2(const char* line1, const char* line2) {
   oledFlush();
 }
 
-void showNetworkStatus(const char* line1, const String& ip) {
+void showNetworkStatus(const char* line1, const String& ip, bool hold) {
   if (MASTER_DEBUG_LOG) {
     Serial.print("[NET] ");
     Serial.print(line1);
@@ -175,7 +180,7 @@ void showNetworkStatus(const char* line1, const String& ip) {
   }
   if (!oledReady) return;
   oledMsg2(line1, ip.c_str());
-  delay(1200);
+  if (hold) delay(1200);  // nur beim Start; im laufenden Betrieb wuerde das die Messung blockieren
 }
 
 void oledTimingLive(uint32_t dtMs) {
@@ -198,7 +203,6 @@ void oledTimingLive(uint32_t dtMs) {
   const int timeLineHeight = (int)timeScale * 8;
   const int timeY = display.height() - timeLineHeight - 2;
   display.clearDisplay();
-  oledSnapshotValid = false;
   display.setTextSize(titleScale);
   display.setCursor(0, 0);
   display.println("Zeitmessung");
@@ -227,7 +231,6 @@ void oledDebugWeights() {
 
   const uint8_t textScale = 1;
   display.clearDisplay();
-  oledSnapshotValid = false;
   display.setTextSize(textScale);
   display.setCursor(0, 0);
 
@@ -260,7 +263,6 @@ void oledDebugPattern(uint32_t now) {
   lastOledPatternMs = now;
   oledMsgValid = false;
   display.clearDisplay();
-  oledSnapshotValid = false;
 
   display.drawRect(0, 0, display.width(), display.height(), SH110X_WHITE);
   display.drawLine(0, display.height() / 2, display.width() - 1, display.height() / 2, SH110X_WHITE);

@@ -36,7 +36,7 @@ static constexpr uint32_t WEB_SERVICE_INTERVAL_BUSY_MS = 1000; // Webserver-Poll
 // =========================================================
 static constexpr bool EXTERNAL_INTERFACE_ENABLED_DEFAULT = false; // Pi-Kommunikation aktiv
 static const char* EXTERNAL_TARGET_HOST_DEFAULT = "";
-static constexpr uint16_t EXTERNAL_TARGET_PORT_DEFAULT = 80;
+static constexpr uint16_t EXTERNAL_TARGET_PORT_DEFAULT = 8000;  // Port des Pi-Backends
 static const char* EXTERNAL_API_PATH_DEFAULT = "/api/v1/runs";
 static const char* EXTERNAL_API_KEY_DEFAULT = "";
 static constexpr uint32_t EXTERNAL_SEND_TIMEOUT_MS = 2000;

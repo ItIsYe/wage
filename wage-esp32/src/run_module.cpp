@@ -23,6 +23,11 @@ void runModuleInit(uint32_t bootId, const char* deviceId) {
   g_deviceId[sizeof(g_deviceId) - 1] = '\0';
 }
 
+void runModuleSetDeviceId(const char* deviceId) {
+  strncpy(g_deviceId, deviceId, sizeof(g_deviceId) - 1);
+  g_deviceId[sizeof(g_deviceId) - 1] = '\0';
+}
+
 static float percentOfReference(float reference, float percent) {
   return reference * (percent / 100.0f);
 }

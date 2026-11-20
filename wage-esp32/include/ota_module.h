@@ -26,7 +26,7 @@ enum class OtaState : uint8_t {
 void otaInit(const char* currentFirmwareVersion);
 void otaSetTarget(const char* host, uint16_t port);
 
-// Nicht-blockierender Status-Check (HTTP GET manifest.json über den Pi).
+// Status-Check (HTTP GET manifest.json über den Pi). Blockiert bis zu ~8 s.
 // Setzt otaState auf UPDATE_AVAILABLE oder UP_TO_DATE.
 bool otaCheckForUpdate();
 
