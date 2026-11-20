@@ -54,7 +54,10 @@ progress "Code wird aktualisiert..." 20
 cd "$ROOT"
 git fetch origin beta 2>&1 | while read l; do log "  git: $l"; done
 git reset --hard origin/beta 2>&1 | while read l; do log "  git: $l"; done
-sudo chown -R wage:wage "$ROOT"
+# Kein "sudo chown": die sudoers-Regel (install.sh) erlaubt nur systemctl und install. Ohne Passwort
+# brach sudo hier ab und das Update wurde nach dem Code-Sync als fehlgeschlagen gemeldet. Das Skript
+# läuft als wage, die Dateien gehören damit ohnehin wage; als root (manueller Aufruf) wird korrigiert.
+if [ "$(id -u)" = "0" ]; then chown -R wage:wage "$ROOT"; fi
 log "  Code aktuell: $(git log --oneline -1)"
 
 # === 3. Python-Pakete ===
@@ -83,7 +86,7 @@ for f in /etc/systemd/system/wage-pi-*.service; do
         log "  Entfernt veralteter Service: $SVC_NAME"
         sudo systemctl stop "$SVC_NAME" 2>/dev/null || true
         sudo systemctl disable "$SVC_NAME" 2>/dev/null || true
-        sudo rm -f "$f"
+        sudo -n rm -f "$f" 2>/dev/null || log "  Hinweis: $f bitte manuell löschen (sudo rm)"
     fi
 done
 sudo systemctl daemon-reload
